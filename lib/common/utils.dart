@@ -806,6 +806,10 @@ class Utils {
   }
 
   int compareVersions(String version1, String version2) {
+    version1 = version1.replaceFirstMapped(
+      RegExp(r'^smart-v(\d+\.\d+\.\d+)-\d{8}\.\d+$'),
+      (match) => match[1]!,
+    ).replaceFirst(RegExp(r'^v'), '');
     List<String> v1 = version1.split('+')[0].split('.');
     List<String> v2 = version2.split('+')[0].split('.');
     int major1 = int.parse(v1[0]);

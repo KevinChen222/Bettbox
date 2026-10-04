@@ -24,6 +24,7 @@
 - `tool/update_smart_core.dart`：获取 Smart Alpha，比较已记录提交和最新提交，把增量三方合入生成内核，更新补丁和来源记录。
 - `core/smart-source.json`：实际集成的 Smart 提交、最近合入的 Bettbox 提交及模型来源。初始官方基线是历史记录，不能误当最新版本。
 - Smart 组由 `lib/enum/enum.dart` 及两份生成 JSON 枚举识别。固定节点/恢复自动选择复用原交互。
+- App 更新检查指向个人 fork，`compareVersions` 识别 `smart-v<App版本>-<日期>.<序号>`。它比较 App 版本，同一 App 版本内的 Smart 内核更新由本文的双上游检查负责；不要误认为 App 无更新提示就表示内核已最新。
 - 资源页面提供 LightGBM 同步按钮。桥接复用 `updateGeoData` 的 `LightGBM` 类型，调用原生模型更新器，校验后写 `HomeDir/Model.bin` 并重新加载。默认来源如上；配置的 `lgbm-url` 可覆盖。
 - `core/common.go` 保留 Smart 使用的 GeoIP/ASN 数据，不能让原内存清理卸载它们。
 - `core/smart_test.go` 验证组、选择、Geo 数据和模型更新；`test/smart_group_test.dart` 验证客户端模型。

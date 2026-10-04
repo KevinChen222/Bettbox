@@ -269,7 +269,7 @@ class Request {
           final version = globalState.packageInfo.version;
           final hasUpdate =
               utils.compareVersions(
-                remoteVersion.replaceAll('v', ''),
+                remoteVersion,
                 version,
               ) >
               0;
