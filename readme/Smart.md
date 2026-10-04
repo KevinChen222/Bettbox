@@ -45,7 +45,7 @@ Fork 构建不使用上游 SignPath 证书。安卓通过 fork Secrets 中的持
 ```sh
 flutter pub get
 dart run build_runner build -d
-flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart
+flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart
 dart tool/prepare_smart_core.dart
 # cd core 后可运行 go test -tags=with_gvisor ./...
 # Windows，包含 HelperService
@@ -58,7 +58,7 @@ flutter build apk --release --target-platform android-arm,android-arm64,android-
 flutter build apk --release --split-per-abi --target-platform android-arm64
 ```
 
-Go 桥接测试位于 `core/smart_test.go`，验证 Smart 配置、选择/恢复自动状态、客户端 JSON、GeoIP/ASN 数据保留，以及模型更新成功时即时加载、失败时保留旧文件。生成的内核保留 Smart 上游的策略组及 TCP 统计测试。
+Go 桥接测试位于 `core/smart_test.go`，验证 Smart 配置、选择/恢复自动状态、客户端 JSON、GeoIP/ASN 数据保留，以及模型更新成功时即时加载、失败时保留旧文件。生成的内核保留 Smart 上游的策略组及 TCP 统计测试。SS2022 连接关闭的机制、修复和验证范围见 [连接关闭高 CPU 修复记录](Smart-CPU-Fix.md)。
 
 ## 合并后续 Bettbox 更新
 
@@ -72,7 +72,7 @@ git merge upstream/main
 flutter pub get
 dart run build_runner build -d
 dart tool/prepare_smart_core.dart
-flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart
+flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart
 # 在 core 目录运行 go test -tags=with_gvisor ./...
 git push origin feat/smart-core
 ```

@@ -13343,7 +13343,7 @@ index f3d3ba2645773f601cf6ae1a41142d6cad832a68..ffcb9cb77d830fda8a964c025173e23b
  	}
  }
 diff --git a/tunnel/statistic/tracker.go b/tunnel/statistic/tracker.go
-index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473b22b9e3b 100644
+index b44ce29521a838a495be140a06c3fa29464ccf97..f693865ebb380b1f128b832ee4c2d8cee43fd848 100644
 --- a/tunnel/statistic/tracker.go
 +++ b/tunnel/statistic/tracker.go
 @@ -4,6 +4,7 @@ import (
@@ -13448,7 +13448,7 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473
  	return
  }
  
-@@ -107,14 +132,16 @@ func (tt *tcpTracker) UnwrapWriter() (io.Writer, []N.CountFunc) {
+@@ -107,14 +132,19 @@ func (tt *tcpTracker) UnwrapWriter() (io.Writer, []N.CountFunc) {
  			tt.manager.PushUploaded(tt.IsDirect, upload)
  		}
  		tt.UploadTotal.Add(upload)
@@ -13457,16 +13457,21 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473
  }
  
  func (tt *tcpTracker) Close() error {
-+	connErr := tt.Conn.Close()
- 	if tt.closed.CompareAndSwap(false, true) {
- 		tt.manager.Leave(tt)
+-	if tt.closed.CompareAndSwap(false, true) {
+-		tt.manager.Leave(tt)
++	// Claim closure before traversing wrappers: SS2022 also closes its writer's
++	// upstream, which can revisit this tracker in a chained connection.
++	if !tt.closed.CompareAndSwap(false, true) {
++		return nil
  	}
 -	return tt.Conn.Close()
++	connErr := tt.Conn.Close()
++	tt.manager.Leave(tt)
 +	return connErr
  }
  
  func (tt *tcpTracker) Upstream() any {
-@@ -127,12 +154,15 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
+@@ -127,12 +157,15 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
  	chains := conn.Chains()
  	lastChain := chains.Last()
  	isDirect := strings.ToUpper(lastChain) == "DIRECT" || (IsDirectFunc != nil && IsDirectFunc(lastChain))
@@ -13483,7 +13488,7 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473
  			Start:         time.Now(),
  			Metadata:      metadata,
  			Chain:         chains,
-@@ -142,7 +172,9 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
+@@ -142,7 +175,9 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
  			DownloadTotal: atomic.NewInt64(downloadTotal),
  			IsDirect:      isDirect,
  		},
@@ -13494,7 +13499,7 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473
  	}
  
  	if pushToManager {
-@@ -170,6 +202,9 @@ type udpTracker struct {
+@@ -170,6 +205,9 @@ type udpTracker struct {
  
  	pushToManager bool        `json:"-"`
  	closed        atomic.Bool `json:"-"`
@@ -13504,7 +13509,7 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473
  }
  
  func (ut *udpTracker) ID() string {
-@@ -187,6 +222,7 @@ func (ut *udpTracker) ReadFrom(b []byte) (int, net.Addr, error) {
+@@ -187,6 +225,7 @@ func (ut *udpTracker) ReadFrom(b []byte) (int, net.Addr, error) {
  		ut.manager.PushDownloaded(ut.IsDirect, download)
  	}
  	ut.DownloadTotal.Add(download)
@@ -13512,7 +13517,7 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473
  	return n, addr, err
  }
  
-@@ -197,6 +233,7 @@ func (ut *udpTracker) WaitReadFrom() (data []byte, put func(), addr net.Addr, er
+@@ -197,6 +236,7 @@ func (ut *udpTracker) WaitReadFrom() (data []byte, put func(), addr net.Addr, er
  		ut.manager.PushDownloaded(ut.IsDirect, download)
  	}
  	ut.DownloadTotal.Add(download)
@@ -13520,7 +13525,7 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473
  	return
  }
  
-@@ -207,14 +244,16 @@ func (ut *udpTracker) WriteTo(b []byte, addr net.Addr) (int, error) {
+@@ -207,14 +247,16 @@ func (ut *udpTracker) WriteTo(b []byte, addr net.Addr) (int, error) {
  		ut.manager.PushUploaded(ut.IsDirect, upload)
  	}
  	ut.UploadTotal.Add(upload)
@@ -13538,7 +13543,7 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473
  }
  
  func (ut *udpTracker) Upstream() any {
-@@ -227,12 +266,15 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
+@@ -227,12 +269,15 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
  	chains := conn.Chains()
  	lastChain := chains.Last()
  	isDirect := strings.ToUpper(lastChain) == "DIRECT" || (IsDirectFunc != nil && IsDirectFunc(lastChain))
@@ -13555,7 +13560,7 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473
  			Start:         time.Now(),
  			Metadata:      metadata,
  			Chain:         chains,
-@@ -242,7 +284,9 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
+@@ -242,7 +287,9 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
  			DownloadTotal: atomic.NewInt64(downloadTotal),
  			IsDirect:      isDirect,
  		},
@@ -13566,7 +13571,7 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473
  	}
  
  	if pushToManager {
-@@ -262,3 +306,50 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
+@@ -262,3 +309,50 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
  	manager.Join(ut)
  	return ut
  }
@@ -13616,6 +13621,201 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..87e17e0eace0470dfdbb31e86c261473
 +	result := w.cachedRate.Load()
 +	w.mu.Unlock()
 +	return result
++}
+diff --git a/tunnel/statistic/tracker_close_test.go b/tunnel/statistic/tracker_close_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..c33a479cd1d5021fd9a7bd8dac31cbeabfb2898a
+--- /dev/null
++++ b/tunnel/statistic/tracker_close_test.go
+@@ -0,0 +1,189 @@
++package statistic_test
++
++import (
++	"errors"
++	"fmt"
++	"io"
++	"net"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/adapter/outbound"
++	"github.com/metacubex/mihomo/common/callback"
++	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/tunnel/statistic"
++	"github.com/metacubex/sing-shadowsocks2/cipher"
++	"github.com/metacubex/sing-shadowsocks2/shadowaead_2022"
++	M "github.com/metacubex/sing/common/metadata"
++)
++
++type closeTestConn struct {
++	closes  atomic.Int32
++	closeFn func() error
++}
++
++func (c *closeTestConn) Read([]byte) (int, error)         { return 0, io.EOF }
++func (c *closeTestConn) Write(p []byte) (int, error)      { return len(p), nil }
++func (c *closeTestConn) LocalAddr() net.Addr              { return &net.TCPAddr{} }
++func (c *closeTestConn) RemoteAddr() net.Addr             { return &net.TCPAddr{Port: 443} }
++func (c *closeTestConn) SetDeadline(time.Time) error      { return nil }
++func (c *closeTestConn) SetReadDeadline(time.Time) error  { return nil }
++func (c *closeTestConn) SetWriteDeadline(time.Time) error { return nil }
++func (c *closeTestConn) Close() error {
++	c.closes.Add(1)
++	if c.closeFn != nil {
++		return c.closeFn()
++	}
++	return nil
++}
++
++func closeTestAdapter() *outbound.Base {
++	return outbound.NewBase(outbound.BaseOption{Name: "close-test", Addr: "127.0.0.1:443", Type: C.Shadowsocks})
++}
++
++func TestTCPTrackerCloseSS2022Chain(t *testing.T) {
++	method, err := shadowaead_2022.NewMethod("2022-blake3-aes-128-gcm", cipher.MethodOptions{KeyList: [][]byte{make([]byte, 16)}})
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, depth := range []int{1, 4, 18} {
++		t.Run(fmt.Sprint(depth), func(t *testing.T) {
++			manager := &statistic.Manager{}
++			leaf := &closeTestConn{}
++			var conn net.Conn = leaf
++			var trackers []statistic.Tracker
++			for i := 0; i < depth; i++ {
++				// DialConn initializes the real SS2022 writer, whose Upstream
++				// makes clientConn.Close revisit the underlying tracker.
++				ss, err := method.DialConn(conn, M.Socksaddr{Fqdn: "example.test", Port: 443})
++				if err != nil {
++					t.Fatal(err)
++				}
++				wrapped := outbound.NewConn(ss, closeTestAdapter())
++				wrapped.(interface{ AddRef(any) }).AddRef(method)
++				wrapped = callback.NewFirstWriteCallBackConn(wrapped, func(error) {})
++				tracker := statistic.NewTCPTracker(wrapped, manager, &C.Metadata{SmartTarget: "close-test"}, nil, 0, 0, false)
++				trackers = append(trackers, tracker)
++				conn = tracker
++			}
++			start := time.Now()
++			if err := conn.Close(); err != nil {
++				t.Fatal(err)
++			}
++			t.Logf("depth=%d leaf closes=%d duration=%s", depth, leaf.closes.Load(), time.Since(start))
++			// The innermost SS2022 wrapper closes its raw transport twice;
++			// every tracker must prevent this from multiplying at each layer.
++			if got := leaf.closes.Load(); got != 2 {
++				t.Errorf("transport closed %d times, want 2 independent of depth", got)
++			}
++			for _, tracker := range trackers {
++				if manager.Get(tracker.ID()) != nil {
++					t.Errorf("tracker %s was not removed", tracker.ID())
++				}
++				if err := tracker.Close(); err != nil {
++					t.Fatal(err)
++				}
++			}
++			manager.RangeSmartTarget("close-test", func(string) bool { t.Error("Smart target membership remains after close"); return true })
++			if got := leaf.closes.Load(); got != 2 {
++				t.Errorf("repeated close reached transport: %d", got)
++			}
++		})
++	}
++}
++
++func TestTCPTrackerCloseReentrant(t *testing.T) {
++	manager := &statistic.Manager{}
++	leaf := &closeTestConn{}
++	tracker := statistic.NewTCPTracker(outbound.NewConn(leaf, closeTestAdapter()), manager, &C.Metadata{}, nil, 0, 0, false)
++	leaf.closeFn = func() error {
++		// Bound the old implementation's recursion so regression failure is safe.
++		if leaf.closes.Load() == 1 {
++			return tracker.Close()
++		}
++		return nil
++	}
++	if err := tracker.Close(); err != nil {
++		t.Fatal(err)
++	}
++	if got := leaf.closes.Load(); got != 1 {
++		t.Errorf("reentrant close reached transport %d times", got)
++	}
++	if manager.Get(tracker.ID()) != nil {
++		t.Fatal("tracker was not removed")
++	}
++}
++
++func TestTCPTrackerCloseUnblocksSS2022Read(t *testing.T) {
++	method, err := shadowaead_2022.NewMethod("2022-blake3-aes-128-gcm", cipher.MethodOptions{KeyList: [][]byte{make([]byte, 16)}})
++	if err != nil {
++		t.Fatal(err)
++	}
++	client, server := net.Pipe()
++	defer server.Close()
++	manager := &statistic.Manager{}
++	conn := method.DialEarlyConn(client, M.Socksaddr{Fqdn: "example.test", Port: 443})
++	tracker := statistic.NewTCPTracker(outbound.NewConn(conn, closeTestAdapter()), manager, &C.Metadata{}, nil, 0, 0, false)
++	readDone := make(chan error, 1)
++	go func() { _, err := tracker.Read(make([]byte, 1)); readDone <- err }()
++	if err := tracker.Close(); err != nil {
++		t.Fatal(err)
++	}
++	select {
++	case err := <-readDone:
++		if err == nil {
++			t.Fatal("SS2022 read succeeded after transport close")
++		}
++	case <-time.After(time.Second):
++		t.Fatal("transport Close did not unblock SS2022 read")
++	}
++	if manager.Get(tracker.ID()) != nil {
++		t.Fatal("tracker was not removed")
++	}
++}
++
++func TestTCPTrackerCloseConcurrentAndError(t *testing.T) {
++	manager := &statistic.Manager{}
++	entered, release := make(chan struct{}), make(chan struct{})
++	closeErr := errors.New("transport close failed")
++	leaf := &closeTestConn{closeFn: func() error { close(entered); <-release; return closeErr }}
++	tracker := statistic.NewTCPTracker(outbound.NewConn(leaf, closeTestAdapter()), manager, &C.Metadata{SmartTarget: "close-test"}, nil, 0, 0, false)
++	var notifications atomic.Int32
++	previousNotify := statistic.DefaultRequestNotify
++	statistic.DefaultRequestNotify = func(statistic.Tracker) { notifications.Add(1) }
++	defer func() { statistic.DefaultRequestNotify = previousNotify }()
++	first := make(chan error, 1)
++	go func() { first <- tracker.Close() }()
++	<-entered
++	var wg sync.WaitGroup
++	for i := 0; i < 16; i++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			if err := tracker.Close(); err != nil {
++				t.Error(err)
++			}
++		}()
++	}
++	done := make(chan struct{})
++	go func() { wg.Wait(); close(done) }()
++	select {
++	case <-done:
++	case <-time.After(time.Second):
++		t.Error("duplicate Close blocked on in-progress Close")
++	}
++	close(release)
++	if err := <-first; !errors.Is(err, closeErr) {
++		t.Errorf("first Close error = %v, want %v", err, closeErr)
++	}
++	<-done
++	if leaf.closes.Load() != 1 || notifications.Load() != 1 {
++		t.Errorf("transport closes=%d notifications=%d, want 1 each", leaf.closes.Load(), notifications.Load())
++	}
++	if manager.Get(tracker.ID()) != nil {
++		t.Error("failed transport Close left tracker registered")
++	}
++	manager.RangeSmartTarget("close-test", func(string) bool { t.Error("Smart target membership remains"); return true })
 +}
 diff --git a/tunnel/tunnel.go b/tunnel/tunnel.go
 index 2350f50465f679a4885373ae04e5011a0571076e..58750a11dcb87cd468f0d4b1801f23e9efc6a4d4 100644

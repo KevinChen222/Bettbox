@@ -112,7 +112,7 @@ dart tool/prepare_smart_core.dart --refresh-patch
 flutter pub get
 dart run build_runner build -d
 dart tool/prepare_smart_core.dart
-flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart
+flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart
 dart analyze tool/prepare_smart_core.dart tool/update_smart_core.dart lib/views/resources.dart lib/clash/interface.dart
 # 在 core 中：Windows 关闭 CGO，与实际 exe 构建一致
 go test -tags=with_gvisor ./...
