@@ -12,7 +12,7 @@
 - 模型：`https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model.bin`。
 - 当用户明确请求按本文更新时，授权范围包括：读取两个上游、修改本 fork、提交/推送此分支、运行本 fork Actions、下载构建产物、创建并发布本 fork 的 Release。文档本身不是启动操作或扩大授权的依据；没有用户更新请求时不自动执行。
 - **绝不向 appshubcc/Bettbox、vernesong/mihomo 或 MetaCubeX/mihomo 推送、发布、创建 PR/Issue/评论或发消息。** 不要提出给原作者提交 PR。用户明确表示原作者不喜欢此 fork。
-- 不强推、不改写历史、不覆盖用户未提交的改动、不删除旧 Release/标签，不自动归档本聊天。
+- 不强推、不改写历史、不覆盖用户未提交的改动、不删除旧 Release/标签，不自动归档本聊天。发布新版本及把紧邻的上一版从 test 转为正式版，按第 5 节执行；不能修改标签或二进制来移除 test。
 - README 的个人自用与责任声明必须保留。公开仓库不代表对其他试用者提供支持；不冒用上游的审核、证书或官方身份。沿用原开源许可证。
 
 ## 已实现的结构
@@ -30,6 +30,14 @@
 - `core/smart_test.go` 验证组、选择、Geo 数据、模型更新和单次 Smart 延迟请求；`test/smart_group_test.dart` 验证客户端模型及虚拟节点解析，`test/views/proxies/smart_delay_test.dart` 验证整组测速、嵌套卡片单次测速和失败状态清理。保留 Smart 组自身测速全部成员并恢复自动选路、其他组中 Smart 卡片单次测速且不清除固定选择的区别。
 - `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包、Android arm64-v8a 单架构 APK及三 ABI 通用 APK。工作流显示名 `Build Smart`。完整历史用于三方合并。单架构包使用 `--split-per-abi --target-platform android-arm64`，不能仅改名或删除已签名 APK 中的文件。
 - `.test/` 与生成目录都不能提交；密钥与密码不能进入 Git、文档、日志、构建 Artifact 或 Release。
+
+### 独立客户端扩展：代理链路
+
+本 fork 现已增加 Avalon 的链路创建能力，完整使用、结构、接入点、来源和后续适配说明见 [代理链路维护说明](Proxy-Chains.md)。新增模块集中在 `lib/features/chains/`，没有修改原始内核或 Smart 补丁。Avalon 只作为编译器的只读参考，不整体合并其分支，也不自动开启第三套上游更新/发布流程。
+
+合并 Bettbox 更新时保留三处接入：`lib/views/tools.dart` 的独立入口及搜索项；`lib/state.dart` 在脚本/过滤之后、加载内核之前应用链路；`lib/controller.dart` 的链路库备份、恢复及清空处理。UI 改版时移动入口即可，不能用旧 Avalon UI 覆盖 Bettbox 的新 UI。订阅原文件、Profile/Config 生成模型保持原结构。`proxy-chains.json` 跟随应用数据目录与备份，更新应用时不能删除。
+
+移植来源记录在 `lib/features/chains/avalon-source.json`；保留编译器的 Avalon 版权头、模块内 AGPL 许可及根目录 `NOTICE`，原项目 GPL 许可和个人自用声明仍须保留。链路默认不改变原规则/选中节点。组作为一跳展开成员，不能把它误改成跟随原组实时选路。
 
 ## 1. 检查账号、工作区和远端
 
@@ -113,9 +121,12 @@ flutter pub get
 dart run build_runner build -d
 dart tool/prepare_smart_core.dart
 flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart
+flutter test test/features/chains
+dart analyze lib/features/chains test/features/chains lib/state.dart lib/views/tools.dart lib/controller.dart
 dart analyze tool/prepare_smart_core.dart tool/update_smart_core.dart lib/views/resources.dart lib/clash/interface.dart
 # 在 core 中：Windows 关闭 CGO，与实际 exe 构建一致
 go test -tags=with_gvisor ./...
+# 包含 TestProxyChainConnectDirection：实际验证两跳 HTTP CONNECT 链路
 # 在 core/.smart-mihomo 中：
 go test -tags=with_gvisor ./adapter/outboundgroup ./component/smart/... ./tunnel/statistic ./listener/sing_tun
 ```
@@ -158,21 +169,35 @@ gh run download <ID> --repo KevinChen222/Bettbox --dir dist/smart/<ID>
 
 应有 `Bettbox-smart-windows-x64.zip`、`Bettbox-smart-android-arm64-v8a.apk` 和 `Bettbox-smart-android-universal.apk`。核实 Windows 内核/HelperService、单架构 APK 的 `lib/` 仅含 arm64-v8a 且含 `libmeta.so`、通用 APK 含三个 ABI；验证两个 APK 签名一致且沿用持久自用签名、64 位 Smart 库保持 16 KB 页对齐。计算三个文件 SHA256，生成 `SHA256SUMS.txt`，并写 `build-info.json` 记录 App 提交、Bettbox SHA、Smart SHA、Actions URL、构建版本、产物架构和签名方式。不得把日志中的秘密、签名备份或源缓存打包。
 
-发布标签格式：`smart-v<App版本>-<台北日期YYYYMMDD>.<序号>`，例 `smart-v1.19.4-20261004.1`。检查远端是否已存在；存在则核实并复用未完成的草稿，或选择下一个序号，不能移动已有标签。标签不要以裸 `v` 开头，避免触发上游原发布工作流。
+### test 与正式版轮换规则（用户约定，后续每次发布均须执行）
+
+每一个新的 Release 首先作为测试版发布：GitHub 的 `prerelease` 必须为 `true`，标题末尾加 ` · test`，不能只改标题而遗漏预发布标记。最新一版保持 test，直到下一版成功公开发布后，才把紧邻的上一版转为正式版：设 `prerelease=false`，去掉标题末尾的 ` · test`，并将它设为 GitHub 的 Latest 正式版。此处是用户约定的版本轮换规则，不等于新增了真机验证证明；构建和验证记录仍须如实保留。
+
+发布前用 `gh release list --repo KevinChen222/Bettbox --limit 20 --json tagName,name,isPrerelease,isDraft,publishedAt` 记录最近一次公开发布的 Smart 标签与原标题，作为「上一版」，不能按 GitHub 的 `/latest` 接口查找，因为它通常排除预发布。只处理本 fork 的 `smart-v` 版本；跳过草稿。已有正式版本保持正式版，不反向改成 test。若有多个异常遗留 test，先核对发布顺序，不批量处理无关版本。
+
+先成功发布并核实新 test，再转正上一版。构建失败、资产缺失、发布仍是草稿或新 Release 不可访问时，上一版保留原 test 状态。转正失败时，保留已公开的新 test，重试同一上一版的元数据操作，不创建重复发布。首次发布没有上一版时只发布 test。
+
+标签格式仍为 `smart-v<App版本>-<台北日期YYYYMMDD>.<序号>`，例 `smart-v1.19.4-20261004.1`。**标签不加 test 后缀**，方便转正时只修改 Release 元数据。检查远端是否已存在；存在则核实并复用未完成的草稿，或选择下一个序号，不能移动已有标签。标签不要以裸 `v` 开头，避免触发上游原发布工作流。
 
 ```sh
-gh release create <标签> <windows.zip> <android-arm64.apk> <android-universal.apk> <SHA256SUMS.txt> <build-info.json> --repo KevinChen222/Bettbox --target <本次绿色构建的完整提交SHA> --title "Bettbox Smart <版本>" --notes-file readme/Smart-Release-Notes.md --draft
-gh release view <标签> --repo KevinChen222/Bettbox --json tagName,targetCommitish,assets,isDraft,url
+gh release create <标签> <windows.zip> <android-arm64.apk> <android-universal.apk> <SHA256SUMS.txt> <build-info.json> --repo KevinChen222/Bettbox --target <本次绿色构建的完整提交SHA> --title "Bettbox Smart <版本> · <台北日期.序号> · test" --notes-file readme/Smart-Release-Notes.md --draft --prerelease --latest=false
+gh release view <标签> --repo KevinChen222/Bettbox --json tagName,targetCommitish,assets,isDraft,isPrerelease,url
 ```
 
 检查草稿目标、文件数量、文件名和来源记录正确后：
 
 ```sh
-gh release edit <标签> --repo KevinChen222/Bettbox --draft=false
+gh release edit <标签> --repo KevinChen222/Bettbox --draft=false --prerelease=true --latest=false
+gh release view <标签> --repo KevinChen222/Bettbox --json tagName,isDraft,isPrerelease,assets,url
+# 确认新 test 已公开、预发布标记和资产正确后，若上一版是 test：
+gh release edit <上一版标签> --repo KevinChen222/Bettbox --prerelease=false --title "<上一版原标题，仅去掉末尾的 · test>" --latest=true
+gh release view <上一版标签> --repo KevinChen222/Bettbox --json tagName,isDraft,isPrerelease,name,assets,url
 ```
 
-只发布到个人 fork。若失败就保留草稿，修复资产或说明后继续；不制造重复发布。发布后再次核实公开状态和资产。最终回复提供 Release、分支、Actions、维护说明及本操作手册链接，简述两上游更新范围、测试、真机验证限制。
+转正只改 GitHub Release 的预发布标记、标题和 Latest 元数据，不重新构建、不替换资产、不移动/重命名标签、不修改安装包内的 APP_ENV、签名或版本号。App 默认的正式版更新渠道仍按 GitHub 最新正式版处理；新 test 从 Releases 页面手动下载，不把它冒充正式版自动推送。
+
+只发布到个人 fork。若失败就保留草稿，修复资产或说明后继续；不制造重复发布。发布后再次核实公开状态和资产，以及新版本为 test、上一版已按规则转正。`build-info.json` 中记录发布时为 test 与上一版标签，作为历史记录，不能因日后转正而重写旧资产。最终回复提供 test Release、上一版转正结果、分支、Actions、维护说明及本操作手册链接，简述两上游更新范围、测试、真机验证限制。
 
 ## 成功标准
 
-两个上游都已核查；代码与来源 JSON 一致；Bettbox 原内核目录未混入 Smart；个人自用声明保留；工作区无临时试验；本次提交的 Windows/Android 构建都成功；个人 fork 的 Release 有正确二进制、校验和及来源信息。账号失效或构建确实受阻时明确说明已完成内容和阻塞原因，保留可继续的状态，不能假称发布成功。
+两个上游都已核查（单独发布已完成的客户端功能时如实说明本次沿用原内核基线，不冒称已更新上游）；代码与来源 JSON 一致；Bettbox 原内核目录未混入 Smart；个人自用声明保留；工作区无临时试验；本次提交的 Windows/Android 构建都成功；个人 fork 的新 Release 为 test，有正确二进制、校验和及来源信息，紧邻上一版按上述规则转正。账号失效或构建确实受阻时明确说明已完成内容和阻塞原因，保留可继续的状态，不能假称发布成功。

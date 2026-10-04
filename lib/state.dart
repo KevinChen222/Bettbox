@@ -8,6 +8,7 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:bett_box/clash/clash.dart';
 import 'package:bett_box/common/theme.dart';
 import 'package:bett_box/enum/enum.dart';
+import 'package:bett_box/features/chains/integration.dart';
 import 'package:bett_box/l10n/l10n.dart';
 import 'package:bett_box/plugins/app.dart';
 import 'package:bett_box/plugins/service.dart';
@@ -673,6 +674,7 @@ class GlobalState {
   Future<Map<String, dynamic>> patchRawConfig({
     required ClashConfig patchConfig,
     Profile? profile,
+    bool includeProxyChains = true,
   }) async {
     final targetProfile = profile ?? config.currentProfile;
     if (targetProfile == null) {
@@ -1121,7 +1123,9 @@ class GlobalState {
 
     rawConfig.remove('rule');
     rawConfig['rules'] = rules;
-    return rawConfig;
+    return includeProxyChains
+        ? await applyProxyChains(targetProfile.id, rawConfig)
+        : rawConfig;
   }
 
   Future<Map<String, dynamic>> getProfileConfig(String profileId) async {

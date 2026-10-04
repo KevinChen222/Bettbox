@@ -34,9 +34,13 @@ LightGBM 使用纯 Go 推理，不需要额外的原生 DLL/SO。启用 `useligh
 
 ## 构建与下载
 
+本 fork 还提供独立的 **工具 → 代理链路** 功能，可组合节点、策略组和 HTTP/SOCKS5 端点，预览多跳路径、绑定已有策略组，以及创建本地配置。使用方法与后续上游合并注意事项见 [代理链路说明](Proxy-Chains.md)。
+
 `Build Smart` 工作流在 `feat/smart-core` 推送时运行，也支持 Actions 手动运行。产物在该次运行的 Artifacts 中：Windows x64 便携包（包含界面、内核和 HelperService）、Android arm64-v8a 单架构 APK，以及包含 arm64-v8a、armeabi-v7a、x86_64 内核的 Android 通用 APK。支持 arm64-v8a 的设备可下载体积更小的单架构包；两种 APK 使用相同版本和持久签名。Windows 内核使用兼容的 AMD64 v1 指令集；ARMv7 使用 `with_low_memory`。安卓 64 位库保留 16 KB 页对齐。
 
 Fork 构建不使用上游 SignPath 证书。安卓通过 fork Secrets 中的持久自用 keystore 签名；缺少 Secrets 时退回构建环境 debug 签名，不能用此签名覆盖官方版本。更新检查指向 `KevinChen222/Bettbox`。
+
+每次新 Release 先标为 **test / Pre-release**；下一版成功公开发布后，上一版去掉 test 并转为正式版。标签和安装包保持不变，只修改 Release 元数据。测试版从 Releases 页面手动下载。
 
 本机构建需要 Flutter 3.44.9、Go 1.25+、Rust；Windows 还需 Visual Studio C++ 工具链，Android 需 JDK 17 和 NDK 28.2.13676358。
 

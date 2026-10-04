@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/MasterAlanLab/avalon",
+  "revision": "ea4d8ffc4842535f84e8def918fbf71d3e6b5609",
+  "sourceFile": "lib/features/chains/chains.dart",
+  "localFile": "lib/features/chains/compiler.dart",
+  "license": "AGPL-3.0-only",
+  "adaptations": [
+    "Retain the standalone DialerChainCompiler and its copy/name helpers only",
+    "Remove Avalon database, node-library and EffectiveConfigAssembler dependencies",
+    "Use __bettbox_chain as the generated proxy prefix",
+    "Include the missing node/provider reference in compile diagnostics"
+  ]
+}

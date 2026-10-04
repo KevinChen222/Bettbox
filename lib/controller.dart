@@ -6,6 +6,8 @@ import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:bett_box/clash/clash.dart';
 import 'package:bett_box/enum/enum.dart';
+import 'package:bett_box/features/chains/integration.dart';
+import 'package:bett_box/features/chains/store.dart';
 import 'package:bett_box/helper/helper.dart';
 
 import 'package:bett_box/plugins/app.dart';
@@ -1096,6 +1098,7 @@ class AppController {
 
   Future handleClear() async {
     await preferences.clearPreferences();
+    await (await getChainStore()).restore(ChainStore.encode([]), replace: true);
     commonPrint.log('clear preferences');
     globalState.config = Config(
       themeProps: defaultThemeProps,
@@ -1886,6 +1889,11 @@ class AppController {
       await encoder.addFile(tempConfigFile, 'config.json');
       await tempConfigFile.delete();
 
+      final chainFile = File(join(homeDirPath, chainLibraryFileName));
+      if (await chainFile.exists()) {
+        await encoder.addFile(chainFile, chainLibraryFileName);
+      }
+
       // Add profiles dir (valid subscriptions only)
       final profilesDir = Directory(profilesPath);
       if (await profilesDir.exists()) {
@@ -2082,6 +2090,13 @@ class AppController {
       );
     }
 
+    final chainFile = configs
+        .where((item) => item.name == chainLibraryFileName)
+        .firstOrNull;
+    final chainContent = chainFile == null
+        ? ChainStore.encode([])
+        : utf8.decode(chainFile.content);
+    ChainStore.decode(chainContent);
     final recoveryStrategy = _ref.read(
       appSettingProvider.select((state) => state.recoveryStrategy),
     );
@@ -2090,6 +2105,11 @@ class AppController {
     }
 
     await restoreBackupFiles(profiles, homeDirPath);
+
+    await (await getChainStore()).restore(
+      chainContent,
+      replace: recoveryStrategy == RecoveryStrategy.override,
+    );
 
     _recovery(tempConfig, recoveryOption);
     await savePreferences();

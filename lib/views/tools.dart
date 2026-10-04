@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
+import 'package:bett_box/features/chains/view.dart';
 import 'package:bett_box/l10n/l10n.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:bett_box/providers/providers.dart';
@@ -217,6 +218,17 @@ class _ToolViewState extends ConsumerState<ToolsView> {
     }
 
     items.addAll([
+      _SearchItem(
+        title: proxyChainsTitle(context),
+        subtitle: proxyChainsDescription(context),
+        category: settingsCategory,
+        leading: const Icon(Icons.route_outlined),
+        onTap: (context, _) => _pushPage(
+          context,
+          proxyChainsTitle(context),
+          const ProxyChainsView(),
+        ),
+      ),
       _SearchItem(
         title: appLocalizations.language,
         subtitle: appLocalizations.language,
@@ -1396,6 +1408,7 @@ class _ToolViewState extends ConsumerState<ToolsView> {
         context,
         title: appLocalizations.settings,
         items: [
+          const ProxyChainsItem(),
           _LocaleItem(),
           _ThemeItem(),
           _BackupItem(),
