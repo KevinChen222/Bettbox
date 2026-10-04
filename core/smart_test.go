@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/metacubex/mihomo/adapter"
 	"github.com/metacubex/mihomo/adapter/outboundgroup"
 	"github.com/metacubex/mihomo/component/profile/cachefile"
 	"github.com/metacubex/mihomo/component/smart"
@@ -53,6 +56,26 @@ rules:
 	if err := group.Set("missing"); err == nil {
 		t.Fatal("invalid proxy selection was accepted")
 	}
+	// A Smart card in another group probes its selected route once; it must not
+	// health-check every member or clear the manually fixed selection.
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		time.Sleep(10 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	previousHook := adapter.UrlTestHook
+	adapter.UrlTestHook = nil
+	t.Cleanup(func() { adapter.UrlTestHook = previousHook })
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if delay, err := cfg.Proxies["Smart"].URLTest(ctx, server.URL, nil); err != nil || delay == 0 {
+		t.Fatalf("single Smart route probe failed: delay=%d, err=%v", delay, err)
+	}
+	if requests.Load() != 1 || group.Now() != "DIRECT" {
+		t.Fatalf("route probe changed selection or sent extra probes: count=%d, now=%q", requests.Load(), group.Now())
+	}
 	// Bettbox clears computed selections through SelectAble.ForceSet.
 	var selectable outboundgroup.SelectAble = group
 	selectable.ForceSet("")
@@ -69,6 +92,25 @@ rules:
 	}
 	if len(result["all"].([]any)) != 2 {
 		t.Fatalf("Smart members missing from client JSON: %s", data)
+	}
+}
+
+func TestMissingDelayTargetKeepsRequestURL(t *testing.T) {
+	params := TestDelayParams{ProxyName: "missing-smart-target", TestUrl: "https://example.com/generate_204", Timeout: 1000}
+	data, _ := json.Marshal(params)
+	response := make(chan string, 1)
+	handleAsyncTestDelay(string(data), func(value string) { response <- value })
+	select {
+	case value := <-response:
+		var delay Delay
+		if err := json.Unmarshal([]byte(value), &delay); err != nil {
+			t.Fatal(err)
+		}
+		if delay.Url != params.TestUrl || delay.Name != params.ProxyName || delay.Value != -1 {
+			t.Fatalf("failure cannot clear the requested card's spinner: %+v", delay)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("missing target did not return")
 	}
 }
 

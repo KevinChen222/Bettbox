@@ -71,7 +71,7 @@ jobs:
           flutter pub get
           dart run build_runner build -d
       - name: Test Smart client models
-        run: flutter test test/smart_group_test.dart
+        run: flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart
       - name: Prepare Smart kernel
         run: dart tool/prepare_smart_core.dart
       - name: Test Go bridge

@@ -570,7 +570,7 @@ int getProxiesColumns(Ref ref) {
   return utils.getProxiesColumns(viewWidth, proxiesLayout);
 }
 
-ProxyCardState _getProxyCardState(
+ProxyCardState resolveProxyCardState(
   List<Group> groups,
   SelectedMap selectedMap,
   ProxyCardState proxyDelayState,
@@ -596,7 +596,7 @@ ProxyCardState _getProxyCardState(
         now != null &&
         now.isNotEmpty &&
         now != proxyDelayState.proxyName) {
-      return _getProxyCardState(
+      return resolveProxyCardState(
         groups,
         selectedMap,
         proxyDelayState.copyWith(proxyName: now),
@@ -608,10 +608,15 @@ ProxyCardState _getProxyCardState(
   final currentSelectedName = group.getCurrentSelectedName(
     selectedMap[proxyDelayState.proxyName] ?? '',
   );
+  // Smart auto mode has a virtual "now", rather than a globally selected node.
+  if (group.type == GroupType.Smart &&
+      !group.all.any((proxy) => proxy.name == currentSelectedName)) {
+    return proxyDelayState.copyWith(testUrl: group.testUrl);
+  }
   if (currentSelectedName.isEmpty) {
     return proxyDelayState;
   }
-  return _getProxyCardState(
+  return resolveProxyCardState(
     groups,
     selectedMap,
     proxyDelayState.copyWith(
@@ -625,7 +630,7 @@ ProxyCardState _getProxyCardState(
 ProxyCardState getProxyCardState(Ref ref, String proxyName) {
   final groups = ref.watch(groupsProvider);
   final selectedMap = ref.watch(selectedMapProvider);
-  return _getProxyCardState(
+  return resolveProxyCardState(
     groups,
     selectedMap,
     ProxyCardState(proxyName: proxyName),

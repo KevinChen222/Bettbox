@@ -26,6 +26,8 @@ rules:
 
 Smart 按目标和连接表现选择节点。点击组内节点可固定选择，再点击已固定的节点可恢复自动选择。自动状态下没有唯一的全局选中节点。
 
+Smart 组自己的测速按钮会测试全部可测速成员，解除手动固定并恢复自动选路；搜索筛选不影响测速范围。其他组中的 Smart 卡片只测速一次：固定模式测试固定节点，自动模式由 Smart 为测速地址选路，不触发整组测速或解除固定选择。
+
 LightGBM 使用纯 Go 推理，不需要额外的原生 DLL/SO。启用 `uselightgbm` 后，内核会从上游模型发布下载 `Model.bin` 到应用内核数据目录；首次使用需能访问 GitHub。可以设置 `lgbm-url` 指定模型地址。设为 `uselightgbm: false` 时仍可使用 Smart 的统计选路。数据收集默认关闭。
 
 资源页面提供 **LightGBM → 同步** 按钮，可首次下载或更新小模型，也参与「同步全部」。默认地址为 `https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model.bin`，内核保存路径为 `HomeDir/Model.bin`（Windows 为应用数据目录，安卓为应用私有数据目录），成功校验后替换文件并重新加载，无需重启。若配置指定了 `lgbm-url`，内核更新器遵守该覆盖地址。更新失败会提示错误并保留旧模型。
@@ -43,7 +45,7 @@ Fork 构建不使用上游 SignPath 证书。安卓通过 fork Secrets 中的持
 ```sh
 flutter pub get
 dart run build_runner build -d
-flutter test test/smart_group_test.dart
+flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart
 dart tool/prepare_smart_core.dart
 # cd core 后可运行 go test -tags=with_gvisor ./...
 # Windows，包含 HelperService
@@ -70,7 +72,7 @@ git merge upstream/main
 flutter pub get
 dart run build_runner build -d
 dart tool/prepare_smart_core.dart
-flutter test test/smart_group_test.dart
+flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart
 # 在 core 目录运行 go test -tags=with_gvisor ./...
 git push origin feat/smart-core
 ```

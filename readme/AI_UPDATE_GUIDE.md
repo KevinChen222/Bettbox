@@ -27,7 +27,7 @@
 - App 更新检查指向个人 fork，`compareVersions` 识别 `smart-v<App版本>-<日期>.<序号>`。它比较 App 版本，同一 App 版本内的 Smart 内核更新由本文的双上游检查负责；不要误认为 App 无更新提示就表示内核已最新。
 - 资源页面提供 LightGBM 同步按钮。桥接复用 `updateGeoData` 的 `LightGBM` 类型，调用原生模型更新器，校验后写 `HomeDir/Model.bin` 并重新加载。默认来源如上；配置的 `lgbm-url` 可覆盖。
 - `core/common.go` 保留 Smart 使用的 GeoIP/ASN 数据，不能让原内存清理卸载它们。
-- `core/smart_test.go` 验证组、选择、Geo 数据和模型更新；`test/smart_group_test.dart` 验证客户端模型。
+- `core/smart_test.go` 验证组、选择、Geo 数据、模型更新和单次 Smart 延迟请求；`test/smart_group_test.dart` 验证客户端模型及虚拟节点解析，`test/views/proxies/smart_delay_test.dart` 验证整组测速、嵌套卡片单次测速和失败状态清理。保留 Smart 组自身测速全部成员并恢复自动选路、其他组中 Smart 卡片单次测速且不清除固定选择的区别。
 - `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包、Android arm64-v8a 单架构 APK及三 ABI 通用 APK。工作流显示名 `Build Smart`。完整历史用于三方合并。单架构包使用 `--split-per-abi --target-platform android-arm64`，不能仅改名或删除已签名 APK 中的文件。
 - `.test/` 与生成目录都不能提交；密钥与密码不能进入 Git、文档、日志、构建 Artifact 或 Release。
 
@@ -112,7 +112,7 @@ dart tool/prepare_smart_core.dart --refresh-patch
 flutter pub get
 dart run build_runner build -d
 dart tool/prepare_smart_core.dart
-flutter test test/smart_group_test.dart
+flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart
 dart analyze tool/prepare_smart_core.dart tool/update_smart_core.dart lib/views/resources.dart lib/clash/interface.dart
 # 在 core 中：Windows 关闭 CGO，与实际 exe 构建一致
 go test -tags=with_gvisor ./...
@@ -122,11 +122,11 @@ go test -tags=with_gvisor ./adapter/outboundgroup ./component/smart/... ./tunnel
 
 代码生成可能带来许多无关格式差异。只保留所需模型变更，确保 JSON 枚举有 `GroupType.Smart: 'Smart'`；不要漏掉生成模型，也不要把整个项目顺便重排。
 
-不能因本机缺少 VS/Rust 而声称已验证完整 App；可用 GitHub 完整构建做验证。Android arm64/x86_64 要检查 `.so` 的 ELF LOAD 页对齐至少 16 KB（`0x4000`），ARMv7 保留 `with_low_memory`。构建通过仍不等于真机 TUN/VPN/后台表现已验证，发布说明须准确列出验证范围。
+不能因本机缺少 VS/Rust 而声称已验证完整 App；可用 GitHub 完整构建做验证。Android arm64/x86_64 要检查 `.so` 的 ELF LOAD 页对齐至少 16 KB（`0x4000`），ARMv7 保留 `with_low_memory`。构建通过仍不等于真机 TUN/VPN/后台表现已验证，最终回复须准确说明验证范围。
 
 ## 4. 提交、构建与失败处理
 
-先更新 `readme/Smart-Release-Notes.md`：Bettbox 旧→新 SHA、Smart 旧→新 SHA、实际变更、模型相关变更、工具链升级、测试和已知限制。无新代码时不要造空提交或新 Release；若仅模型更新，它由 App 按钮/自动更新获取，通常无需重新发布 App。
+先更新 `readme/Smart-Release-Notes.md`，只说明本次实际更新内容，包括客户端/内核功能、修复、模型、工具链或打包变化。用户要求 Release 说明不列测试通过、测试清单或验证过程；验证记录放 Actions、构建来源 JSON 或维护文档，来源 SHA 保存在来源 JSON 和构建来源 JSON。无新代码时不要造空提交或新 Release；若仅模型更新，它由 App 按钮/自动更新获取，通常无需重新发布 App。
 
 ```sh
 git diff --check

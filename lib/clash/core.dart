@@ -16,7 +16,11 @@ class ClashCore {
   static ClashCore? _instance;
   late ClashHandlerInterface clashInterface;
 
-  ClashCore._internal() {
+  ClashCore._internal([ClashHandlerInterface? handler]) {
+    if (handler != null) {
+      clashInterface = handler;
+      return;
+    }
     if (system.isAndroid) {
       clashInterface = clashLib!;
     } else {
@@ -24,8 +28,8 @@ class ClashCore {
     }
   }
 
-  factory ClashCore() {
-    _instance ??= ClashCore._internal();
+  factory ClashCore({ClashHandlerInterface? handler}) {
+    _instance ??= ClashCore._internal(handler);
     return _instance!;
   }
 

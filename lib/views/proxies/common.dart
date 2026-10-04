@@ -107,9 +107,14 @@ Future<Delay> _testProxyDelay(DelayTestTarget target) {
   return _delayTestRequestPool.run(target, () async {
     final appController = globalState.appController;
     appController.setDelay(Delay(url: target.url, name: target.name, value: 0));
-    final delay = await clashCore.getDelay(target.url, target.name);
-    appController.setDelay(delay);
-    return delay;
+    try {
+      final delay = await clashCore.getDelay(target.url, target.name);
+      appController.setDelay(delay);
+      return delay;
+    } catch (_) {
+      appController.setDelay(Delay(url: target.url, name: target.name, value: -1));
+      rethrow;
+    }
   });
 }
 
@@ -146,8 +151,19 @@ Future<void> delayTest(
 }) async {
   Future<void> runTest() async {
     final appController = globalState.appController;
+    final group = appController.getCurrentGroups().getGroup(groupName ?? '');
+    final isSmartGroupTest = group?.type == GroupType.Smart;
+    if (isSmartGroupTest) {
+      final error = await clashCore.changeProxy(
+        ChangeProxyParams(groupName: group!.name, proxyName: ''),
+      );
+      if (error.isNotEmpty) throw StateError(error);
+      appController.updateCurrentSelectedMap(group.name, '');
+      await appController.updateGroups();
+    }
+    final testProxies = isSmartGroupTest ? group!.all : proxies;
     final targets = <DelayTestTarget>{};
-    for (final proxy in proxies) {
+    for (final proxy in testProxies) {
       if (_isNonTestableProxy(proxy)) {
         continue;
       }
