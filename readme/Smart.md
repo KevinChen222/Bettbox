@@ -1,0 +1,83 @@
+# Bettbox Smart 内核分支
+
+本分支为 Windows 和 Android 集成 [vernesong/mihomo 的 Smart 策略组](https://github.com/vernesong/mihomo/tree/Alpha)。合入 Smart `baef5ee5ac6b4ab84349f9a5251df0fb264c999a` 相对官方基线 `88dcbf7f1614a67c3b36b848ee3592dfa92ada36` 的 Go 代码差异，保留 Bettbox 的平台补丁。Smart 差异保存在 `core/smart.patch`，构建时生成 `core/.smart-mihomo`；原始 `core/Clash.Meta` 与 Bettbox 上游保持一致，不会在构建时自动切换到最新 Alpha。
+
+## 使用
+
+在配置编辑器中添加 Smart 策略组，或导入含 `type: smart` 的订阅配置。不会自动改变现有 select/url-test/fallback/load-balance 组。
+
+```yaml
+lgbm-auto-update: true
+lgbm-update-interval: 72
+proxy-groups:
+  - name: Smart
+    type: smart
+    proxies: [节点 A, 节点 B] # 替换为配置中的实际节点，也可以使用 use 引用 provider
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+    lazy: true
+    tolerance: 50
+    uselightgbm: true
+    collectdata: false
+    prefer-asn: true
+rules:
+  - MATCH,Smart
+```
+
+Smart 按目标和连接表现选择节点。点击组内节点可固定选择，再点击已固定的节点可恢复自动选择。自动状态下没有唯一的全局选中节点。
+
+LightGBM 使用纯 Go 推理，不需要额外的原生 DLL/SO。启用 `uselightgbm` 后，内核会从上游模型发布下载 `Model.bin` 到应用内核数据目录；首次使用需能访问 GitHub。可以设置 `lgbm-url` 指定模型地址。设为 `uselightgbm: false` 时仍可使用 Smart 的统计选路。数据收集默认关闭。
+
+资源页面提供 **LightGBM → 同步** 按钮，可首次下载或更新小模型，也参与「同步全部」。默认地址为 `https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model.bin`，内核保存路径为 `HomeDir/Model.bin`（Windows 为应用数据目录，安卓为应用私有数据目录），成功校验后替换文件并重新加载，无需重启。若配置指定了 `lgbm-url`，内核更新器遵守该覆盖地址。更新失败会提示错误并保留旧模型。
+
+## 构建与下载
+
+`Build Smart` 工作流在 `feat/smart-core` 推送时运行，也支持 Actions 手动运行。产物在该次运行的 Artifacts 中：Windows x64 便携包（包含界面、内核和 HelperService），以及包含 arm64-v8a、armeabi-v7a、x86_64 内核的 Android APK。Windows 内核使用兼容的 AMD64 v1 指令集；ARMv7 使用 `with_low_memory`。安卓 64 位库保留 16 KB 页对齐。
+
+Fork 构建不使用上游 SignPath 证书，安卓默认使用构建环境的 debug 密钥签名。要持续覆盖安装安卓版本，应配置自己的持久 keystore（见 `android/app/build.gradle.kts`），不能用此签名覆盖官方版本。更新检查指向 `KevinChen222/Bettbox`。
+
+本机构建需要 Flutter 3.44.9、Go 1.25+、Rust；Windows 还需 Visual Studio C++ 工具链，Android 需 JDK 17 和 NDK 28.2.13676358。
+
+```sh
+flutter pub get
+dart run build_runner build -d
+flutter test test/smart_group_test.dart
+dart tool/prepare_smart_core.dart
+# cd core 后可运行 go test -tags=with_gvisor ./...
+# Windows，包含 HelperService
+dart setup.dart windows --arch amd64 --out core --compatible
+# 将生成的内核/HelperService随 flutter build windows 产物一起打包
+# Android，生成所有 ABI 的共享内核
+dart setup.dart android --arch universal --out core
+flutter build apk --release --target-platform android-arm,android-arm64,android-x64
+```
+
+Go 桥接测试位于 `core/smart_test.go`，验证 Smart 配置、选择/恢复自动状态、客户端 JSON、GeoIP/ASN 数据保留，以及模型更新成功时即时加载、失败时保留旧文件。生成的内核保留 Smart 上游的策略组及 TCP 统计测试。
+
+## 合并后续 Bettbox 更新
+
+克隆完整 Git 历史；三方补丁合并需要原始基线文件对象。`setup.dart` 每次构建都会从当前 Bettbox 内核重新生成 Smart 内核，忽略目录中旧的生成结果。
+
+```sh
+git remote add upstream https://github.com/appshubcc/Bettbox.git # 已存在则跳过
+git fetch upstream
+git switch feat/smart-core
+git merge upstream/main
+flutter pub get
+dart run build_runner build -d
+dart tool/prepare_smart_core.dart
+flutter test test/smart_group_test.dart
+# 在 core 目录运行 go test -tags=with_gvisor ./...
+git push origin feat/smart-core
+```
+
+通常先按正常 Git 合并处理少量客户端/构建脚本改动，再执行构建即可。内核生成器使用 `git apply --3way` 合入独立补丁：不重叠的上游改动会自动保留。如果 Bettbox 修改了 Smart 涉及的同一段内核代码，构建会失败并打印冲突文件，不能保证所有更新零冲突。
+
+此时打开 `core/.smart-mihomo` 中报告的文件，处理 `<<<<<<<` 等冲突标记并保留两侧需要的逻辑，然后运行：
+
+```sh
+dart tool/prepare_smart_core.dart --refresh-patch
+dart tool/prepare_smart_core.dart
+```
+
+`--refresh-patch` 把已处理的结果保存到 `core/smart.patch`，拒绝保留冲突标记或生成空补丁。重新运行测试并提交此补丁。不要把生成目录提交，也不要在保存补丁前重新构建（生成目录会被覆盖）。本流程不需要重新下载或重新集成 Smart，也不自动升级 Smart 源码；升级 Smart 时单独维护补丁并更新来源提交。

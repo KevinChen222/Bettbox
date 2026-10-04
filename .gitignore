@@ -67,6 +67,7 @@ app.*.map.json
 
 #libclash
 /libclash/
+/core/.smart-mihomo/
 
 #jniLibs
 /android/app/src/main/jniLibs/

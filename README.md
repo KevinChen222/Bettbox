@@ -108,6 +108,10 @@ Bettbox意为: Better Experience, Out of the box - 更好的体验，亦开箱�
 
 ---
 
+## Smart 内核版本
+
+`feat/smart-core` 分支已集成 vernesong/mihomo Smart 策略组，支持 Windows 和 Android。配置方法、内核来源和构建产物见 [Smart 使用说明](readme/Smart.md)。
+
 ##  开发构建及UI适配
 
 以 Windows 平台构建为例：

@@ -1,0 +1,117 @@
+name: Build Smart
+
+on:
+  push:
+    branches: [feat/smart-core]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smart-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SENTRY_BACKEND: none
+  GRADLE_OPTS: -Dorg.gradle.vfs.watch=false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-2022
+          - platform: android
+            os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: |
+            core/go.sum
+            core/Clash.Meta/go.sum
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'android' && 'aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android' || 'x86_64-pc-windows-msvc' }}
+      - uses: actions/setup-java@v5
+        if: matrix.platform == 'android'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Configure Android toolchains
+        if: matrix.platform == 'android'
+        shell: bash
+        run: |
+          "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" "cmake;3.22.1"
+          echo "ANDROID_NDK=${ANDROID_SDK_ROOT}/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          mkdir -p ~/.cargo
+          cat > ~/.cargo/config.toml <<EOF
+          [target.aarch64-linux-android]
+          linker = "${ANDROID_SDK_ROOT}/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+          [target.armv7-linux-androideabi]
+          linker = "${ANDROID_SDK_ROOT}/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi26-clang"
+          [target.x86_64-linux-android]
+          linker = "${ANDROID_SDK_ROOT}/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"
+          EOF
+      - name: Flutter dependencies and generated models
+        run: |
+          flutter pub get
+          dart run build_runner build -d
+      - name: Test Smart client models
+        run: flutter test test/smart_group_test.dart
+      - name: Prepare Smart kernel
+        run: dart tool/prepare_smart_core.dart
+      - name: Test Go bridge
+        working-directory: core
+        env:
+          CGO_ENABLED: '0'
+        run: go test -tags=with_gvisor ./...
+      - name: Test Smart kernel integration
+        working-directory: core/.smart-mihomo
+        env:
+          CGO_ENABLED: '0'
+        run: go test -tags=with_gvisor ./adapter/outboundgroup ./component/smart/... ./tunnel/statistic ./listener/sing_tun
+      - name: Build Windows core and helper
+        if: matrix.platform == 'windows'
+        run: dart setup.dart windows --arch amd64 --out core --compatible
+      - name: Build Windows client
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $coreHash = (Get-FileHash libclash/windows/BettboxCore.exe -Algorithm SHA256).Hash.ToLower()
+          flutter build windows --release --dart-define=CORE_SHA256=$coreHash --dart-define=APP_ENV=pre
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Bettbox-smart-windows-x64.zip
+      - name: Build Android core and APK
+        if: matrix.platform == 'android'
+        run: |
+          dart setup.dart android --arch universal --out core
+          flutter build apk --release --target-platform android-arm,android-arm64,android-x64 --dart-define=APP_ENV=pre
+          cp build/app/outputs/flutter-apk/app-release.apk Bettbox-smart-android-universal.apk
+      - name: Upload Windows package
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bettbox-smart-windows-x64
+          path: Bettbox-smart-windows-x64.zip
+          if-no-files-found: error
+      - name: Upload Android package
+        if: matrix.platform == 'android'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bettbox-smart-android-universal
+          path: Bettbox-smart-android-universal.apk
+          if-no-files-found: error

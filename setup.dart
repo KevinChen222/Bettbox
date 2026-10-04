@@ -184,6 +184,11 @@ class Build {
   }) async {
     final isLib = mode == Mode.lib;
 
+    await exec(
+      ['dart', 'tool/prepare_smart_core.dart'],
+      name: 'prepare Smart kernel',
+    );
+
     final items = buildItems.where((element) {
       return element.target == target &&
           (arch == null ? true : element.arch == arch);

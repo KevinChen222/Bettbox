@@ -332,7 +332,8 @@ abstract class ClashHandlerInterface with ClashInterface {
     return invoke<String>(
       method: ActionMethod.updateGeoData,
       data: json.encode(params),
-      timeout: Duration(minutes: 1),
+      timeout: Duration(minutes: params.geoType == 'LightGBM' ? 2 : 1),
+      onTimeout: () => throw TimeoutException('Resource update timeout'),
     );
   }
 

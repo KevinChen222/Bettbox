@@ -34,6 +34,7 @@ class ResourcesView extends ConsumerWidget {
     GeoItem(label: 'MMDB', fileName: mmdbFileName, key: 'mmdb'),
     GeoItem(label: 'ASN', fileName: asnFileName, key: 'asn'),
     GeoItem(label: 'MRS', fileName: bundleMRSFileName, key: 'mrs'),
+    GeoItem(label: 'LightGBM', fileName: 'Model.bin', key: 'lgbm'),
   ];
 
   Future<void> _handleSyncAll(WidgetRef ref) async {
@@ -221,11 +222,14 @@ class _GeoDataListItemState extends ConsumerState<GeoDataListItem> {
       },
     );
 
-    final url = ref.watch(
-      patchClashConfigProvider.select(
-        (state) => state.geoXUrl.toJson()[geoItem.key],
-      ),
-    );
+    final isLightGBM = geoItem.key == 'lgbm';
+    final url = isLightGBM
+        ? 'https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model.bin'
+        : ref.watch(
+            patchClashConfigProvider.select(
+              (state) => state.geoXUrl.toJson()[geoItem.key],
+            ),
+          );
     final isSyncing = ref.watch(
       geoUpdatingKeysProvider.select((s) => s.contains(geoItem.key)),
     );
@@ -271,11 +275,12 @@ class _GeoDataListItemState extends ConsumerState<GeoDataListItem> {
                     spacing: 12,
                     runAlignment: WrapAlignment.center,
                     children: [
-                      CommonChip(
-                        avatar: const Icon(Icons.edit),
-                        label: appLocalizations.edit,
-                        onPressed: isSyncing ? null : () => _updateUrl(url),
-                      ),
+                      if (!isLightGBM)
+                        CommonChip(
+                          avatar: const Icon(Icons.edit),
+                          label: appLocalizations.edit,
+                          onPressed: isSyncing ? null : () => _updateUrl(url),
+                        ),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [

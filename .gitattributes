@@ -1,0 +1,2 @@
+# Git patches must retain LF context lines on Windows as well as Linux.
+core/smart.patch text eol=lf -whitespace

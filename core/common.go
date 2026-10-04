@@ -320,6 +320,14 @@ func checkActiveGeoUsage() (hasMMDB, hasSite, hasASN bool) {
 	}
 
 	if currentRawConfig != nil {
+		// Smart's exit and target lookups use GeoIP/ASN even without GEO rules.
+		for _, group := range currentRawConfig.ProxyGroup {
+			if group["type"] == "smart" {
+				hasMMDB = true
+				hasASN = true
+				break
+			}
+		}
 		if !hasSite && currentRawConfig.DNS.Enable && currentRawConfig.DNS.NameServerPolicy != nil {
 			for pair := currentRawConfig.DNS.NameServerPolicy.Oldest(); pair != nil; pair = pair.Next() {
 				if strings.HasPrefix(strings.ToLower(pair.Key), "geosite:") {

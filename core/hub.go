@@ -391,6 +391,11 @@ func handleUpdateGeoData(geoType string, geoName string, fn func(value string)) 
 	go func() {
 		path := constant.Path.Resolve(geoName)
 		switch geoType {
+		case "LightGBM":
+			if err := updater.UpdateLgbmModelDatabase(); err != nil {
+				fn(err.Error())
+				return
+			}
 		case "MMDB":
 			err := updater.UpdateMMDBWithPath(path)
 			if err != nil {
@@ -930,4 +935,3 @@ func handleClearRequests() bool {
 	requestHistory = nil
 	return true
 }
-
