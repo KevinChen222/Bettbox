@@ -19,7 +19,7 @@
 Bettbox意为: Better Experience, Out of the box - 更好的体验，亦开箱可用
 
 
-[![Latest Release](https://img.shields.io/github/v/release/appshubcc/Bettbox?style=for-the-badge&logo=github&color=238636&label=Release)](https://github.com/appshubcc/Bettbox/releases/latest) [![Core](https://img.shields.io/github/v/release/MetaCubeX/mihomo?style=for-the-badge&logo=go&logoColor=white&color=8A2BE2&label=Mihomo)](https://github.com/MetaCubeX/mihomo/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/KevinChen222/Bettbox?style=for-the-badge&logo=github&color=238636&label=Smart)](https://github.com/KevinChen222/Bettbox/releases/latest) [![Core](https://img.shields.io/badge/Core-Mihomo%20Smart-8A2BE2?style=for-the-badge&logo=go&logoColor=white)](https://github.com/vernesong/mihomo/tree/Alpha)
 
 <p align="center">
   <img src="snapshots/home.png" alt="Bettbox" />
@@ -70,7 +70,7 @@ Bettbox意为: Better Experience, Out of the box - 更好的体验，亦开箱�
 ---
 ## 🛠️ 安装与下载
 
-请前往 **[[Releases]](https://github.com/appshubcc/Bettbox/releases)** 页面下载最新适合您平台和系统的安装包
+本 Smart 自用分支的 Windows x64 便携包和 Android 通用 APK 位于 **[[个人 fork Releases]](https://github.com/KevinChen222/Bettbox/releases)**。以下其他平台及安装方式沿用上游介绍，不表示本分支提供对应的 Smart 产物。
 
 
 * **全平台桌面端**: 
