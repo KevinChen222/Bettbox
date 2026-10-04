@@ -1,5 +1,6 @@
 // ignore_for_file: avoid_print
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -14,6 +15,8 @@ Future<ProcessResult> git(
     ['-c', 'safe.directory=${cwd.replaceAll('\\', '/')}', ...args],
     workingDirectory: cwd,
     environment: environment,
+    stdoutEncoding: utf8,
+    stderrEncoding: utf8,
   );
   if (result.exitCode != 0) {
     throw ProcessException(

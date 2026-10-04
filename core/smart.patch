@@ -3273,17 +3273,17 @@ index 0000000000000000000000000000000000000000..568850523fc1517c6741227b84f8c326
 +	Headers         http.Header
 +}
 +
-+// Only fingerprints that are reasonably current (鈮? years old) are included.
++// Only fingerprints that are reasonably current (≤2 years old) are included.
 +// Older fingerprints (Edge 85, iOS 14, QQ 11.1, 360 7.5) are excluded because
 +// their TLS parameters are themselves a detectable anomaly.
 +//
 +// utls _Auto mapping:
 +//
-+//	chrome  鈫?HelloChrome_Auto  鈫?Chrome  133  (2025, ML-KEM)
-+//	firefox 鈫?HelloFirefox_Auto 鈫?Firefox 120  (2023)
-+//	safari  鈫?HelloSafari_Auto  鈫?Safari  16.0 (2022)
++//	chrome  → HelloChrome_Auto  → Chrome  133  (2025, ML-KEM)
++//	firefox → HelloFirefox_Auto → Firefox 120  (2023)
++//	safari  → HelloSafari_Auto  → Safari  16.0 (2022)
 +var browserPresets = []BrowserPreset{
-+	// 鈹€鈹€ Chrome 133 (Windows, en-US) 鈹€鈹€
++	// ── Chrome 133 (Windows, en-US) ──
 +	{
 +		FingerprintName: "chrome",
 +		Headers: http.Header{
@@ -3303,7 +3303,7 @@ index 0000000000000000000000000000000000000000..568850523fc1517c6741227b84f8c326
 +			"Upgrade-Insecure-Requests": {"1"},
 +		},
 +	},
-+	// 鈹€鈹€ Chrome 133 (Windows, zh-CN) 鈹€鈹€
++	// ── Chrome 133 (Windows, zh-CN) ──
 +	{
 +		FingerprintName: "chrome",
 +		Headers: http.Header{
@@ -3323,7 +3323,7 @@ index 0000000000000000000000000000000000000000..568850523fc1517c6741227b84f8c326
 +			"Upgrade-Insecure-Requests": {"1"},
 +		},
 +	},
-+	// 鈹€鈹€ Chrome 133 (Linux, en-US) 鈹€鈹€
++	// ── Chrome 133 (Linux, en-US) ──
 +	{
 +		FingerprintName: "chrome",
 +		Headers: http.Header{
@@ -3343,7 +3343,7 @@ index 0000000000000000000000000000000000000000..568850523fc1517c6741227b84f8c326
 +			"Upgrade-Insecure-Requests": {"1"},
 +		},
 +	},
-+	// 鈹€鈹€ Chrome 133 (macOS, en-US) 鈹€鈹€
++	// ── Chrome 133 (macOS, en-US) ──
 +	{
 +		FingerprintName: "chrome",
 +		Headers: http.Header{
@@ -3363,7 +3363,7 @@ index 0000000000000000000000000000000000000000..568850523fc1517c6741227b84f8c326
 +			"Upgrade-Insecure-Requests": {"1"},
 +		},
 +	},
-+	// 鈹€鈹€ Chrome 133 (Windows, en-GB) 鈹€鈹€
++	// ── Chrome 133 (Windows, en-GB) ──
 +	{
 +		FingerprintName: "chrome",
 +		Headers: http.Header{
@@ -3383,7 +3383,7 @@ index 0000000000000000000000000000000000000000..568850523fc1517c6741227b84f8c326
 +			"Upgrade-Insecure-Requests": {"1"},
 +		},
 +	},
-+	// 鈹€鈹€ Chrome 133 (Windows, de-DE) 鈹€鈹€
++	// ── Chrome 133 (Windows, de-DE) ──
 +	{
 +		FingerprintName: "chrome",
 +		Headers: http.Header{
@@ -3403,7 +3403,7 @@ index 0000000000000000000000000000000000000000..568850523fc1517c6741227b84f8c326
 +			"Upgrade-Insecure-Requests": {"1"},
 +		},
 +	},
-+	// 鈹€鈹€ Chrome 133 (macOS, zh-CN) 鈹€鈹€
++	// ── Chrome 133 (macOS, zh-CN) ──
 +	{
 +		FingerprintName: "chrome",
 +		Headers: http.Header{
@@ -3423,7 +3423,7 @@ index 0000000000000000000000000000000000000000..568850523fc1517c6741227b84f8c326
 +			"Upgrade-Insecure-Requests": {"1"},
 +		},
 +	},
-+	// 鈹€鈹€ Chrome 133 (Windows, en-US, full hints) 鈹€鈹€
++	// ── Chrome 133 (Windows, en-US, full hints) ──
 +	{
 +		FingerprintName: "chrome",
 +		Headers: http.Header{
@@ -3448,7 +3448,7 @@ index 0000000000000000000000000000000000000000..568850523fc1517c6741227b84f8c326
 +		},
 +	},
 +
-+	// 鈹€鈹€ Firefox 120 (Windows) 鈹€鈹€
++	// ── Firefox 120 (Windows) ──
 +	{
 +		FingerprintName: "firefox",
 +		Headers: http.Header{
@@ -3466,7 +3466,7 @@ index 0000000000000000000000000000000000000000..568850523fc1517c6741227b84f8c326
 +		},
 +	},
 +
-+	// 鈹€鈹€ Safari 16.0 (macOS Ventura) 鈹€鈹€
++	// ── Safari 16.0 (macOS Ventura) ──
 +	{
 +		FingerprintName: "safari",
 +		Headers: http.Header{
@@ -5259,13 +5259,13 @@ index 0000000000000000000000000000000000000000..6e8077ab27c024e04601e80f4468da1c
 +		"geoblocked",
 +		"geo-restricted",
 +		"georestricted",
-+		"鍦板尯涓嶅彲鐢?,
-+		"鎵€鍦ㄥ湴鍖轰笉鍙敤",
-+		"涓嶆敮鎸佹偍鎵€鍦ㄧ殑",
-+		"鎮ㄦ墍鍦ㄧ殑鍦板尯",
-+		"銇婁綇銇俱亜銇湴鍩?,
-+		"銇婁綇銇俱亜銇浗",
-+		"鍦板煙銇с伅銇斿埄鐢?,
++		"地区不可用",
++		"所在地区不可用",
++		"不支持您所在的",
++		"您所在的地区",
++		"お住まいの地域",
++		"お住まいの国",
++		"地域ではご利用",
 +	} {
 +		if strings.Contains(text, phrase) {
 +			return true
@@ -11437,7 +11437,7 @@ index 0000000000000000000000000000000000000000..3bff278938414265f4fc9ed391457f37
 +}
 +
 +func TestTotalRetrans_ZeroRetransWithSegs(t *testing.T) {
-+	// Linux: RetransSegs==0 but SegsOut>0 鈫?should return 0, not fallback to BytesRetrans
++	// Linux: RetransSegs==0 but SegsOut>0 → should return 0, not fallback to BytesRetrans
 +	s := &Stats{SegsOut: 100, RetransSegs: 0, BytesSent: 0, BytesRetrans: 0}
 +	if got := s.TotalRetrans(); got != 0 {
 +		t.Errorf("expected 0 when RetransSegs==0 and SegsOut>0, got %d", got)
@@ -12700,7 +12700,8 @@ index 425a69c5ddf4537fb5e1012a89cbc240410a6791..239918ee0fef5b36139950e7909c350b
 +	}
 +	for _, fi := range files {
 +		if fi.IsDir() {
-+			// 鐩綍鍒欑洿鎺ヨ烦杩?+			continue
++			// 目录则直接跳过
++			continue
 +		} else {
 +			if strings.EqualFold(fi.Name(), "Model.bin") {
 +				SmartmodelName = fi.Name()
