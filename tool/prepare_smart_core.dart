@@ -29,6 +29,16 @@ Future<ProcessResult> git(
   return result;
 }
 
+Future<void> addObjectSource(String checkout, String objects) async {
+  final alternates = File(
+    p.join(checkout, '.git', 'objects', 'info', 'alternates'),
+  );
+  await alternates.parent.create(recursive: true);
+  final sink = alternates.openWrite(mode: FileMode.append);
+  sink.writeln(p.normalize(objects).replaceAll('\\', '/'));
+  await sink.close();
+}
+
 Future<void> main(List<String> args) async {
   final root = p.normalize(
     p.join(File.fromUri(Platform.script).parent.path, '..'),
@@ -57,11 +67,9 @@ Future<void> main(List<String> args) async {
   }
 
   final objects = await git(['rev-parse', '--git-path', 'objects'], root);
-  final environment = {
-    'GIT_ALTERNATE_OBJECT_DIRECTORIES': p.absolute(
-      p.join(root, (objects.stdout as String).trim()),
-    ),
-  };
+  final objectPath = p.absolute(
+    p.join(root, (objects.stdout as String).trim()),
+  );
   final output = Directory(generated);
   if (output.existsSync()) {
     if (!p.isWithin(p.join(root, 'core'), output.absolute.path) ||
@@ -81,6 +89,7 @@ Future<void> main(List<String> args) async {
     }
   }
   await git(['init', '--quiet'], generated);
+  await addObjectSource(generated, objectPath);
   await git(['add', '--all'], generated);
   await git([
     '-c',
@@ -95,11 +104,12 @@ Future<void> main(List<String> args) async {
     'Bettbox kernel before Smart overlay',
   ], generated);
   try {
-    await git(
-      ['apply', '--3way', '--whitespace=nowarn', patch.path],
-      generated,
-      environment: environment,
-    );
+    await git([
+      'apply',
+      '--3way',
+      '--whitespace=nowarn',
+      patch.path,
+    ], generated);
   } on ProcessException catch (error) {
     stderr.writeln(error.message);
     stderr.writeln(

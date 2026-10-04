@@ -34,9 +34,11 @@ LightGBM 使用纯 Go 推理，不需要额外的原生 DLL/SO。启用 `useligh
 
 `Build Smart` 工作流在 `feat/smart-core` 推送时运行，也支持 Actions 手动运行。产物在该次运行的 Artifacts 中：Windows x64 便携包（包含界面、内核和 HelperService），以及包含 arm64-v8a、armeabi-v7a、x86_64 内核的 Android APK。Windows 内核使用兼容的 AMD64 v1 指令集；ARMv7 使用 `with_low_memory`。安卓 64 位库保留 16 KB 页对齐。
 
-Fork 构建不使用上游 SignPath 证书，安卓默认使用构建环境的 debug 密钥签名。要持续覆盖安装安卓版本，应配置自己的持久 keystore（见 `android/app/build.gradle.kts`），不能用此签名覆盖官方版本。更新检查指向 `KevinChen222/Bettbox`。
+Fork 构建不使用上游 SignPath 证书。安卓通过 fork Secrets 中的持久自用 keystore 签名；缺少 Secrets 时退回构建环境 debug 签名，不能用此签名覆盖官方版本。更新检查指向 `KevinChen222/Bettbox`。
 
 本机构建需要 Flutter 3.44.9、Go 1.25+、Rust；Windows 还需 Visual Studio C++ 工具链，Android 需 JDK 17 和 NDK 28.2.13676358。
+
+后续 AI 助手独立更新两个上游、构建和发布的完整操作手册见 [AI 更新与发布说明](AI_UPDATE_GUIDE.md)，本次版本说明见 [更新日志](Smart-Release-Notes.md)。
 
 ```sh
 flutter pub get
@@ -80,4 +82,6 @@ dart tool/prepare_smart_core.dart --refresh-patch
 dart tool/prepare_smart_core.dart
 ```
 
-`--refresh-patch` 把已处理的结果保存到 `core/smart.patch`，拒绝保留冲突标记或生成空补丁。重新运行测试并提交此补丁。不要把生成目录提交，也不要在保存补丁前重新构建（生成目录会被覆盖）。本流程不需要重新下载或重新集成 Smart，也不自动升级 Smart 源码；升级 Smart 时单独维护补丁并更新来源提交。
+`--refresh-patch` 把已处理的结果保存到 `core/smart.patch`，拒绝保留冲突标记或生成空补丁。重新运行测试并提交此补丁。不要把生成目录提交，也不要在保存补丁前重新构建（生成目录会被覆盖）。
+
+Smart 自身更新时运行 `dart tool/update_smart_core.dart`，它会将已记录 Smart 提交到最新 Alpha 的 Go 差异三方合入当前生成内核，同时保存新的补丁和 `core/smart-source.json`。若有冲突，先处理生成目录并保存补丁，再将 `.test/smart-candidate.json` 的候选来源记录保存到 `core/smart-source.json`；验证成功后再提交。两个上游都要检查，不应只更新 Bettbox。

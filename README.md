@@ -3,6 +3,11 @@
 </h4>
 
 <h1 align="center">⚡ Bettbox</h1>
+
+> **个人自用 Smart 分支声明**：`KevinChen222/Bettbox` 的 `feat/smart-core` 仅为维护者本人自用而维护。仓库公开仅用于代码透明与版本留存，不表示提供正式产品、技术支持或任何稳定性、安全性及适用性保证。他人自行下载、编译或试用时，应自行评估并承担使用产生的问题、损失及风险，维护者不承担他人试用的责任。本分支不是 Bettbox 或 Mihomo/Smart 上游的官方版本，相关问题与 Bettbox 原作者、Mihomo 及 Smart 上游作者无关，请勿向原仓库提交本分支的问题或 PR。原有开源许可证保持不变。
+
+> 本分支独立维护；只向 `KevinChen222/Bettbox` 提交和发布，原仓库仅用作读取上游更新。下文关于上游签名与审计的介绍不代表本分支产物获得相同签名或审核。
+
 <p align="center">
   <strong>Another Better Mihomo Client，Forked form FlClash</strong>
 </p>
@@ -111,6 +116,8 @@ Bettbox意为: Better Experience, Out of the box - 更好的体验，亦开箱�
 ## Smart 内核版本
 
 `feat/smart-core` 分支已集成 vernesong/mihomo Smart 策略组，支持 Windows 和 Android。配置方法、内核来源和构建产物见 [Smart 使用说明](readme/Smart.md)。
+
+后续更新两个上游、在个人 fork 提交/构建/发布的操作步骤见 [给 AI 助手的更新说明](readme/AI_UPDATE_GUIDE.md)，本次版本变化见 [更新日志](readme/Smart-Release-Notes.md)。
 
 ##  开发构建及UI适配
 

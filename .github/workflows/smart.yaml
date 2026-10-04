@@ -97,7 +97,16 @@ jobs:
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Bettbox-smart-windows-x64.zip
       - name: Build Android core and APK
         if: matrix.platform == 'android'
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          if [ -n "$KEYSTORE" ]; then
+            printf '%s' "$KEYSTORE" | base64 --decode > android/app/keystore.jks
+            printf '\nkeyAlias=%s\nstorePassword=%s\nkeyPassword=%s\n' "$KEY_ALIAS" "$STORE_PASSWORD" "$KEY_PASSWORD" >> android/local.properties
+          fi
           dart setup.dart android --arch universal --out core
           flutter build apk --release --target-platform android-arm,android-arm64,android-x64 --dart-define=APP_ENV=pre
           cp build/app/outputs/flutter-apk/app-release.apk Bettbox-smart-android-universal.apk

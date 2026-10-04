@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/vernesong/mihomo.git",
+  "ref": "Alpha",
+  "revision": "baef5ee5ac6b4ab84349f9a5251df0fb264c999a",
+  "initialOfficialBaseline": "88dcbf7f1614a67c3b36b848ee3592dfa92ada36",
+  "bettboxRevision": "45d6fd3781a20bc7639cb7788b542e0cba1ec3af",
+  "modelUrl": "https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model.bin"
+}
