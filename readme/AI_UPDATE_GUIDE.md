@@ -28,7 +28,7 @@
 - 资源页面提供 LightGBM 同步按钮。桥接复用 `updateGeoData` 的 `LightGBM` 类型，调用原生模型更新器，校验后写 `HomeDir/Model.bin` 并重新加载。默认来源如上；配置的 `lgbm-url` 可覆盖。
 - `core/common.go` 保留 Smart 使用的 GeoIP/ASN 数据，不能让原内存清理卸载它们。
 - `core/smart_test.go` 验证组、选择、Geo 数据和模型更新；`test/smart_group_test.dart` 验证客户端模型。
-- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包及 Android 三 ABI 通用 APK。工作流显示名 `Build Smart`。完整历史用于三方合并。
+- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包、Android arm64-v8a 单架构 APK及三 ABI 通用 APK。工作流显示名 `Build Smart`。完整历史用于三方合并。单架构包使用 `--split-per-abi --target-platform android-arm64`，不能仅改名或删除已签名 APK 中的文件。
 - `.test/` 与生成目录都不能提交；密钥与密码不能进入 Git、文档、日志、构建 Artifact 或 Release。
 
 ## 1. 检查账号、工作区和远端
@@ -150,18 +150,18 @@ Fork 的工作流只在功能分支，手动 workflow_dispatch 的可用性取�
 
 ## 5. 在个人 fork 发布
 
-完整构建成功后，从准确的运行下载两个 Artifact 到 `dist/smart/<运行ID>`：
+完整构建成功后，从准确的运行下载三个 Artifact 到 `dist/smart/<运行ID>`：
 
 ```sh
 gh run download <ID> --repo KevinChen222/Bettbox --dir dist/smart/<ID>
 ```
 
-应有 `Bettbox-smart-windows-x64.zip` 和 `Bettbox-smart-android-universal.apk`。核实里面含对应内核/HelperService及安卓 ABI；计算两个文件 SHA256，生成 `SHA256SUMS.txt`，并写 `build-info.json` 记录 App 提交、Bettbox SHA、Smart SHA、Actions URL、构建版本和签名方式。不得把日志中的秘密、签名备份或源缓存打包。
+应有 `Bettbox-smart-windows-x64.zip`、`Bettbox-smart-android-arm64-v8a.apk` 和 `Bettbox-smart-android-universal.apk`。核实 Windows 内核/HelperService、单架构 APK 的 `lib/` 仅含 arm64-v8a 且含 `libmeta.so`、通用 APK 含三个 ABI；验证两个 APK 签名一致且沿用持久自用签名、64 位 Smart 库保持 16 KB 页对齐。计算三个文件 SHA256，生成 `SHA256SUMS.txt`，并写 `build-info.json` 记录 App 提交、Bettbox SHA、Smart SHA、Actions URL、构建版本、产物架构和签名方式。不得把日志中的秘密、签名备份或源缓存打包。
 
 发布标签格式：`smart-v<App版本>-<台北日期YYYYMMDD>.<序号>`，例 `smart-v1.19.4-20261004.1`。检查远端是否已存在；存在则核实并复用未完成的草稿，或选择下一个序号，不能移动已有标签。标签不要以裸 `v` 开头，避免触发上游原发布工作流。
 
 ```sh
-gh release create <标签> <windows.zip> <android.apk> <SHA256SUMS.txt> <build-info.json> --repo KevinChen222/Bettbox --target <本次绿色构建的完整提交SHA> --title "Bettbox Smart <版本>" --notes-file readme/Smart-Release-Notes.md --draft
+gh release create <标签> <windows.zip> <android-arm64.apk> <android-universal.apk> <SHA256SUMS.txt> <build-info.json> --repo KevinChen222/Bettbox --target <本次绿色构建的完整提交SHA> --title "Bettbox Smart <版本>" --notes-file readme/Smart-Release-Notes.md --draft
 gh release view <标签> --repo KevinChen222/Bettbox --json tagName,targetCommitish,assets,isDraft,url
 ```
 

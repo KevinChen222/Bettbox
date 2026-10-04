@@ -11,6 +11,7 @@
 
 ## 本次变化
 
+- 本日第 2 次发布新增 `Bettbox-smart-android-arm64-v8a.apk`，只包含 arm64-v8a 运行库，以减少支持该架构设备的下载体积；保留通用 APK 和 Windows 包。来源提交保持如上，两种安卓 APK 沿用同一持久自用签名；维护手册同步加入单架构构建、验证和发布步骤。
 - Windows 与 Android 集成 Smart 统计选路与纯 Go LightGBM 推理。
 - 客户端识别 Smart 策略组，支持固定节点及恢复自动选择。
 - 资源页面增加 LightGBM 同步按钮；校验后保存至内核 `HomeDir/Model.bin` 并即时重新加载，失败时保留旧文件。

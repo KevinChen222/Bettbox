@@ -32,7 +32,7 @@ LightGBM 使用纯 Go 推理，不需要额外的原生 DLL/SO。启用 `useligh
 
 ## 构建与下载
 
-`Build Smart` 工作流在 `feat/smart-core` 推送时运行，也支持 Actions 手动运行。产物在该次运行的 Artifacts 中：Windows x64 便携包（包含界面、内核和 HelperService），以及包含 arm64-v8a、armeabi-v7a、x86_64 内核的 Android APK。Windows 内核使用兼容的 AMD64 v1 指令集；ARMv7 使用 `with_low_memory`。安卓 64 位库保留 16 KB 页对齐。
+`Build Smart` 工作流在 `feat/smart-core` 推送时运行，也支持 Actions 手动运行。产物在该次运行的 Artifacts 中：Windows x64 便携包（包含界面、内核和 HelperService）、Android arm64-v8a 单架构 APK，以及包含 arm64-v8a、armeabi-v7a、x86_64 内核的 Android 通用 APK。支持 arm64-v8a 的设备可下载体积更小的单架构包；两种 APK 使用相同版本和持久签名。Windows 内核使用兼容的 AMD64 v1 指令集；ARMv7 使用 `with_low_memory`。安卓 64 位库保留 16 KB 页对齐。
 
 Fork 构建不使用上游 SignPath 证书。安卓通过 fork Secrets 中的持久自用 keystore 签名；缺少 Secrets 时退回构建环境 debug 签名，不能用此签名覆盖官方版本。更新检查指向 `KevinChen222/Bettbox`。
 
@@ -52,6 +52,8 @@ dart setup.dart windows --arch amd64 --out core --compatible
 # Android，生成所有 ABI 的共享内核
 dart setup.dart android --arch universal --out core
 flutter build apk --release --target-platform android-arm,android-arm64,android-x64
+# 复用已编译的内核，另生成仅含 arm64-v8a 的 APK
+flutter build apk --release --split-per-abi --target-platform android-arm64
 ```
 
 Go 桥接测试位于 `core/smart_test.go`，验证 Smart 配置、选择/恢复自动状态、客户端 JSON、GeoIP/ASN 数据保留，以及模型更新成功时即时加载、失败时保留旧文件。生成的内核保留 Smart 上游的策略组及 TCP 统计测试。

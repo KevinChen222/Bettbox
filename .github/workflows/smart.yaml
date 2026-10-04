@@ -110,6 +110,8 @@ jobs:
           dart setup.dart android --arch universal --out core
           flutter build apk --release --target-platform android-arm,android-arm64,android-x64 --dart-define=APP_ENV=pre
           cp build/app/outputs/flutter-apk/app-release.apk Bettbox-smart-android-universal.apk
+          flutter build apk --release --split-per-abi --target-platform android-arm64 --dart-define=APP_ENV=pre
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk Bettbox-smart-android-arm64-v8a.apk
       - name: Upload Windows package
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v7
@@ -123,4 +125,11 @@ jobs:
         with:
           name: Bettbox-smart-android-universal
           path: Bettbox-smart-android-universal.apk
+          if-no-files-found: error
+      - name: Upload Android arm64 package
+        if: matrix.platform == 'android'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bettbox-smart-android-arm64-v8a
+          path: Bettbox-smart-android-arm64-v8a.apk
           if-no-files-found: error
