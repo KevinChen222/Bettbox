@@ -55,3 +55,5 @@ git diff --check
 ## 来源与许可
 
 编译器摘取自 [MasterAlanLab/Avalon](https://github.com/MasterAlanLab/avalon/blob/ea4d8ffc4842535f84e8def918fbf71d3e6b5609/lib/features/chains/chains.dart)，实际来源提交为 `ea4d8ffc4842535f84e8def918fbf71d3e6b5609`。保留 `Copyright (C) 2026 MasterAlanLab and Avalon contributors`，该代码为 AGPL-3.0，完整条款保存在 `lib/features/chains/LICENSE`。原 Bettbox/FlClash 的 GPL-3.0 许可、版权声明和本 fork 的个人自用/责任声明保留。Avalon 不为本 fork 提供支持，也不向 Avalon 或 Bettbox 原作者自动提交变更。
+
+`Build Smart` 在构建前将该许可与根目录 `NOTICE` 复制到已有的 `assets/data/` 资源目录，随 Windows 便携包和已签名 APK 一起分发。不要通过修改已签名 APK 来补资源；需要补充许可时从对应源码重新构建。

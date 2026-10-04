@@ -70,6 +70,10 @@ jobs:
         run: |
           flutter pub get
           dart run build_runner build -d
+      - name: Bundle proxy-chain license and attribution
+        run: |
+          cp lib/features/chains/LICENSE assets/data/avalon-chain-LICENSE.txt
+          cp NOTICE assets/data/avalon-chain-NOTICE.txt
       - name: Test Smart client models and proxy chains
         run: flutter test test/features/chains test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart
       - name: Prepare Smart kernel

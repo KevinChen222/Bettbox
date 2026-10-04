@@ -39,6 +39,8 @@
 
 移植来源记录在 `lib/features/chains/avalon-source.json`；保留编译器的 Avalon 版权头、模块内 AGPL 许可及根目录 `NOTICE`，原项目 GPL 许可和个人自用声明仍须保留。链路默认不改变原规则/选中节点。组作为一跳展开成员，不能把它误改成跟随原组实时选路。
 
+`Build Smart` 会把模块许可和根目录 `NOTICE` 打包进 Flutter 的 `assets/data/avalon-chain-LICENSE.txt` 与 `avalon-chain-NOTICE.txt`。发布检查时核实 Windows ZIP 和两个 APK 都包含这两项，不能在已签名 APK 上直接补文件。
+
 ## 1. 检查账号、工作区和远端
 
 先读取当前项目的 `AGENTS.md`（如有）、本文、`readme/Smart.md`、来源 JSON、工作流和相关构建文件，再运行：
