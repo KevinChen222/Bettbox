@@ -156,6 +156,7 @@ List<MediaPlatform> pinnedMediaPlatformsSafeFromJson(
 abstract class AppSettingProps with _$AppSettingProps {
   const factory AppSettingProps({
     String? locale,
+    @Default({}) Map<String, String> pageTitles,
     @Default(defaultDashboardWidgets)
     @JsonKey(fromJson: dashboardWidgetsSafeFromJson)
     List<DashboardWidget> dashboardWidgets,

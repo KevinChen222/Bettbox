@@ -100,8 +100,18 @@ Future<Map<String, dynamic>> applyProxyChains(
   String profileId,
   Map<String, dynamic> config,
 ) async {
+  final persistedIds = {
+    for (final group in config['proxy-groups'] as List? ?? [])
+      if (group['x-bettbox-chain-id'] != null) group['x-bettbox-chain-id'],
+  };
   final chains = (await (await getChainStore()).load())
-      .where((chain) => chain.enabled && chain.profileId == profileId)
+      .where(
+        (chain) =>
+            chain.enabled &&
+            chain.originalAutoUpdate == null &&
+            chain.profileId == profileId &&
+            !persistedIds.contains(chain.id),
+      )
       .toList();
   if (chains.isEmpty) return config;
   return assembleChains(

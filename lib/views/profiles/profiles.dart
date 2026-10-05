@@ -137,7 +137,9 @@ class _ProfilesViewState extends ConsumerState<ProfilesView> {
   Widget build(BuildContext context) {
     ref.watch(appSettingProvider.select((state) => state.locale));
     return CommonScaffold(
-      title: appLocalizations.profiles,
+      title: ref.watch(
+        appSettingProvider.select((state) => state.pageTitles['profiles']),
+      ) ?? appLocalizations.profiles,
       floatingActionButton: _buildFAB(),
       actions: _buildActions(),
       body: Consumer(

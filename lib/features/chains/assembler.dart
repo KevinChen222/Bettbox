@@ -130,8 +130,9 @@ class ChainCatalog {
 Map<String, dynamic> assembleChains(
   Map<String, dynamic> source,
   List<ProxyChain> chains,
-  ChainCatalog catalog,
-) {
+  ChainCatalog catalog, {
+  bool persist = false,
+}) {
   if (chains.isEmpty) return source;
   final config = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
   final proxies = List<dynamic>.from(config['proxies'] as List? ?? []);
@@ -155,13 +156,20 @@ Map<String, dynamic> assembleChains(
         final existing = proxies
             .where((raw) => raw['name'] == name)
             .firstOrNull;
-        if (existing == null || jsonEncode(existing) != jsonEncode(node)) {
+        final original = existing == null
+            ? null
+            : (Map<String, dynamic>.from(existing as Map)
+                ..remove('x-bettbox-chain-id'));
+        if (original == null || jsonEncode(original) != jsonEncode(node)) {
           throw FormatException(
             '${chain.name}: External node name conflict: $name',
           );
         }
       } else {
-        proxies.add(jsonDecode(jsonEncode(node)));
+        proxies.add({
+          ...jsonDecode(jsonEncode(node)) as Map<String, dynamic>,
+          if (persist) 'x-bettbox-chain-id': chain.id,
+        });
         reserved.add(name);
       }
     }
@@ -188,10 +196,24 @@ Map<String, dynamic> assembleChains(
           _usesGroup(chain.hops.first, entry, catalog, existingNodes, {})) {
         throw FormatException('${chain.name}: 前置依赖策略组 "$entry"，不能将链路加入该组以免循环');
       }
+      if (persist) {
+        group.putIfAbsent(
+          'x-bettbox-chain-had-proxies',
+          () => group.containsKey('proxies'),
+        );
+      }
       group['proxies'] = [...group['proxies'] as List? ?? [], selector.name];
     }
-    proxies.addAll(result.generatedProxies.values);
-    groups.add(selector.toConfig());
+    proxies.addAll(
+      result.generatedProxies.values.map(
+        (node) => {...node, if (persist) 'x-bettbox-chain-id': chain.id},
+      ),
+    );
+    groups.add({
+      ...selector.toConfig(),
+      'hidden': chain.hidden,
+      if (persist) 'x-bettbox-chain-id': chain.id,
+    });
     reserved.addAll(result.generatedProxies.keys);
     reserved.add(selector.name);
   }
@@ -211,12 +233,51 @@ Map<String, dynamic> assembleChains(
         continue;
       }
       final exclude = group['exclude-filter'] as String? ?? '';
+      if (persist) {
+        group['x-bettbox-chain-exclude-filter'] = {
+          'added': '^($generatedNames)\$',
+          'hadKey': group.containsKey('exclude-filter'),
+        };
+      }
       group['exclude-filter'] =
           '${exclude.isEmpty ? '' : '$exclude`'}^($generatedNames)\$';
     }
   }
   config['proxies'] = proxies;
   config['proxy-groups'] = groups;
+  return config;
+}
+
+/// Remove only additions marked by this client, retaining unrelated YAML edits.
+Map<String, dynamic> removePersistedChains(Map<String, dynamic> source) {
+  final config = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
+  final groups = config['proxy-groups'] as List? ?? [];
+  final names = {
+    for (final group in groups)
+      if (group['x-bettbox-chain-id'] != null) group['name'],
+  };
+  (config['proxies'] as List?)?.removeWhere(
+    (node) => node['x-bettbox-chain-id'] != null,
+  );
+  groups.removeWhere((group) => group['x-bettbox-chain-id'] != null);
+  for (final group in groups) {
+    final hadProxies = group.remove('x-bettbox-chain-had-proxies');
+    (group['proxies'] as List?)?.removeWhere(names.contains);
+    if (hadProxies == false && (group['proxies'] as List).isEmpty) {
+      group.remove('proxies');
+    }
+    final filter = group.remove('x-bettbox-chain-exclude-filter') as Map?;
+    if (filter != null) {
+      final parts = (group['exclude-filter'] as String? ?? '').split('`')
+        ..remove(filter['added']);
+      final remaining = parts.join('`');
+      if (remaining.isEmpty && filter['hadKey'] == false) {
+        group.remove('exclude-filter');
+      } else {
+        group['exclude-filter'] = remaining;
+      }
+    }
+  }
   return config;
 }
 

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bett_box/clash/core.dart';
@@ -6,7 +7,9 @@ import 'package:bett_box/common/common.dart';
 import 'package:bett_box/features/node_import/menu.dart';
 import 'package:bett_box/features/node_import/nodes.dart';
 import 'package:bett_box/features/node_import/view.dart';
+import 'package:bett_box/features/node_import/delete.dart';
 import 'package:bett_box/models/models.dart' show Profile, ProfileExtension;
+import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
 import 'package:bett_box/widgets/widgets.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +18,7 @@ import 'assembler.dart';
 import 'compiler.dart';
 import 'integration.dart';
 import 'model.dart';
+import 'persistence.dart';
 import 'store.dart';
 
 String _text(BuildContext context, String chinese, String english) =>
@@ -74,9 +78,85 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
 
   Future<void> _apply() async {
     await globalState.appController.savePreferences();
-    if (globalState.isStart) {
+    if (globalState.isInit) {
       await globalState.appController.applyProfile();
     }
+  }
+
+  Future<void> _writeChain(ProxyChain chain, {bool delete = false}) async {
+    final store = await getChainStore();
+    final previous = await store.load();
+    final next = List<ProxyChain>.from(previous);
+    final index = next.indexWhere((item) => item.id == chain.id);
+    if (delete) {
+      next.removeWhere((item) => item.id == chain.id);
+    } else if (index < 0) {
+      next.add(chain);
+    } else {
+      next[index] = chain;
+    }
+    final profile = globalState.config.profiles
+        .where((p) => p.id == chain.profileId)
+        .firstOrNull;
+    if (profile == null) {
+      if (!delete) {
+        throw const FormatException('Bound profile no longer exists');
+      }
+      await store.delete(chain.id);
+      return;
+    }
+    final originalAutoUpdate =
+        previous
+            .where(
+              (item) =>
+                  item.profileId == profile.id &&
+                  item.originalAutoUpdate != null,
+            )
+            .firstOrNull
+            ?.originalAutoUpdate ??
+        profile.autoUpdate;
+    for (var i = 0; i < next.length; i++) {
+      if (next[i].profileId == profile.id) {
+        next[i] = ProxyChain.fromJson({
+          ...next[i].toJson(),
+          'originalAutoUpdate': originalAutoUpdate,
+        });
+      }
+    }
+    final profileChains = next
+        .where((item) => item.profileId == profile.id)
+        .toList();
+    final file = File(await appPath.getProfilePath(profile.id));
+    final original = await file.readAsString();
+    var content = original;
+    if (profile.ageSecretKey?.isNotEmpty == true) {
+      final decrypted = await clashCore.decryptAgeConfig(
+        content,
+        profile.ageSecretKey!,
+      );
+      if (decrypted.isNotEmpty) content = decrypted;
+    }
+    final base = chainProfileBase(content);
+    final updated = writeChainsToProfile(
+      content,
+      profileChains,
+      await loadChainCatalog(profile.id, base),
+    );
+    final saved = await profile
+        .copyWith(
+          autoUpdate: profileChains.isEmpty ? originalAutoUpdate : false,
+        )
+        .saveFileWithString(updated);
+    try {
+      await store.restore(ChainStore.encode(next), replace: true);
+    } catch (_) {
+      await file.writeAsString(original, flush: true);
+      rethrow;
+    }
+    globalState.appController.ref
+        .read(profilesProvider.notifier)
+        .setProfile(saved);
+    await _apply();
   }
 
   Future<void> _edit([ProxyChain? chain]) async {
@@ -144,8 +224,7 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
         ),
       );
       if (result != null) {
-        await (await getChainStore()).put(result);
-        await _apply();
+        await _writeChain(result);
       }
     });
   }
@@ -191,8 +270,9 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
         await loadChainCatalog(profileId, source),
       );
     }
-    await (await getChainStore()).restore(content, replace: false);
-    await _apply();
+    for (final chain in incoming) {
+      await _writeChain(chain);
+    }
   }
 
   Future<void> _delete(ProxyChain chain) async {
@@ -214,8 +294,7 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
       ),
     );
     if (confirmed == true) {
-      await (await getChainStore()).delete(chain.id);
-      await _apply();
+      await _writeChain(chain, delete: true);
     }
   }
 
@@ -317,21 +396,41 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
                                         ),
                                       );
                                     }
-                                    await (await getChainStore()).put(updated);
-                                    await _apply();
+                                    await _writeChain(updated);
                                   }),
                           ),
                         ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
+                            Tooltip(
+                              message: _text(
+                                context,
+                                '隐藏链路策略组',
+                                'Hide chain group',
+                              ),
+                              child: Switch(
+                                value: chain.hidden,
+                                onChanged: _busy
+                                    ? null
+                                    : (hidden) => _perform(() async {
+                                        await _writeChain(
+                                          ProxyChain.fromJson({
+                                            ...chain.toJson(),
+                                            'hidden': hidden,
+                                          }),
+                                        );
+                                      }),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
                             TextButton(
                               onPressed: _busy
                                   ? null
                                   : () => _perform(() async {
                                       final copyName =
                                           '${chain.name} (${_text(context, '副本', 'copy')})';
-                                      await (await getChainStore()).put(
+                                      await _writeChain(
                                         ProxyChain.fromJson({
                                           ...chain.toJson(),
                                           'id': DateTime.now()
@@ -340,7 +439,6 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
                                           'name': copyName,
                                         }),
                                       );
-                                      await _apply();
                                     }),
                               child: Text(_text(context, '复制', 'Duplicate')),
                             ),
@@ -386,9 +484,10 @@ class _ChainEditorViewState extends State<ChainEditorView> {
   late final _name = TextEditingController(text: widget.chain.name);
   late final _hops = List<ChainTarget>.from(widget.chain.hops);
   late final _entryGroups = Set<String>.from(widget.chain.entryGroups);
-  late final _externalNodes = List<Map<String, dynamic>>.from(
-    widget.chain.externalNodes,
-  );
+  late final _externalNodes = [
+    for (final node in widget.chain.externalNodes)
+      Map<String, dynamic>.from(node),
+  ];
   late int _limit = widget.chain.branchLimit;
   bool _saving = false;
 
@@ -419,7 +518,40 @@ class _ChainEditorViewState extends State<ChainEditorView> {
     externalNodes: List.from(_externalNodes),
     branchLimit: _limit,
     enabled: widget.chain.enabled,
+    hidden: widget.chain.hidden,
+    originalAutoUpdate: widget.chain.originalAutoUpdate,
   );
+
+  Future<void> _deleteExternalNodes() async {
+    final selected = await selectNodesToDelete(
+      context,
+      _externalNodes,
+      emptyMessage: _text(context, '未添加节点', 'No added nodes'),
+      referenceMessage: _text(
+        context,
+        '使用这些节点的跳和前置引用也会移除。保存后生效。',
+        'Hops and dialer references using these nodes will also be removed. Save to apply.',
+      ),
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _externalNodes.removeWhere((node) => selected.contains(node['name']));
+      _hops.removeWhere(
+        (hop) => hop.kind == ChainTargetKind.node && selected.contains(hop.id),
+      );
+      for (final node in _externalNodes) {
+        if (selected.contains(node['dialer-proxy'])) {
+          node.remove('dialer-proxy');
+        }
+      }
+      _nodes
+        ..clear()
+        ..addAll(widget.catalog.nodes)
+        ..addAll({
+          for (final node in _externalNodes) node['name'] as String: node,
+        });
+    });
+  }
 
   Future<void> _addHop() async {
     while (true) {
@@ -652,6 +784,12 @@ class _ChainEditorViewState extends State<ChainEditorView> {
             icon: const Icon(Icons.add),
             label: Text(_text(context, '添加一跳', 'Add hop')),
           ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _saving ? null : _deleteExternalNodes,
+            icon: const Icon(Icons.delete_outline),
+            label: Text(_text(context, '删除已添加的节点', 'Delete added nodes')),
+          ),
           const SizedBox(height: 16),
           DropdownButtonFormField<int>(
             initialValue: _limit,
@@ -708,6 +846,14 @@ class _ChainEditorViewState extends State<ChainEditorView> {
           if (preview.paths.length > 20)
             Text(_text(context, '仅显示前 20 条路径', 'Showing the first 20 paths')),
           const SizedBox(height: 24),
+          Text(
+            _text(
+              context,
+              '保存会将链路写入当前配置 YAML，并关闭订阅自动更新以保留修改；删除链路会撤回对应更改。只有点击下方按钮才创建新的本地配置。',
+              'Save writes the chain into this profile YAML and disables subscription auto-update to retain changes. Deleting the chain removes its additions. Only the button below creates a new local profile.',
+            ),
+          ),
+          const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed:
                 !_saving && preview.isValid && _name.text.trim().isNotEmpty

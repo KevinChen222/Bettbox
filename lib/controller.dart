@@ -119,6 +119,10 @@ class AppController {
     _updateGroupsRetryTimer?.cancel();
     _updateGroupsRetryTimer = null;
     _updateGroupsRetryCount = 0;
+    // Groups and provider contents belong to the configuration being replaced.
+    _ref.read(groupsProvider.notifier).value = [];
+    _ref.read(providersProvider.notifier).value = [];
+    globalState.computeHeightMapCache = {};
   }
 
   Future<void> restartCore() {

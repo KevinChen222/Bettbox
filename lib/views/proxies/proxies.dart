@@ -238,7 +238,9 @@ class _ProxiesViewState extends ConsumerState<ProxiesView> {
     return CommonScaffold(
       floatingActionButton: _buildFAB(),
       actions: _buildActions(),
-      title: appLocalizations.proxies,
+      title: ref.watch(
+        appSettingProvider.select((state) => state.pageTitles['proxies']),
+      ) ?? appLocalizations.proxies,
       searchState: AppBarSearchState(onSearch: _onSearch),
       body: switch (hasGroups) {
         false => NullStatus(label: appLocalizations.noProxy),

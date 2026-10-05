@@ -9,6 +9,7 @@ import 'package:bett_box/clash/clash.dart';
 import 'package:bett_box/common/theme.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/features/chains/integration.dart';
+import 'package:bett_box/features/chains/assembler.dart';
 import 'package:bett_box/l10n/l10n.dart';
 import 'package:bett_box/plugins/app.dart';
 import 'package:bett_box/plugins/service.dart';
@@ -681,7 +682,10 @@ class GlobalState {
       return <String, dynamic>{};
     }
     final profileId = targetProfile.id;
-    final configMap = await getProfileConfig(profileId);
+    final storedConfig = await getProfileConfig(profileId);
+    final configMap = includeProxyChains
+        ? storedConfig
+        : removePersistedChains(storedConfig);
     final rawConfig = await handleEvaluate(configMap, profile: targetProfile);
     final originalProxyGroups = rawConfig['proxy-groups'];
 

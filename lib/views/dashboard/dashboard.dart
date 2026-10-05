@@ -157,11 +157,15 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
   }
 
   void _showEditTitleDialog() async {
-    final currentTitle = ref.read(customDashboardTitleProvider) ?? '';
+    final currentTitle = ref.read(appSettingProvider).pageTitles['dashboard'] ??
+        ref.read(customDashboardTitleProvider) ?? '';
     final title = await globalState.showCommonDialog<String>(
       child: _DashboardTitleDialog(initialValue: currentTitle),
     );
     if (title != null) {
+      ref.read(appSettingProvider.notifier).updateState((state) => state.copyWith(
+        pageTitles: {...state.pageTitles, 'dashboard': title},
+      ));
       ref
           .read(customDashboardTitleProvider.notifier)
           .updateTitle(title.isEmpty ? null : title);
@@ -225,6 +229,7 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
     });
     return CommonScaffold(
       title:
+          ref.watch(appSettingProvider.select((state) => state.pageTitles['dashboard'])) ??
           ref.watch(customDashboardTitleProvider) ?? appLocalizations.dashboard,
       actions: _buildActions(),
       body: Align(

@@ -6,6 +6,77 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+    'deletion offers only imported nodes, confirms and removes dependent hops',
+    (tester) async {
+      final source = <String, dynamic>{
+        'proxies': [
+          {
+            'name': 'source',
+            'type': 'socks5',
+            'server': 'source.example',
+            'port': 1080,
+          },
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChainEditorView(
+            chain: ProxyChain(
+              id: '1',
+              name: 'test',
+              profileId: 'p',
+              hops: const [
+                ChainTarget.node('source'),
+                ChainTarget.node('imported1'),
+              ],
+              externalNodes: [
+                for (final name in ['imported1', 'imported2'])
+                  {
+                    'name': name,
+                    'type': 'socks5',
+                    'server': 'external.example',
+                    'port': 1080,
+                  },
+              ],
+            ),
+            profileLabel: 'profile',
+            source: source,
+            catalog: ChainCatalog(source),
+          ),
+        ),
+      );
+      final button = find.widgetWithText(OutlinedButton, 'Delete added nodes');
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(CheckboxListTile, 'source'), findsNothing);
+      expect(find.byType(CheckboxListTile), findsNWidgets(2));
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'imported1'));
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'imported2'));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete 2 nodes?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(find.byType(CheckboxListTile), findsNWidgets(2));
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'imported1'));
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'imported2'));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('source').first);
+      expect(find.text('imported1'), findsNothing);
+      expect(find.text('source'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('editor previews direction and permits mobile hop reordering', (
     tester,
   ) async {

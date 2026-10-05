@@ -9,6 +9,8 @@ class ProxyChain {
     this.entryGroups = const [],
     this.externalNodes = const [],
     this.enabled = true,
+    this.hidden = true,
+    this.originalAutoUpdate,
     this.branchLimit = 64,
   });
 
@@ -19,6 +21,8 @@ class ProxyChain {
   final List<String> entryGroups;
   final List<Map<String, dynamic>> externalNodes;
   final bool enabled;
+  final bool hidden;
+  final bool? originalAutoUpdate;
   final int branchLimit;
 
   factory ProxyChain.fromJson(Map<String, dynamic> json) => ProxyChain(
@@ -26,6 +30,8 @@ class ProxyChain {
     name: json['name'] as String,
     profileId: json['profileId'] as String,
     enabled: json['enabled'] as bool? ?? true,
+    hidden: json['hidden'] as bool? ?? true,
+    originalAutoUpdate: json['originalAutoUpdate'] as bool?,
     branchLimit: json['branchLimit'] as int? ?? 64,
     entryGroups: List<String>.from(json['entryGroups'] as List? ?? []),
     externalNodes: [
@@ -50,6 +56,8 @@ class ProxyChain {
     'name': name,
     'profileId': profileId,
     'enabled': enabled,
+    'hidden': hidden,
+    if (originalAutoUpdate != null) 'originalAutoUpdate': originalAutoUpdate,
     'branchLimit': branchLimit,
     'entryGroups': entryGroups,
     'externalNodes': externalNodes,

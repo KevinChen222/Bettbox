@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:bett_box/clash/interface.dart';
+import 'package:bett_box/clash/core.dart';
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/controller.dart';
 import 'package:bett_box/enum/enum.dart';
@@ -29,7 +30,58 @@ class PendingConfigCore extends ClashHandlerInterface {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class NoProfileCore implements ClashHandlerInterface {
+  @override
+  Future<bool> forceGc({bool forceFreeOSMemory = false}) async => true;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
+  testWidgets(
+    'applying another profile clears stale groups even when setup cannot load',
+    (tester) async {
+      ClashCore(handler: NoProfileCore());
+      final previousInterface = clashCore.clashInterface;
+      clashCore.clashInterface = NoProfileCore();
+      addTearDown(() => clashCore.clashInterface = previousInterface);
+      globalState.config = Config(themeProps: defaultThemeProps);
+      globalState.appState = AppState(
+        brightness: Brightness.light,
+        version: 1,
+        viewSize: Size.zero,
+        requests: FixedList(1),
+        logs: FixedList(1),
+        traffics: FixedList(1),
+        totalTraffic: Traffic(),
+        systemUiOverlayStyle: const SystemUiOverlayStyle(),
+        groups: [Group(name: 'old-chain', type: GroupType.Selector)],
+      );
+      globalState.computeHeightMapCache = {
+        CacheTag.proxiesList: FixedMap<String, double>(1),
+      };
+      late AppController controller;
+      late WidgetRef ref;
+      await tester.pumpWidget(
+        ProviderScope(
+          child: Consumer(
+            builder: (context, widgetRef, _) {
+              widgetRef.watch(groupsProvider);
+              widgetRef.watch(providersProvider);
+              ref = widgetRef;
+              controller = AppController(context, widgetRef);
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      expect(ref.read(groupsProvider).single.name, 'old-chain');
+      await controller.applyProfile(silence: true);
+      expect(ref.read(groupsProvider), isEmpty);
+      expect(ref.read(providersProvider), isEmpty);
+      expect(globalState.computeHeightMapCache, isEmpty);
+    },
+  );
   for (final timeout in [false, true]) {
     testWidgets(
       'configuration ${timeout ? 'timeout' : 'success'} clears loading',

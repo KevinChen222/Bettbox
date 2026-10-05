@@ -1,6 +1,8 @@
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/providers/config.dart';
 import 'package:bett_box/widgets/widgets.dart';
+import 'package:bett_box/views/dashboard/dashboard.dart'
+    show customDashboardTitleProvider;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -274,10 +276,10 @@ class ApplicationSettingView extends StatelessWidget {
       AutoRunItem(),
       if (system.isAndroid) ...[HiddenItem()],
       if (system.isDesktop) ...[
-        if (system.isWindows || system.isLinux)
-          const AlwaysShowTitleBarItem(),
+        if (system.isWindows || system.isLinux) const AlwaysShowTitleBarItem(),
       ],
       const ShowStartSwitchItem(),
+      const MainPageTitlesItem(),
       if (system.isAndroid) ...[NavBarHapticFeedbackItem()],
       if (system.isMacOS) const KeepDockIconItem(),
       CloseConnectionsItem(),
@@ -286,4 +288,117 @@ class ApplicationSettingView extends StatelessWidget {
     ];
     return generateListView(generateSection(items: items));
   }
+}
+
+String _titleText(BuildContext context, String chinese, String english) =>
+    Localizations.localeOf(context).languageCode == 'zh' ? chinese : english;
+
+class MainPageTitlesItem extends ConsumerWidget {
+  const MainPageTitlesItem({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ListItem(
+    title: Text(_titleText(context, '主页面左上角标题', 'Main page titles')),
+    subtitle: Text(
+      _titleText(
+        context,
+        '分别自定义首页、代理、配置和更多的标题',
+        'Customize Home, Proxies, Profiles and More titles',
+      ),
+    ),
+    onTap: () async {
+      final titles = await showDialog<Map<String, String>>(
+        context: context,
+        builder: (_) => _PageTitlesDialog(
+          titles: ref.read(appSettingProvider).pageTitles,
+          legacyDashboardTitle: ref.read(customDashboardTitleProvider),
+        ),
+      );
+      if (titles == null || !context.mounted) return;
+      ref
+          .read(appSettingProvider.notifier)
+          .updateState((state) => state.copyWith(pageTitles: titles));
+      await ref.read(customDashboardTitleProvider.notifier).updateTitle(null);
+    },
+  );
+}
+
+class _PageTitlesDialog extends StatefulWidget {
+  const _PageTitlesDialog({required this.titles, this.legacyDashboardTitle});
+  final Map<String, String> titles;
+  final String? legacyDashboardTitle;
+
+  @override
+  State<_PageTitlesDialog> createState() => _PageTitlesDialogState();
+}
+
+class _PageTitlesDialogState extends State<_PageTitlesDialog> {
+  late final _defaults = {
+    'dashboard': appLocalizations.dashboard,
+    'proxies': appLocalizations.proxies,
+    'profiles': appLocalizations.profiles,
+    'tools': appLocalizations.tools,
+  };
+  late final _controllers = {
+    for (final entry in _defaults.entries)
+      entry.key: TextEditingController(
+        text:
+            widget.titles[entry.key] ??
+            (entry.key == 'dashboard' ? widget.legacyDashboardTitle : null) ??
+            entry.value,
+      ),
+  };
+
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(_titleText(context, '主页面左上角标题', 'Main page titles')),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _titleText(
+              context,
+              '留空可隐藏标题。底部 Dock 栏名称保持不变。',
+              'Leave blank to hide a title. Dock labels stay the same.',
+            ),
+          ),
+          for (final entry in _controllers.entries)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: TextField(
+                controller: entry.value,
+                decoration: InputDecoration(labelText: _defaults[entry.key]),
+              ),
+            ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context, <String, String>{}),
+        child: Text(_titleText(context, '恢复默认', 'Reset')),
+      ),
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: Text(appLocalizations.cancel),
+      ),
+      TextButton(
+        onPressed: () => Navigator.pop(context, {
+          for (final entry in _controllers.entries)
+            if (entry.value.text.trim() != _defaults[entry.key])
+              entry.key: entry.value.text.trim(),
+        }),
+        child: Text(appLocalizations.save),
+      ),
+    ],
+  );
 }

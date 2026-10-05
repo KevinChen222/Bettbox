@@ -7,6 +7,7 @@ import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/features/node_import/menu.dart';
 import 'package:bett_box/features/node_import/nodes.dart';
 import 'package:bett_box/features/node_import/view.dart';
+import 'package:bett_box/features/node_import/delete.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:bett_box/pages/editor.dart';
 import 'package:bett_box/providers/providers.dart';
@@ -325,6 +326,54 @@ class EditProfileViewState extends State<EditProfileView> {
     }
   }
 
+  Future<void> _deleteNodes() async {
+    try {
+      var content = fileData == null ? rawText : utf8.decode(fileData!);
+      content ??= await File(
+        await appPath.getProfilePath(profile.id),
+      ).readAsString();
+      final config = loadYaml(content) as Map;
+      if (!mounted) return;
+      final names = await selectNodesToDelete(
+        context,
+        [
+          for (final node in config['proxies'] as List? ?? [])
+            Map<String, dynamic>.from(node as Map),
+        ],
+        referenceMessage: nodeImportText(
+          context,
+          '同时移除策略组中的节点引用及相关前置引用；没有其他成员的策略组保留 DIRECT。保存后生效。',
+          'Group members and dialer references to these nodes will also be removed. Empty groups retain DIRECT. Save to apply.',
+        ),
+      );
+      if (names == null || !mounted) return;
+      final updated = removeNodesFromProfile(content, names);
+      final message = await clashCore.validateConfig(
+        utils.patchValidateConfig(updated),
+        ageSecretKey: ageSecretKeyController.text.trim(),
+      );
+      if (message.isNotEmpty) throw FormatException(message);
+      if (!mounted) return;
+      setState(() {
+        rawText = updated;
+        fileData = Uint8List.fromList(utf8.encode(updated));
+        fileInfoNotifier.value = fileInfoNotifier.value?.copyWith(
+          size: fileData!.length,
+          lastModified: DateTime.now(),
+        );
+      });
+      context.showSnackBar(
+        nodeImportText(
+          context,
+          '已删除 ${names.length} 个节点，保存后生效',
+          '${names.length} nodes deleted. Save to apply.',
+        ),
+      );
+    } catch (error) {
+      if (mounted) context.showSnackBar(error.toString());
+    }
+  }
+
   void showAgeKeyGenerator() {
     globalState.showCommonDialog(child: const _AgeKeyGeneratorDialog());
   }
@@ -507,7 +556,7 @@ class EditProfileViewState extends State<EditProfileView> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: ListView.separated(
                   padding: kMaterialListPadding.copyWith(
-                    bottom: 72 + MediaQuery.viewPaddingOf(context).bottom,
+                    bottom: 144 + MediaQuery.viewPaddingOf(context).bottom,
                   ),
                   itemBuilder: (_, index) {
                     return items[index];
@@ -529,11 +578,28 @@ class EditProfileViewState extends State<EditProfileView> {
                 right: false,
                 child: FloatWrapper(
                   child: Builder(
-                    builder: (buttonContext) => FloatingActionButton.extended(
-                      heroTag: null,
-                      onPressed: () => _addNodes(buttonContext),
-                      label: Text(nodeImportText(context, '添加节点', 'Add nodes')),
-                      icon: const Icon(Icons.add),
+                    builder: (buttonContext) => Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        FloatingActionButton.extended(
+                          heroTag: null,
+                          onPressed: _deleteNodes,
+                          label: Text(
+                            nodeImportText(context, '删除节点', 'Delete nodes'),
+                          ),
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                        const SizedBox(height: 8),
+                        FloatingActionButton.extended(
+                          heroTag: null,
+                          onPressed: () => _addNodes(buttonContext),
+                          label: Text(
+                            nodeImportText(context, '添加节点', 'Add nodes'),
+                          ),
+                          icon: const Icon(Icons.add),
+                        ),
+                      ],
                     ),
                   ),
                 ),

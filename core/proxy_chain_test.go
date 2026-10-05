@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -60,20 +61,35 @@ proxies:
     server: %s
     port: %s
     dialer-proxy: %s
+    x-bettbox-chain-id: test
 proxy-groups:
   - name: Entry
     type: %s
     proxies: [First]
     uselightgbm: false
     collectdata: false
+    x-bettbox-chain-had-proxies: true
   - name: route
     type: select
     proxies: [Last via Entry]
+    hidden: true
+    x-bettbox-chain-id: test
 rules:
   - MATCH,route
 `, firstHost, firstPort, lastHost, lastPort, dialer, groupType)))
 	if err != nil {
 		t.Fatal(err)
+	}
+	data, err := json.Marshal(cfg.Proxies["route"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var group map[string]any
+	if err := json.Unmarshal(data, &group); err != nil {
+		t.Fatal(err)
+	}
+	if group["hidden"] != true {
+		t.Fatalf("hidden chain group is not reported to the client: %s", data)
 	}
 	// Dialer references use the tunnel's configured proxy registry.
 	previous, previousProviders := tunnel.Proxies(), tunnel.Providers()

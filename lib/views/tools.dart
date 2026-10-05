@@ -1428,7 +1428,9 @@ class _ToolViewState extends ConsumerState<ToolsView> {
     ];
 
     return CommonScaffold(
-      title: appLocalizations.tools,
+      title: ref.watch(
+        appSettingProvider.select((state) => state.pageTitles['tools']),
+      ) ?? appLocalizations.tools,
       searchState: AppBarSearchState(onSearch: _onSearchChanged),
       body: ListView.builder(
         key: _query.isEmpty ? toolsStoreKey : null,

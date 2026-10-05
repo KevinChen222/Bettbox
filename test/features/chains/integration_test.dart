@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:bett_box/common/path.dart';
 import 'package:bett_box/features/chains/compiler.dart';
+import 'package:bett_box/features/chains/assembler.dart';
 import 'package:bett_box/features/chains/integration.dart';
 import 'package:bett_box/features/chains/model.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -109,6 +110,14 @@ void main() {
     expect((result['proxy-groups'] as List).single['name'], 'one');
     expect(await applyProxyChains('unbound', config), same(config));
     expect(config['proxy-groups'], isEmpty);
+    final persisted = assembleChains(
+      config,
+      (await store.load()).where((chain) => chain.id == 'one').toList(),
+      await loadChainCatalog('one', config),
+      persist: true,
+    );
+    expect(await applyProxyChains('one', persisted), same(persisted));
+    expect((persisted['proxy-groups'] as List).single['hidden'], true);
   });
 
   test(

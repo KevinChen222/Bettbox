@@ -35,7 +35,7 @@
 
 本 fork 现已增加 Avalon 的链路创建能力，完整使用、结构、接入点、来源和后续适配说明见 [代理链路维护说明](Proxy-Chains.md)。新增模块集中在 `lib/features/chains/`，没有修改原始内核或 Smart 补丁。Avalon 只作为编译器的只读参考，不整体合并其分支，也不自动开启第三套上游更新/发布流程。
 
-合并 Bettbox 更新时保留三处接入：`lib/views/tools.dart` 的独立入口及搜索项；`lib/state.dart` 在脚本/过滤之后、加载内核之前应用链路；`lib/controller.dart` 的链路库备份、恢复及清空处理。UI 改版时移动入口即可，不能用旧 Avalon UI 覆盖 Bettbox 的新 UI。订阅原文件、Profile/Config 生成模型保持原结构。`proxy-chains.json` 跟随应用数据目录与备份，更新应用时不能删除。
+合并 Bettbox 更新时保留三处接入：`lib/views/tools.dart` 的独立入口及搜索项；`lib/state.dart` 在脚本/过滤之后、加载内核之前兼容旧版未落盘链路；`lib/controller.dart` 的链路库备份、恢复及清空处理。UI 改版时移动入口即可，不能用旧 Avalon UI 覆盖 Bettbox 的新 UI。直接保存链路写入来源 YAML，管理操作按 `x-bettbox-chain-*` 标记更新和撤回生成内容；只有明确创建本地配置才新增文件，快照不带管理标记。`proxy-chains.json` 跟随应用数据目录与备份，更新应用时不能删除。
 
 移植来源记录在 `lib/features/chains/avalon-source.json`；保留编译器的 Avalon 版权头、模块内 AGPL 许可及根目录 `NOTICE`，原项目 GPL 许可和个人自用声明仍须保留。链路默认不改变原规则/选中节点。多跳链路第一跳直接引用原节点或策略组，前置组跟随实时选择（含 Smart 自动选路），不能再展开前置成员或重命名前置。后续节点生成副本，出口组按实际落地节点展开；两跳链路的选项数只取决于落地节点数。创建本地配置/导出 YAML 保留原规则，切换本地配置前继承源配置已有的 HTTP provider/规则集缓存，不能因新配置 ID 强制重新下载。
 
@@ -117,6 +117,7 @@ dart run build_runner build -d
 dart tool/prepare_smart_core.dart
 flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart
 flutter test test/features/chains
+flutter test test/main_page_titles_test.dart
 dart analyze lib/features/chains test/features/chains lib/state.dart lib/views/tools.dart lib/controller.dart
 dart analyze tool/prepare_smart_core.dart tool/update_smart_core.dart lib/views/resources.dart lib/clash/interface.dart
 # 在 core 中：Windows 关闭 CGO，与实际 exe 构建一致
