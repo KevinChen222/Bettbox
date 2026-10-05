@@ -20,6 +20,8 @@ mixin ClashInterface {
 
   FutureOr<String> validateConfig(String data, {String? ageSecretKey});
 
+  Future<Result<String>> importNodes(String data);
+
   FutureOr<String> decryptAgeConfig(String data, String ageSecretKey);
 
   FutureOr<Result> getConfig(String path, {String? ageSecretKey});
@@ -126,6 +128,7 @@ abstract class ClashHandlerInterface with ClashInterface {
           completer?.complete(true);
           return;
         case ActionMethod.getConfig:
+        case ActionMethod.importNodes:
         case ActionMethod.convertAgeSecretKeyToPublicKey:
           completer?.complete(result.toResult);
           return;
@@ -511,6 +514,20 @@ abstract class ClashHandlerInterface with ClashInterface {
       method: ActionMethod.convertAgeSecretKeyToPublicKey,
       data: secretKey,
       defaultValue: Result.error('error'),
+    );
+    return Result<String>(
+      data: res.data?.toString(),
+      type: res.type,
+      message: res.message,
+    );
+  }
+
+  @override
+  Future<Result<String>> importNodes(String data) async {
+    final res = await invoke<Result>(
+      method: ActionMethod.importNodes,
+      data: data,
+      defaultValue: Result.error('节点解析超时 / Node import timed out'),
     );
     return Result<String>(
       data: res.data?.toString(),

@@ -75,5 +75,23 @@ void main() {
     );
     expect(save.onPressed, isNull);
     expect(tester.takeException(), isNull);
+    await tester.ensureVisible(addHop);
+    await tester.tap(addHop);
+    await tester.pumpAndSettle();
+    final external = find.text('Add external nodes');
+    final local = find.text('Local / custom HTTP or SOCKS endpoint');
+    expect(
+      tester.getTopLeft(external).dy,
+      lessThan(tester.getTopLeft(local).dy),
+    );
+    await tester.tap(external);
+    await tester.pumpAndSettle();
+    expect(find.text('Add manually'), findsOneWidget);
+    expect(find.text('Subscription URL'), findsOneWidget);
+    await tester.tapAt(const Offset(380, 100));
+    await tester.pumpAndSettle();
+    expect(find.text('Add manually'), findsNothing);
+    expect(external, findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

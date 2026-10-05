@@ -7,6 +7,7 @@ class ProxyChain {
     required this.profileId,
     required this.hops,
     this.entryGroups = const [],
+    this.externalNodes = const [],
     this.enabled = true,
     this.branchLimit = 64,
   });
@@ -16,6 +17,7 @@ class ProxyChain {
   final String profileId;
   final List<ChainTarget> hops;
   final List<String> entryGroups;
+  final List<Map<String, dynamic>> externalNodes;
   final bool enabled;
   final int branchLimit;
 
@@ -26,6 +28,10 @@ class ProxyChain {
     enabled: json['enabled'] as bool? ?? true,
     branchLimit: json['branchLimit'] as int? ?? 64,
     entryGroups: List<String>.from(json['entryGroups'] as List? ?? []),
+    externalNodes: [
+      for (final raw in json['externalNodes'] as List? ?? [])
+        Map<String, dynamic>.from(raw as Map),
+    ],
     hops: [
       for (final raw in json['hops'] as List)
         switch (raw['kind']) {
@@ -46,6 +52,7 @@ class ProxyChain {
     'enabled': enabled,
     'branchLimit': branchLimit,
     'entryGroups': entryGroups,
+    'externalNodes': externalNodes,
     'hops': [
       for (final hop in hops)
         {'kind': hop.kind.name, 'id': hop.id, 'config': hop.config},

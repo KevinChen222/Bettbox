@@ -96,6 +96,7 @@ const (
 	forceGcMethod                  Method = "forceGc"
 	shutdownMethod                 Method = "shutdown"
 	validateConfigMethod           Method = "validateConfig"
+	importNodesMethod              Method = "importNodes"
 	decryptAgeConfigMethod         Method = "decryptAgeConfig"
 	updateConfigMethod             Method = "updateConfig"
 	getProxiesMethod               Method = "getProxies"

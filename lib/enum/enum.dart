@@ -230,6 +230,7 @@ enum ActionMethod {
   forceGc,
   shutdown,
   validateConfig,
+  importNodes,
   updateConfig,
   getConfig,
   getProxies,

@@ -3,6 +3,9 @@ import 'dart:typed_data';
 
 import 'package:bett_box/clash/core.dart';
 import 'package:bett_box/common/common.dart';
+import 'package:bett_box/features/node_import/menu.dart';
+import 'package:bett_box/features/node_import/nodes.dart';
+import 'package:bett_box/features/node_import/view.dart';
 import 'package:bett_box/models/models.dart' show Profile, ProfileExtension;
 import 'package:bett_box/state.dart';
 import 'package:bett_box/widgets/widgets.dart';
@@ -383,12 +386,20 @@ class _ChainEditorViewState extends State<ChainEditorView> {
   late final _name = TextEditingController(text: widget.chain.name);
   late final _hops = List<ChainTarget>.from(widget.chain.hops);
   late final _entryGroups = Set<String>.from(widget.chain.entryGroups);
+  late final _externalNodes = List<Map<String, dynamic>>.from(
+    widget.chain.externalNodes,
+  );
   late int _limit = widget.chain.branchLimit;
   bool _saving = false;
 
+  late final _nodes = <String, Map<String, dynamic>>{
+    ...widget.catalog.nodes,
+    for (final node in _externalNodes) node['name'] as String: node,
+  };
+
   String _hopLabel(ChainTarget hop) {
     if (hop.kind == ChainTargetKind.node) {
-      return widget.catalog.nodes[hop.id]?['name']?.toString() ?? hop.id!;
+      return _nodes[hop.id]?['name']?.toString() ?? hop.id!;
     }
     return hop.id ?? hop.config?['name']?.toString() ?? 'Endpoint';
   }
@@ -405,52 +416,99 @@ class _ChainEditorViewState extends State<ChainEditorView> {
     profileId: widget.chain.profileId,
     hops: List.from(_hops),
     entryGroups: _entryGroups.toList(),
+    externalNodes: List.from(_externalNodes),
     branchLimit: _limit,
     enabled: widget.chain.enabled,
   );
 
   Future<void> _addHop() async {
-    final target = await showDialog<ChainTarget>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: Text(_text(context, '添加一跳', 'Add hop')),
-        children: [
-          SimpleDialogOption(
-            onPressed: () =>
-                Navigator.pop(context, const ChainTarget.localEndpoint({})),
-            child: Text(
-              _text(
-                context,
-                '本地 / 自定义 HTTP、SOCKS 端点',
-                'Local / custom HTTP or SOCKS endpoint',
+    while (true) {
+      if (!mounted) return;
+      final target = await showDialog<Object>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: Text(_text(context, '添加一跳', 'Add hop')),
+          children: [
+            Builder(
+              builder: (buttonContext) => SimpleDialogOption(
+                onPressed: () async {
+                  final method = await showNodeImportMenu(buttonContext);
+                  if (context.mounted && method != null) {
+                    Navigator.pop(context, method);
+                  }
+                },
+                child: Row(
+                  children: [
+                    const Icon(Icons.add_circle_outline),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _text(context, '添加外部节点', 'Add external nodes'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          for (final entry in widget.catalog.nodes.entries)
             SimpleDialogOption(
               onPressed: () =>
-                  Navigator.pop(context, ChainTarget.node(entry.key)),
-              child: Text('${entry.value['name']} · ${entry.value['type']}'),
+                  Navigator.pop(context, const ChainTarget.localEndpoint({})),
+              child: Text(
+                _text(
+                  context,
+                  '本地 / 自定义 HTTP、SOCKS 端点',
+                  'Local / custom HTTP or SOCKS endpoint',
+                ),
+              ),
             ),
-          for (final group in widget.catalog.groups.keys)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, ChainTarget.group(group)),
-              child: Text('${_text(context, '策略组', 'Group')}: $group'),
-            ),
-        ],
-      ),
-    );
-    if (target == null || !mounted) return;
-    if (target.kind == ChainTargetKind.localEndpoint) {
-      final endpoint = await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (_) => const _EndpointDialog(),
+            for (final entry in _nodes.entries)
+              SimpleDialogOption(
+                onPressed: () =>
+                    Navigator.pop(context, ChainTarget.node(entry.key)),
+                child: Text('${entry.value['name']} · ${entry.value['type']}'),
+              ),
+            for (final group in widget.catalog.groups.keys)
+              SimpleDialogOption(
+                onPressed: () =>
+                    Navigator.pop(context, ChainTarget.group(group)),
+                child: Text('${_text(context, '策略组', 'Group')}: $group'),
+              ),
+          ],
+        ),
       );
-      if (endpoint != null && mounted) {
-        setState(() => _hops.add(ChainTarget.localEndpoint(endpoint)));
+      if (target == null || !mounted) return;
+      if (target is NodeImportMethod) {
+        final nodes = await importExternalNodes(
+          context,
+          method: target,
+          reservedNames: {
+            ...nodeNames(widget.source),
+            for (final node in _nodes.values) node['name'] as String,
+          },
+        );
+        if (nodes != null && mounted) {
+          setState(() {
+            _externalNodes.addAll(nodes);
+            for (final node in nodes) {
+              _nodes[node['name'] as String] = node;
+            }
+          });
+        }
+        continue;
       }
-    } else {
-      setState(() => _hops.add(target));
+      final hop = target as ChainTarget;
+      if (hop.kind == ChainTargetKind.localEndpoint) {
+        final endpoint = await showDialog<Map<String, dynamic>>(
+          context: context,
+          builder: (_) => const _EndpointDialog(),
+        );
+        if (endpoint != null && mounted) {
+          setState(() => _hops.add(ChainTarget.localEndpoint(endpoint)));
+        }
+      } else {
+        setState(() => _hops.add(hop));
+      }
+      return;
     }
   }
 
@@ -644,7 +702,7 @@ class _ChainEditorViewState extends State<ChainEditorView> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Text(
-                '${_text(context, '客户端', 'Client')} → ${path.targets.map((id) => widget.catalog.nodes[id]?['name'] ?? id.replaceFirst('local:', '')).join(' → ')} → ${_text(context, '目标', 'Destination')}',
+                '${_text(context, '客户端', 'Client')} → ${path.targets.map((id) => _nodes[id]?['name'] ?? id.replaceFirst('local:', '')).join(' → ')} → ${_text(context, '目标', 'Destination')}',
               ),
             ),
           if (preview.paths.length > 20)

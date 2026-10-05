@@ -8,6 +8,13 @@
 - 配置中的策略组，包括嵌套组、Smart 组、`use`、`include-all`、`include-all-proxies`、`include-all-providers`。多跳链路的第一跳直接引用原组名，跟随该组实时选择和 Smart 自动选路；后续组展开为节点副本。DIRECT、REJECT 等内置动作不作为独立中转节点。
 - 已有 Provider 缓存和 inline Provider 的节点。HTTP Provider 使用 Bettbox 自己的缓存路径；file Provider 的相对路径以内核数据目录为准。Provider 尚未下载时先在资源页面同步。节点按 Provider 名与节点名引用，不依赖订阅的排列顺序。
 - 本地或远程 HTTP(S)/SOCKS5 端点，支持地址、端口和可选认证。Android 的 `127.0.0.1` 指设备自身。
+- 在「添加一跳」窗口顶部点击「添加外部节点」，使用「手动添加」或「订阅链接」。添加后返回节点列表选择所需节点；外部节点随当前链路保存，仅加入链路生成的运行配置、本地配置或导出 YAML 的 `proxies`，不写回来源配置。复制、备份及链路库导入/导出会保留这些节点。
+
+配置 → 某个配置的编辑页左下角也有「添加节点」按钮，与保存按钮采用相同样式。点击后两项带动画展开、背景变暗，点击空白或返回可收起。此入口将节点追加到当前配置的 `proxies` 末尾，点击右下角「保存」才写入文件；之后链路创建即可直接选择。若原配置开启订阅自动更新，后续更新可能覆盖手动修改，保存时沿用原编辑页的自动更新提示。
+
+手动输入支持每行一条分享链接（包括 SS2022 的 `ss://`）、Mihomo YAML/JSON 节点对象、`- {...}` 列表、多行大括号对象、标准 YAML 列表，以及带 `proxies` 的完整配置。可混合分享链接与大括号对象。链接由当前打包内核的转换器识别，节点参数再由同一内核校验；任何无法识别或无效节点都使整批导入失败，避免悄悄丢节点。同名节点分配 `(2)` 等后缀，导入批次内部的 `dialer-proxy` 引用相应更新。
+
+订阅链接接受 HTTP(S)，支持含 `proxies` 的 YAML/JSON、分享链接列表和 Base64 链接订阅。只读取节点，不导入规则、策略组或 Provider 定义，也不保存链接做自动更新。仅含远程 Provider 定义而没有实际节点的订阅需先转换为含节点的订阅。不改变已有规则或策略组成员。
 
 保存后会生成与链路同名的 select 策略组；名称冲突时分配后缀，不改动原节点和原规则。可以勾选「加入已有策略组」，然后在代理页面选择链路。没有绑定入口组的链路仍可在全局模式选择，或在覆写规则里引用生成组名；名称冲突时以代理页面实际名称为准。不自动改变既有规则或自动选中链路。
 
@@ -19,7 +26,7 @@
 
 ## 独立于上游的结构
 
-不修改 Bettbox 原始 Go 内核、不改 Smart 补丁、不引入 Avalon 数据库、不改 Profile/Config 的生成模型，也不覆写订阅原文件。
+不修改 Bettbox 原始 Go 内核、不改 Smart 补丁、不引入 Avalon 数据库、不改 Profile/Config 的生成模型。链路入口不覆写订阅原文件；配置编辑页的节点添加仅在用户保存时写回当前文件。`core/node_import.go` 作为独立 Go 桥接入口复用内核已有转换器和节点校验器。
 
 | 文件 | 职责 |
 | --- | --- |
@@ -29,15 +36,19 @@
 | `filter.dart` | 策略组与 Provider 共用的 `(?i)` 过滤兼容 |
 | `model.dart` / `store.dart` | 版本化链路库与串行、原子写入 |
 | `view.dart` | 独立管理与编辑界面 |
+| `lib/features/node_import/` | 两个入口共用的动画菜单、手动编辑、订阅导入、名称分配和 YAML 追加 |
+| `core/node_import.go` | 仅提取节点，复用 Mihomo 分享链接转换及参数校验 |
 | `avalon-source.json` / `LICENSE` | 实际移植来源和 Avalon 编译器许可 |
 
 数据保存在应用数据目录的 `proxy-chains.json`，Windows 便携模式同样跟随 portable 目录。Bettbox 本地/WebDAV 备份会包含它；恢复遵守原覆盖/合并策略；旧备份在覆盖恢复时清空链路库。清空应用数据也清空链路库。
 
-只有三个现有文件有接入点：
+链路运行和备份的三个主要接入点：
 
 1. `lib/views/tools.dart`：导入 `view.dart`、加入 `ProxyChainsItem` 和搜索入口。上游改 UI 时可以将这个入口移到新工具页面，不需要移植 Avalon 界面或重做导航枚举。
 2. `lib/state.dart`：`patchRawConfig` 在脚本、过滤和组开关等处理完成后、写入/加载运行配置前调用 `applyProxyChains(profileId, rawConfig)`。编辑器用 `includeProxyChains: false` 读取基础有效配置，避免旧链路影响编辑。若上游重构配置流水线，保持这一顺序；不能写回 `Profile` 的订阅文件。
 3. `lib/controller.dart`：在备份中加入链路库；恢复时先校验版本，再按恢复策略合并/覆盖；清空数据时清空链路库。上游改备份格式时迁移这三个行为。
+
+节点添加另接入 `lib/views/profiles/edit_profile.dart`，并通过 `ActionMethod.importNodes`、`lib/clash/core.dart` / `interface.dart`、`core/action.go` / `constant.go` 调用独立桥接文件。保持生成 JSON 枚举映射与方法名一致。UI 合并时保留配置页左下角入口和链路选节点窗口顶部入口。
 
 这些接入点仍可能与上游同一区域的改动产生冲突，不能保证零冲突；主要功能留在独立目录，缩小冲突范围。上游新增链路功能或改变 `dialer-proxy` 语义时，先审阅再适配，不能直接选 ours/theirs。
 

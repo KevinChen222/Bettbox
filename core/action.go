@@ -76,6 +76,14 @@ func handleAction(action *Action, result ActionResult) {
 		}
 		result.success(handleValidateConfig(&params))
 		return
+	case importNodesMethod:
+		nodes, err := handleImportNodes(action.Data.(string))
+		if err != nil {
+			result.error(err.Error())
+			return
+		}
+		result.success(nodes)
+		return
 	case decryptAgeConfigMethod:
 		paramsString := action.Data.(string)
 		var params DecryptAgeConfigParams

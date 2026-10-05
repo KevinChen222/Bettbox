@@ -114,7 +114,11 @@ class ChainCatalog {
     ChainCompileRequest(
       name: chain.name,
       hops: chain.hops.map((hop) => ChainHop(target: hop)).toList(),
-      nodes: {...nodes, ...existingNodes},
+      nodes: {
+        ...nodes,
+        ...existingNodes,
+        for (final node in chain.externalNodes) node['name'] as String: node,
+      },
       groups: groups,
       branchLimit: chain.branchLimit,
       generatedPrefix: '__bettbox_chain_${chain.id}',
@@ -142,10 +146,30 @@ Map<String, dynamic> assembleChains(
     for (final raw in [...proxies, ...groups]) (raw as Map)['name'] as String,
   };
   for (final chain in chains) {
-    final result = catalog.compile(chain, reserved, {
+    for (final node in chain.externalNodes) {
+      final name = node['name'];
+      if (name is! String || name.isEmpty || node['type'] is! String) {
+        throw FormatException('${chain.name}: Invalid external node');
+      }
+      if (reserved.contains(name)) {
+        final existing = proxies
+            .where((raw) => raw['name'] == name)
+            .firstOrNull;
+        if (existing == null || jsonEncode(existing) != jsonEncode(node)) {
+          throw FormatException(
+            '${chain.name}: External node name conflict: $name',
+          );
+        }
+      } else {
+        proxies.add(jsonDecode(jsonEncode(node)));
+        reserved.add(name);
+      }
+    }
+    final existingNodes = {
       for (final raw in proxies)
         raw['name'] as String: Map<String, dynamic>.from(raw as Map),
-    });
+    };
+    final result = catalog.compile(chain, reserved, existingNodes);
     if (!result.isValid) {
       throw FormatException(
         '${chain.name}: ${result.diagnostics.where((d) => d.isError).map((d) => d.message).join('\n')}',
@@ -161,7 +185,7 @@ Map<String, dynamic> assembleChains(
         throw FormatException('${chain.name}: 不支持将链路加入 relay 策略组');
       }
       if (chain.hops.length > 1 &&
-          _usesGroup(chain.hops.first, entry, catalog, {})) {
+          _usesGroup(chain.hops.first, entry, catalog, existingNodes, {})) {
         throw FormatException('${chain.name}: 前置依赖策略组 "$entry"，不能将链路加入该组以免循环');
       }
       group['proxies'] = [...group['proxies'] as List? ?? [], selector.name];
@@ -200,16 +224,21 @@ bool _usesGroup(
   ChainTarget target,
   String group,
   ChainCatalog catalog,
+  Map<String, Map<String, dynamic>> existingNodes,
   Set<String> visited,
 ) {
   if (!visited.add('${target.kind}:${target.id}')) return false;
   if (target.kind == ChainTargetKind.group) {
     return target.id == group ||
         (catalog.groups[target.id] ?? []).any(
-          (member) => _usesGroup(member, group, catalog, visited),
+          (member) =>
+              _usesGroup(member, group, catalog, existingNodes, visited),
         );
   }
-  final dialer = (target.config ?? catalog.nodes[target.id])?['dialer-proxy'];
+  final dialer =
+      (target.config ??
+      existingNodes[target.id] ??
+      catalog.nodes[target.id])?['dialer-proxy'];
   if (dialer is! String) return false;
   return _usesGroup(
     catalog.groups.containsKey(dialer)
@@ -217,6 +246,7 @@ bool _usesGroup(
         : ChainTarget.node(dialer),
     group,
     catalog,
+    existingNodes,
     visited,
   );
 }

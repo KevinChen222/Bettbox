@@ -87,7 +87,7 @@ jobs:
         working-directory: core/.smart-mihomo
         env:
           CGO_ENABLED: '0'
-        run: go test -tags=with_gvisor ./adapter/outboundgroup ./component/smart/... ./tunnel/statistic ./listener/sing_tun
+        run: go test -tags=with_gvisor ./common/callback ./adapter/outboundgroup ./component/smart/... ./tunnel/statistic ./listener/sing_tun
       - name: Build Windows core and helper
         if: matrix.platform == 'windows'
         run: dart setup.dart windows --arch amd64 --out core --compatible

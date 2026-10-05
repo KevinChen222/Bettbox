@@ -16,6 +16,8 @@ SS2022 的 reader、writer 和底层连接清理路径保持原样。最内层 S
 
 正式源码和 Go 回归位于 `core/smart.patch`；生成目录不是持久修改来源。保存补丁后重新运行 `tool/prepare_smart_core.dart`，已确认能从原 Bettbox 内核重建修复。原内核及来源 SHA 没有调整。
 
+2026-10-05 合入 Smart Alpha `512b09d` 后，首次写入回调包装层另有 `sync.Once` 保护。保留本 fork 的 tracker CAS：两处各自保护不同入口，tracker 提前取得关闭权仍负责避免重入等待自身。回归同时覆盖新回调层的并发关闭与错误返回，以及经过该包装层的 tracker 重入关闭。新版本还改进异常确认、传输错误记录、深层统计解包及 WireGuard 按需初始化；这些改动不能替代真机 CPU、内存和功耗测量。
+
 ## 配置应用与顶部横条
 
 `core/hub.go` 的关闭连接动作持有 runLock，`core/common.go` 的 setupConfig 和多项读取也需要该锁。因此连接关闭耗时会阻塞等待同一锁的配置动作及读取。hub.ApplyConfig 还会关闭旧 Smart 组，Smart.Close 等待其后台任务退出；若任务仍在关闭连接，该等待也可能受影响。

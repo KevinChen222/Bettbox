@@ -51,7 +51,7 @@ class AboutView extends StatelessWidget {
         ),
         _LinkGridRow(
           left: _LinkGridTile(
-            title: 'bettbox',
+            title: 'Bettbox',
             icon: Icons.launch,
             onTap: () =>
                 globalState.openUrl('https://github.com/appshubcc/Bettbox'),

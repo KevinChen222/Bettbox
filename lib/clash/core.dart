@@ -78,6 +78,17 @@ class ClashCore {
     return clashInterface.validateConfig(data, ageSecretKey: ageSecretKey);
   }
 
+  Future<List<Map<String, dynamic>>> importNodes(String data) async {
+    final result = await clashInterface.importNodes(data);
+    if (!result.isSuccess || result.data == null) {
+      throw FormatException(result.message);
+    }
+    return [
+      for (final node in jsonDecode(result.data!) as List)
+        Map<String, dynamic>.from(node as Map),
+    ];
+  }
+
   FutureOr<String> decryptAgeConfig(String data, String ageSecretKey) {
     return clashInterface.decryptAgeConfig(data, ageSecretKey);
   }

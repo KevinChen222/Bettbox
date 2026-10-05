@@ -317,6 +317,175 @@ index 2d487da5f6193d5ffbb4ade0af49714a78f47b69..b4232df88652541f0007459ade65d83b
  
  	backendInitOnce sync.Once
  	backendInitCh   chan struct{}
+diff --git a/adapter/outbound/wireguard.go b/adapter/outbound/wireguard.go
+index 86e7b74a1b8ed6300bd05c070dab8035b469311f..54a671e8a1dca7c458ded0070de0d538ab21e2c4 100644
+--- a/adapter/outbound/wireguard.go
++++ b/adapter/outbound/wireguard.go
+@@ -54,6 +54,9 @@ type WireGuard struct {
+ 	tunDevice wireguardDevice
+ 	resolver  resolver.Resolver
+ 
++	runCtx        context.Context
++	runCancel     context.CancelFunc
++	deviceMutex   sync.Mutex
+ 	initOk        atomic.Bool
+ 	initMutex     sync.Mutex
+ 	initErr       error
+@@ -380,7 +383,8 @@ func NewWireGuard(option WireGuardOption) (*WireGuard, error) {
+ 			outbound.connectAddr = option.Addr()
+ 		}
+ 	}
+-	outbound.bind = wireguard.NewClientBind(context.Background(), wgSingErrorHandler{outbound.Name()}, singDialer, isConnect, outbound.connectAddr.AddrPort(), reserved)
++	outbound.runCtx, outbound.runCancel = context.WithCancel(context.Background())
++	outbound.bind = wireguard.NewClientBind(outbound.runCtx, wgSingErrorHandler{outbound.Name()}, singDialer, isConnect, outbound.connectAddr.AddrPort(), reserved)
+ 
+ 	if outbound.bind == nil {
+ 		return nil, E.New("failed to create wireguard client bind")
+@@ -450,11 +454,8 @@ func NewWireGuard(option WireGuardOption) (*WireGuard, error) {
+ 		}
+ 		option.AmneziaWGOption.HeaderProtectionKey = hex.EncodeToString(bytes)
+ 	}
+-	outbound.option = option
+-
+-	mtu := option.MTU
+-	if mtu == 0 {
+-		mtu = 1408
++	if option.MTU == 0 {
++		option.MTU = 1408
+ 	}
+ 	option.IPStack.normalize()
+ 	if err = option.IPStack.validate(); err != nil {
+@@ -464,33 +465,9 @@ func NewWireGuard(option WireGuardOption) (*WireGuard, error) {
+ 		return nil, E.New("missing local address")
+ 	}
+ 
+-	stack, err := newIPStack(option.IPStack, outbound.localPrefixes, uint32(mtu))
+-	if err != nil {
+-		return nil, E.Cause(err, "create WireGuard stack")
+-	}
+-	outbound.tunDevice, err = newWireguardDevice(stack)
+-	if err != nil {
+-		_ = stack.Close()
+-		return nil, E.Cause(err, "create WireGuard device")
+-	}
+-
+-	logger := &device.Logger{
+-		Verbosef: func(format string, args ...interface{}) {
+-			log.SingLogger.Debug(fmt.Sprintf("[WG](%s) %s", option.Name, fmt.Sprintf(format, args...)))
+-		},
+-		Errorf: func(format string, args ...interface{}) {
+-			log.SingLogger.Error(fmt.Sprintf("[WG](%s) %s", option.Name, fmt.Sprintf(format, args...)))
+-		},
+-	}
++	outbound.option = option
+ 	if option.AmneziaWGOption != nil {
+ 		outbound.bind.SetParseReserved(false) // AmneziaWG don't need parse reserved
+-		if option.AmneziaWGOption.Version == 3 {
+-			outbound.device = amneziav3.NewDevice(outbound.tunDevice, outbound.bind, logger, option.Workers)
+-		} else {
+-			outbound.device = amnezia.NewDevice(outbound.tunDevice, outbound.bind, logger, option.Workers)
+-		}
+-	} else {
+-		outbound.device = device.NewDevice(outbound.tunDevice, outbound.bind, logger, option.Workers)
+ 	}
+ 
+ 	var has6 bool
+@@ -540,7 +517,7 @@ func (w *WireGuard) init(ctx context.Context) error {
+ 	return nil
+ }
+ 
+-func (w *WireGuard) init0(ctx context.Context) error {
++func (w *WireGuard) init0(ctx context.Context) (err error) {
+ 	if w.initOk.Load() {
+ 		return nil
+ 	}
+@@ -562,23 +539,69 @@ func (w *WireGuard) init0(ctx context.Context) error {
+ 		// let us can retry domain resolve in next time
+ 		return err
+ 	}
++	if err = ctx.Err(); err != nil {
++		return err
++	}
++
++	stack, err := newIPStack(w.option.IPStack, w.localPrefixes, uint32(w.option.MTU))
++	if err != nil {
++		w.initErr = E.Cause(err, "create WireGuard stack")
++		return w.initErr
++	}
++	tunDevice, err := newWireguardDevice(stack)
++	if err != nil {
++		_ = stack.Close()
++		w.initErr = E.Cause(err, "create WireGuard device")
++		return w.initErr
++	}
++
++	logger := &device.Logger{
++		Verbosef: func(format string, args ...interface{}) {
++			log.SingLogger.Debug(fmt.Sprintf("[WG](%s) %s", w.option.Name, fmt.Sprintf(format, args...)))
++		},
++		Errorf: func(format string, args ...interface{}) {
++			log.SingLogger.Error(fmt.Sprintf("[WG](%s) %s", w.option.Name, fmt.Sprintf(format, args...)))
++		},
++	}
++	var wgDevice wireguardGoDevice
++	if w.option.AmneziaWGOption != nil {
++		if w.option.AmneziaWGOption.Version == 3 {
++			wgDevice = amneziav3.NewDevice(tunDevice, w.bind, logger, w.option.Workers)
++		} else {
++			wgDevice = amnezia.NewDevice(tunDevice, w.bind, logger, w.option.Workers)
++		}
++	} else {
++		wgDevice = device.NewDevice(tunDevice, w.bind, logger, w.option.Workers)
++	}
++	defer func() {
++		if err != nil {
++			wgDevice.Close()
++		}
++	}()
+ 
+ 	if debug.Enabled {
+ 		log.SingLogger.Trace(fmt.Sprintf("[WG](%s) created wireguard ipc conf: \n %s", w.option.Name, ipcConf))
+ 	}
+-	err = w.device.IpcSet(ipcConf)
++	err = wgDevice.IpcSet(ipcConf)
+ 	if err != nil {
+ 		w.initErr = E.Cause(err, "setup wireguard")
+ 		return w.initErr
+ 	}
+ 	w.serverAddrTime.Store(time.Now())
+ 
+-	err = w.tunDevice.Start()
++	err = tunDevice.Start()
+ 	if err != nil {
+ 		w.initErr = err
+ 		return w.initErr
+ 	}
+ 
++	w.deviceMutex.Lock()
++	defer w.deviceMutex.Unlock()
++	err = w.runCtx.Err()
++	if err != nil {
++		return err
++	}
++	w.device, w.tunDevice = wgDevice, tunDevice
+ 	w.initOk.Store(true)
+ 	return nil
+ }
+@@ -781,8 +804,12 @@ func (w *WireGuard) genIpcConf(ctx context.Context, updateOnly bool) (string, er
+ 
+ // Close implements C.ProxyAdapter
+ func (w *WireGuard) Close() error {
+-	if w.device != nil {
+-		w.device.Close()
++	w.runCancel()
++	w.deviceMutex.Lock()
++	wgDevice := w.device
++	w.deviceMutex.Unlock()
++	if wgDevice != nil {
++		wgDevice.Close()
+ 	}
+ 	return nil
+ }
 diff --git a/adapter/outboundgroup/groupbase.go b/adapter/outboundgroup/groupbase.go
 index eed45e0d610ed46b23edfadb25022b440eeb4f38..5dac4a555a7796c97c090994eb6593bccbcc0808 100644
 --- a/adapter/outboundgroup/groupbase.go
@@ -589,10 +758,10 @@ index e97f8da04b9f321e0a637837beabc1b3749d3b63..eb6e3d3303eb12fab24846b46a7c4655
  	}
 diff --git a/adapter/outboundgroup/smart.go b/adapter/outboundgroup/smart.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9b0a6c8b3
+index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc9ee3c82f
 --- /dev/null
 +++ b/adapter/outboundgroup/smart.go
-@@ -0,0 +1,2388 @@
+@@ -0,0 +1,2423 @@
 +package outboundgroup
 +
 +import (
@@ -611,6 +780,7 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +	"strconv"
 +	"strings"
 +	"sync"
++	"syscall"
 +	"time"
 +
 +	"github.com/metacubex/mihomo/common/atomic"
@@ -659,7 +829,7 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +	siteKeyCacheLimit = 4096 // sites remembered as site keys, relearned after eviction
 +)
 +
-+// host failure codes; 1 and 2 do not count toward the host block (see countsTowardBlock)
++// host failure codes; 1 and 2 do not count toward the block, 4 and 6 need two strikes
 +const (
 +	blockCodeManual      = 1
 +	blockCodeAnswer      = 2
@@ -1120,8 +1290,17 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +	var firstWriteErr atomic.TypedValue[error]
 +	var firstReadErr atomic.TypedValue[error]
 +	var firstReadLatency atomic.Int64
++	var observedReadErr atomic.TypedValue[error]
++	var observedWriteErr atomic.TypedValue[error]
 +
-+	if N.NeedHandshake(c) {
++	needHandshake := N.NeedHandshake(c)
++	// a raw relay must keep its splice fast path: the copy engine peels wrappers
++	// down to the socket, so the observer would disable it; skip those chains
++	if _, isRawRelay := N.UnwrapWriter(c).(syscall.Conn); !isRawRelay {
++		c = callback.NewErrorCallBackConn(c, &observedReadErr, &observedWriteErr)
++	}
++
++	if needHandshake {
 +		c = callback.NewFirstWriteCallBackConn(c, func(err error) {
 +			if err != nil {
 +				firstWriteErr.Store(err)
@@ -1139,6 +1318,7 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +	return s.registerClosureMetricsCallback(
 +		c, proxy, metadata, connectTime,
 +		&firstReadLatency, &firstReadErr, &firstWriteErr,
++		&observedReadErr, &observedWriteErr,
 +	)
 +}
 +
@@ -1153,12 +1333,15 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +	pc.AppendToChains(s)
 +
 +	var udpLatency atomic.Int64
++	var observedReadErr atomic.TypedValue[error]
++	var observedWriteErr atomic.TypedValue[error]
 +
++	pc = callback.NewErrorCallBackPacketConn(pc, &observedReadErr, &observedWriteErr)
 +	pc = callback.NewFirstReadCallBackPacketConn(pc, func(latency int64) {
 +		udpLatency.Store(latency)
 +	})
 +
-+	return s.registerPacketClosureMetricsCallback(pc, proxy, metadata, connectTime, &udpLatency)
++	return s.registerPacketClosureMetricsCallback(pc, proxy, metadata, connectTime, &udpLatency, &observedReadErr, &observedWriteErr)
 +}
 +
 +func (s *Smart) Set(name string) error {
@@ -2108,7 +2291,13 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +	lock.Unlock()
 +	locked = false
 +
-+	if isDegraded || failedBlock {
++	// zero-traffic and loss act only on the confirmed strike
++	needsConfirm := blockCode == blockCodeZeroTraffic || blockCode == blockCodeLoss
++	if failedBlock || (isDegraded && !needsConfirm) {
++		if failedBlock && needsConfirm {
++			log.Debugln("[Smart] Connection Group: [%s] - Node: [%s] - Address: [%s] repeated strike confirmed, node excluded for the target",
++				s.Name(), proxyName, addressDisplay)
++		}
 +		s.closeSameConnection(metadata, proxyName, target, true)
 +		s.store.DeleteUnwrapResult(s.Name(), s.configName, target)
 +	}
@@ -2136,7 +2325,7 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +		connectTime, latency, uploadTotalMB, downloadTotalMB, maxUploadRateKB, maxDownloadRateKB, connectionDuration, ModelPredicted, lossRate, cumulLossRate)
 +}
 +
-+func (s *Smart) registerClosureMetricsCallback(c C.Conn, proxy C.Proxy, metadata *C.Metadata, connectTime int64, firstReadLatency *atomic.Int64, firstReadErr *atomic.TypedValue[error], firstWriteErr *atomic.TypedValue[error]) C.Conn {
++func (s *Smart) registerClosureMetricsCallback(c C.Conn, proxy C.Proxy, metadata *C.Metadata, connectTime int64, firstReadLatency *atomic.Int64, firstReadErr *atomic.TypedValue[error], firstWriteErr *atomic.TypedValue[error], observedReadErr *atomic.TypedValue[error], observedWriteErr *atomic.TypedValue[error]) C.Conn {
 +	return callback.NewCloseCallbackConn(c, func() {
 +		tracker := statistic.DefaultManager.Get(metadata.UUID)
 +		if tracker != nil {
@@ -2150,6 +2339,13 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +			latency := firstReadLatency.Load()
 +			readErr := firstReadErr.Load()
 +			writeErr := firstWriteErr.Load()
++			// the observer covers mid-transfer errors the one-shot callbacks miss
++			if err := observedReadErr.Load(); err != nil {
++				readErr = err
++			}
++			if err := observedWriteErr.Load(); err != nil {
++				writeErr = err
++			}
 +
 +			var tcpStats *tcpstats.Stats
 +			if trackerConn, ok := tracker.(net.Conn); ok {
@@ -2172,17 +2368,13 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +				closeErr = nil
 +			}
 +
-+			if closeErr != nil {
-+				s.markNodeFailure(metadata, proxy.Name(), true, true, blockCodeError, 0)
-+			}
-+
 +			go s.recordConnectionStats(metadata, proxy, connectTime, latency, uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, tcpStats, closeErr)
 +			return
 +		}
 +	})
 +}
 +
-+func (s *Smart) registerPacketClosureMetricsCallback(pc C.PacketConn, proxy C.Proxy, metadata *C.Metadata, connectTime int64, udpLatency *atomic.Int64) C.PacketConn {
++func (s *Smart) registerPacketClosureMetricsCallback(pc C.PacketConn, proxy C.Proxy, metadata *C.Metadata, connectTime int64, udpLatency *atomic.Int64, observedReadErr *atomic.TypedValue[error], observedWriteErr *atomic.TypedValue[error]) C.PacketConn {
 +	return callback.NewCloseCallbackPacketConn(pc, func() {
 +		tracker := statistic.DefaultManager.Get(metadata.UUID)
 +		if tracker != nil {
@@ -2193,8 +2385,17 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +			maxUploadRate := info.MaxUploadRate.Load()
 +			maxDownloadRate := info.MaxDownloadRate.Load()
 +
++			closeErr := observedReadErr.Load()
++			if closeErr == nil {
++				closeErr = observedWriteErr.Load()
++			}
++			// a connection the group closed on purpose is not a transfer failure
++			if metadata.SmartBlock == "degraded" {
++				closeErr = nil
++			}
++
 +			go s.recordConnectionStats(metadata, proxy, connectTime, udpLatency.Load(),
-+				uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, nil, nil)
++				uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, nil, closeErr)
 +			return
 +		}
 +	})
@@ -2480,8 +2681,8 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +		return q.weight, false, false, 0
 +	}
 +
-+	// high packet loss detection
-+	if q.lossRate >= 0.1 || q.emaLossRate >= 0.05 {
++	// a strike needs current loss too, the decaying ema alone must not confirm it
++	if q.lossRate >= 0.1 || (q.lossRate >= 0.05 && q.emaLossRate >= 0.05) {
 +		log.Debugln("[Smart] Connection Group: [%s] - Node: [%s] - Network: [%s] - Address: [%s] detected high packet loss [current: %.2f%%, history EMA: %.2f%%]...",
 +			s.Name(), proxyName, metadata.NetWork.String(), q.address, q.lossRate*100, q.emaLossRate*100)
 +		return q.weight, true, true, blockCodeLoss
@@ -2499,7 +2700,10 @@ index 0000000000000000000000000000000000000000..1b88bcb2ff6b098673a8f805a4f95fc9
 +	failedBlock := s.store.UpdateHostStatus(s.Name(), s.configName, wildcardTarget, metadata, proxyName, s.maxFailedTimes, int(s.hostFailLimit.Load()), isDegraded, checked, blockCode, ttl)
 +
 +	if (isDegraded || failedBlock || ttl > 0) && target != "" && target != wildcardTarget {
-+		s.store.UpdateHostStatus(s.Name(), s.configName, target, metadata, proxyName, s.maxFailedTimes, int(s.hostFailLimit.Load()), isDegraded, checked, blockCode, ttl)
++		// a target level block must also drive the caller's close and pin drop
++		if s.store.UpdateHostStatus(s.Name(), s.configName, target, metadata, proxyName, s.maxFailedTimes, int(s.hostFailLimit.Load()), isDegraded, checked, blockCode, ttl) {
++			failedBlock = true
++		}
 +	}
 +
 +	return failedBlock
@@ -3080,6 +3284,42 @@ index 12ae4cffae758e880e81424c51d1e483a180b0c8..f99e1465d39d1f678dbbd65fdec40c70
 +	v := f.Load()
 +	return fmt.Sprintf("%g", v)
 +}
+diff --git a/common/callback/callback.go b/common/callback/callback.go
+index 9ae0f94a38efa9e6cb38269791c34ae054987fa1..ef39647423ee11c20c7829c6b2f559b25ba74e25 100644
+--- a/common/callback/callback.go
++++ b/common/callback/callback.go
+@@ -1,6 +1,8 @@
+ package callback
+ 
+ import (
++	"sync"
++
+ 	"github.com/metacubex/mihomo/common/buf"
+ 	N "github.com/metacubex/mihomo/common/net"
+ 	C "github.com/metacubex/mihomo/constant"
+@@ -10,6 +12,9 @@ type firstWriteCallBackConn struct {
+ 	C.Conn
+ 	callback func(error)
+ 	written  bool
++
++	closeOnce sync.Once
++	closeErr  error
+ }
+ 
+ func (c *firstWriteCallBackConn) Write(b []byte) (n int, err error) {
+@@ -32,6 +37,12 @@ func (c *firstWriteCallBackConn) WriteBuffer(buffer *buf.Buffer) (err error) {
+ 	return c.Conn.WriteBuffer(buffer)
+ }
+ 
++// Close forwards once: chained layers may close the same conn several times.
++func (c *firstWriteCallBackConn) Close() error {
++	c.closeOnce.Do(func() { c.closeErr = c.Conn.Close() })
++	return c.closeErr
++}
++
+ func (c *firstWriteCallBackConn) Upstream() any {
+ 	return c.Conn
+ }
 diff --git a/common/callback/close_callback.go b/common/callback/close_callback.go
 index 630ee5d7f7b1bb69faf6308eaa2ae5fef0745c8a..146aa9488e72665bb2e90b5ba82dea80aad2eb60 100644
 --- a/common/callback/close_callback.go
@@ -3123,6 +3363,183 @@ index 630ee5d7f7b1bb69faf6308eaa2ae5fef0745c8a..146aa9488e72665bb2e90b5ba82dea80
  func (w *closeCallbackPacketConn) ReaderReplaceable() bool {
  	return true
  }
+diff --git a/common/callback/error_callback.go b/common/callback/error_callback.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..1488e4b53f1a38fefe7fa57a7a4d8a704d11a27b
+--- /dev/null
++++ b/common/callback/error_callback.go
+@@ -0,0 +1,107 @@
++package callback
++
++import (
++	"errors"
++	"net"
++	"os"
++
++	"github.com/metacubex/mihomo/common/atomic"
++	"github.com/metacubex/mihomo/common/buf"
++	C "github.com/metacubex/mihomo/constant"
++)
++
++// errorCallBackConn records the first non-nil error of each direction so a
++// connection that dies mid-transfer is not reported as a success.
++// It must not implement the replaceable protocol or SyscallConn: the copy
++// engine would peel it and the record would go blind for the fast paths.
++type errorCallBackConn struct {
++	C.Conn
++	readErr  *atomic.TypedValue[error]
++	writeErr *atomic.TypedValue[error]
++}
++
++// our own close and a transient deadline must not be charged to the node
++func isConnectionLifecycle(err error) bool {
++	return errors.Is(err, net.ErrClosed) || errors.Is(err, os.ErrDeadlineExceeded)
++}
++
++func (c *errorCallBackConn) record(slot *atomic.TypedValue[error], err error) {
++	if err == nil || isConnectionLifecycle(err) {
++		return
++	}
++	slot.CompareAndSwap(nil, err)
++}
++
++func (c *errorCallBackConn) Read(b []byte) (int, error) {
++	n, err := c.Conn.Read(b)
++	c.record(c.readErr, err)
++	return n, err
++}
++
++func (c *errorCallBackConn) ReadBuffer(buffer *buf.Buffer) error {
++	err := c.Conn.ReadBuffer(buffer)
++	c.record(c.readErr, err)
++	return err
++}
++
++func (c *errorCallBackConn) Write(b []byte) (int, error) {
++	n, err := c.Conn.Write(b)
++	c.record(c.writeErr, err)
++	return n, err
++}
++
++func (c *errorCallBackConn) WriteBuffer(buffer *buf.Buffer) error {
++	err := c.Conn.WriteBuffer(buffer)
++	c.record(c.writeErr, err)
++	return err
++}
++
++func (c *errorCallBackConn) Upstream() any {
++	return c.Conn
++}
++
++func NewErrorCallBackConn(c C.Conn, readErr, writeErr *atomic.TypedValue[error]) C.Conn {
++	return &errorCallBackConn{Conn: c, readErr: readErr, writeErr: writeErr}
++}
++
++// errorCallBackPacketConn is the udp counterpart of errorCallBackConn and
++// shares its peel contract. The ICMP refusal of the far side is filtered: it
++// must not be charged to the node.
++type errorCallBackPacketConn struct {
++	C.PacketConn
++	readErr  *atomic.TypedValue[error]
++	writeErr *atomic.TypedValue[error]
++}
++
++func (c *errorCallBackPacketConn) record(slot *atomic.TypedValue[error], err error) {
++	if err == nil || isConnectionLifecycle(err) || isICMPRefusal(err) {
++		return
++	}
++	slot.CompareAndSwap(nil, err)
++}
++
++func (c *errorCallBackPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
++	n, addr, err := c.PacketConn.ReadFrom(b)
++	c.record(c.readErr, err)
++	return n, addr, err
++}
++
++func (c *errorCallBackPacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
++	data, put, addr, err = c.PacketConn.WaitReadFrom()
++	c.record(c.readErr, err)
++	return
++}
++
++func (c *errorCallBackPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
++	n, err := c.PacketConn.WriteTo(b, addr)
++	c.record(c.writeErr, err)
++	return n, err
++}
++
++func (c *errorCallBackPacketConn) Upstream() any {
++	return c.PacketConn
++}
++
++func NewErrorCallBackPacketConn(pc C.PacketConn, readErr, writeErr *atomic.TypedValue[error]) C.PacketConn {
++	return &errorCallBackPacketConn{PacketConn: pc, readErr: readErr, writeErr: writeErr}
++}
+diff --git a/common/callback/error_callback_icmp_other.go b/common/callback/error_callback_icmp_other.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..77400bb5c72a0d87388d1045218885882535df57
+--- /dev/null
++++ b/common/callback/error_callback_icmp_other.go
+@@ -0,0 +1,9 @@
++//go:build !aix && !android && !darwin && !dragonfly && !freebsd && !illumos && !ios && !linux && !netbsd && !openbsd && !solaris && !windows
++
++package callback
++
++// isICMPRefusal has no kernel mapping on the remaining targets; the error stays
++// a normal failure there.
++func isICMPRefusal(err error) bool {
++	return false
++}
+diff --git a/common/callback/error_callback_icmp_unix.go b/common/callback/error_callback_icmp_unix.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..c8e28b19418f3c89faa9fe90ce64bb4579b3b57c
+--- /dev/null
++++ b/common/callback/error_callback_icmp_unix.go
+@@ -0,0 +1,16 @@
++//go:build aix || android || darwin || dragonfly || freebsd || illumos || ios || linux || netbsd || openbsd || solaris
++
++package callback
++
++import (
++	"errors"
++	"syscall"
++)
++
++// isICMPRefusal reports the ICMP answer of a peer whose udp port is closed.
++// The unix kernels map it to ECONNREFUSED and a udp ECONNRESET is ICMP derived
++// as well. They only deliver it on connected sockets (go leaves IP_RECVERR off),
++// so this mostly guards connected relays and errors of wrapped carriers.
++func isICMPRefusal(err error) bool {
++	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET)
++}
+diff --git a/common/callback/error_callback_icmp_windows.go b/common/callback/error_callback_icmp_windows.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..464d1f4223d6137b4460cf8f55f822cc4a1c9a21
+--- /dev/null
++++ b/common/callback/error_callback_icmp_windows.go
+@@ -0,0 +1,21 @@
++//go:build windows
++
++package callback
++
++import (
++	"errors"
++	"syscall"
++)
++
++// isICMPRefusal reports the ICMP answer of a peer whose udp port is closed.
++// Windows delivers it on connected sockets as WSAECONNRESET (10054) or
++// WSAECONNREFUSED (10061, not exported by the syscall package); the posix style
++// constants are kept for errors surfaced by wrapped transports. Note go turns
++// the port/net unreachable reporting of unconnected sockets off, so only
++// connected sockets can raise it here.
++func isICMPRefusal(err error) bool {
++	return errors.Is(err, syscall.WSAECONNRESET) ||
++		errors.Is(err, syscall.Errno(10061)) ||
++		errors.Is(err, syscall.ECONNREFUSED) ||
++		errors.Is(err, syscall.ECONNRESET)
++}
 diff --git a/common/callback/read_callback.go b/common/callback/read_callback.go
 new file mode 100644
 index 0000000000000000000000000000000000000000..9924e1886996001df73c1188334416f152a7b72d
@@ -3253,6 +3670,92 @@ index 0000000000000000000000000000000000000000..9924e1886996001df73c1188334416f1
 +	return &firstReadCallBackPacketConn{
 +		PacketConn: pc,
 +		callback:   callback,
++	}
++}
+diff --git a/common/callback/smart_callback_test.go b/common/callback/smart_callback_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..bfbf87f7de23f240863987409efe6347db902ceb
+--- /dev/null
++++ b/common/callback/smart_callback_test.go
+@@ -0,0 +1,80 @@
++package callback
++
++import (
++	"errors"
++	"net"
++	"os"
++	"sync"
++	syncatomic "sync/atomic"
++	"testing"
++
++	"github.com/metacubex/mihomo/common/atomic"
++	"github.com/metacubex/mihomo/common/buf"
++	C "github.com/metacubex/mihomo/constant"
++)
++
++type callbackTestConn struct {
++	C.Conn
++	closes syncatomic.Int32
++	err    error
++}
++
++func (c *callbackTestConn) Close() error                  { c.closes.Add(1); return c.err }
++func (c *callbackTestConn) Read([]byte) (int, error)      { return 0, c.err }
++func (c *callbackTestConn) Write([]byte) (int, error)     { return 0, c.err }
++func (c *callbackTestConn) ReadBuffer(*buf.Buffer) error  { return c.err }
++func (c *callbackTestConn) WriteBuffer(*buf.Buffer) error { return c.err }
++
++func TestSmartFirstWriteCloseOnce(t *testing.T) {
++	want := errors.New("transport close error")
++	leaf := &callbackTestConn{err: want}
++	conn := NewFirstWriteCallBackConn(leaf, func(error) {})
++	var workers sync.WaitGroup
++	for i := 0; i < 32; i++ {
++		workers.Add(1)
++		go func() {
++			defer workers.Done()
++			if err := conn.Close(); err != want {
++				t.Errorf("lost original error: %v", err)
++			}
++		}()
++	}
++	workers.Wait()
++	if got := leaf.closes.Load(); got != 1 {
++		t.Fatalf("Close reached transport %d times", got)
++	}
++}
++
++func TestSmartTransferErrorObserver(t *testing.T) {
++	leaf := &callbackTestConn{}
++	var readErr, writeErr atomic.TypedValue[error]
++	conn := NewErrorCallBackConn(leaf, &readErr, &writeErr)
++	for _, ignored := range []error{nil, net.ErrClosed, os.ErrDeadlineExceeded} {
++		leaf.err = ignored
++		if _, err := conn.Read(nil); err != ignored {
++			t.Fatal("Read changed the result")
++		}
++		if err := conn.WriteBuffer(nil); err != ignored {
++			t.Fatal("WriteBuffer changed the result")
++		}
++	}
++	if readErr.Load() != nil || writeErr.Load() != nil {
++		t.Fatal("lifecycle error charged to node")
++	}
++	first := errors.New("mid-transfer failure")
++	leaf.err = first
++	_ = conn.ReadBuffer(nil)
++	_, _ = conn.Write(nil)
++	leaf.err = errors.New("later failure")
++	_, _ = conn.Read(nil)
++	_ = conn.WriteBuffer(nil)
++	if readErr.Load() != first || writeErr.Load() != first {
++		t.Fatal("first transfer error was lost")
++	}
++	if _, ok := conn.(interface{ ReaderReplaceable() bool }); ok {
++		t.Fatal("observer can be peeled by reader")
++	}
++	if _, ok := conn.(interface{ WriterReplaceable() bool }); ok {
++		t.Fatal("observer can be peeled by writer")
 +	}
 +}
 diff --git a/common/convert/browser.go b/common/convert/browser.go
@@ -4194,10 +4697,10 @@ index 0000000000000000000000000000000000000000..1a9bb63d21f754157ac9df71b2585abf
 +}
 diff --git a/component/smart/exit.go b/component/smart/exit.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..6e8077ab27c024e04601e80f4468da1c43716e51
+index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b3951d5f38f
 --- /dev/null
 +++ b/component/smart/exit.go
-@@ -0,0 +1,1082 @@
+@@ -0,0 +1,1086 @@
 +package smart
 +
 +import (
@@ -4908,7 +5411,11 @@ index 0000000000000000000000000000000000000000..6e8077ab27c024e04601e80f4468da1c
 +		}
 +
 +		w.Store(node, ExitInfo{Region: result.Region, ASN: result.ASN, Key: result.Key}, time.Now())
-+		log.Debugln("[Smart] Exit probe [%s] node [%s] -> region [%s] asn [%s]", w.name, node, result.Region, result.ASN)
++		if result.ASN != "" {
++			log.Debugln("[Smart] Exit probe [%s] node [%s] -> region [%s] asn [%s]", w.name, node, result.Region, result.ASN)
++		} else {
++			log.Debugln("[Smart] Exit probe [%s] node [%s] -> region [%s]", w.name, node, result.Region)
++		}
 +		w.storeExitState(node, w.Info(node))
 +		for _, target := range w.Release(node) {
 +			log.Debugln("[Smart] Exit refusal released [%s] target [%s] node [%s] after its exit answer", w.name, target, node)
@@ -7713,10 +8220,10 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +}
 diff --git a/component/smart/stats.go b/component/smart/stats.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..1df2371675f154ce95d55a05287d937e7c25b938
+index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303f3ba4a40
 --- /dev/null
 +++ b/component/smart/stats.go
-@@ -0,0 +1,1949 @@
+@@ -0,0 +1,1985 @@
 +package smart
 +
 +import (
@@ -7747,6 +8254,10 @@ index 0000000000000000000000000000000000000000..1df2371675f154ce95d55a05287d937e
 +	HostFailureNodeTTL       = 24 * time.Hour
 +	hostStatusRetryAfter     = 4 * time.Hour
 +	hostStatusViewTTLSeconds = 30
++
++	// zero-traffic and loss need this many strikes within the window
++	hostStrikeWindow = 5 * time.Minute
++	hostStrikeLimit  = 2
 +
 +	RecordExpiredTime = 7 * 24 * time.Hour
 +
@@ -9024,8 +9535,11 @@ index 0000000000000000000000000000000000000000..1df2371675f154ce95d55a05287d937e
 +		}
 +		if codeSet.FailCounts != nil {
 +			if _, ok := codeSet.FailCounts[name]; ok {
-+				if currentCode == -1 || code < currentCode {
-+					currentCode = code
++				// a pending strike must not shadow the other codes
++				if code != 4 && code != 6 {
++					if currentCode == -1 || code < currentCode {
++						currentCode = code
++					}
 +				}
 +			}
 +		}
@@ -9045,6 +9559,28 @@ index 0000000000000000000000000000000000000000..1df2371675f154ce95d55a05287d937e
 +			}
 +		}
 +		goto saveAndReturn
++	}
++
++	// the first strike only counts, the second excludes the node
++	if failure && (newCode == 4 || newCode == 6) {
++		count := 1
++		if oldLastFailure != 0 && now-oldLastFailure <= int64(hostStrikeWindow.Seconds()) {
++			if codeSet := hs.Codes[newCode]; codeSet != nil && codeSet.FailCounts != nil {
++				count = codeSet.FailCounts[name] + 1
++			}
++		}
++		if count < hostStrikeLimit {
++			if hs.Codes[newCode] == nil {
++				hs.Codes[newCode] = &CodeNodeSet{Nodes: make(map[string]int64)}
++			}
++			codeSet := hs.Codes[newCode]
++			if codeSet.FailCounts == nil {
++				codeSet.FailCounts = make(map[string]int)
++			}
++			codeSet.FailCounts[name] = count
++			hs.LastFailure = now
++			goto saveAndReturn
++		}
 +	}
 +
 +	if currentCode != -1 && currentCode != newCode {
@@ -9126,6 +9662,13 @@ index 0000000000000000000000000000000000000000..1df2371675f154ce95d55a05287d937e
 +			} else {
 +				codeSet.FailCounts[name] = count
 +			}
++		case 4, 6:
++			// the repeated strike is confirmed
++			if codeSet.FailCounts != nil {
++				delete(codeSet.FailCounts, name)
++			}
++			codeSet.Nodes[name] = time.Now().Add(blockTTL).Unix()
++			failedBlock = true
 +		default:
 +			codeSet.Nodes[name] = time.Now().Add(blockTTL).Unix()
 +		}
@@ -11459,10 +12002,10 @@ index 0000000000000000000000000000000000000000..3bff278938414265f4fc9ed391457f37
 +}
 diff --git a/component/smart/tcpstats/tcpstats_unwrap.go b/component/smart/tcpstats/tcpstats_unwrap.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..e2f342aa7b0787d2c519d9b0e257c13a5814d93e
+index 0000000000000000000000000000000000000000..37090fa48ba7bd6d1367522d02fdc36f9f8ce953
 --- /dev/null
 +++ b/component/smart/tcpstats/tcpstats_unwrap.go
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,71 @@
 +package tcpstats
 +
 +import (
@@ -11471,21 +12014,24 @@ index 0000000000000000000000000000000000000000..e2f342aa7b0787d2c519d9b0e257c13a
 +	"syscall"
 +)
 +
++// maxUnwrapSteps is a runaway guard only; real wrapper chains stay far below it.
++const maxUnwrapSteps = 256
++
 +// GetTCPStats unwraps the connection wrappers until a socket is found; nil means the
 +// counters are not available for this connection.
 +func GetTCPStats(conn net.Conn) *Stats {
-+	// one slot per unwrap step, the range is bounded by the array so a cycle cannot spin
-+	var seen [32]uintptr
++	var seenBuf [16]uintptr
++	seen := seenBuf[:0]
 +outer:
-+	for depth := 0; depth < len(seen); depth++ {
++	for depth := 0; depth < maxUnwrapSteps; depth++ {
 +		if rv := reflect.ValueOf(conn); rv.Kind() == reflect.Ptr {
 +			ptr := rv.Pointer()
-+			for i := 0; i < depth; i++ {
-+				if seen[i] == ptr {
++			for _, prev := range seen {
++				if prev == ptr {
 +					return nil
 +				}
 +			}
-+			seen[depth] = ptr
++			seen = append(seen, ptr)
 +		}
 +
 +		if sc, ok := conn.(interface {
@@ -11533,10 +12079,10 @@ index 0000000000000000000000000000000000000000..e2f342aa7b0787d2c519d9b0e257c13a
 +}
 diff --git a/component/smart/tcpstats/tcpstats_unwrap_test.go b/component/smart/tcpstats/tcpstats_unwrap_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..3c616ce0dab4f902141d092f691943b39a7aff3c
+index 0000000000000000000000000000000000000000..96b1555c9221a8594bd89f2588dcc08ef95ee2a4
 --- /dev/null
 +++ b/component/smart/tcpstats/tcpstats_unwrap_test.go
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,114 @@
 +package tcpstats
 +
 +import (
@@ -11637,6 +12183,18 @@ index 0000000000000000000000000000000000000000..3c616ce0dab4f902141d092f691943b3
 +
 +	if stats := GetTCPStats(w); stats != nil {
 +		t.Fatal("expected nil stats for a cyclic unwrap chain")
++	}
++}
++
++func TestGetTCPStats_DeepUpstreamChain(t *testing.T) {
++	base := newBaseConn(t)
++	var conn net.Conn = base
++	for i := 0; i < 40; i++ {
++		conn = &upstreamWrapper{Conn: conn, upstream: conn}
++	}
++	GetTCPStats(conn)
++	if !base.syscallCalled {
++		t.Fatal("deep valid wrapper chain did not reach the socket")
 +	}
 +}
 diff --git a/component/smart/tcpstats/tcpstats_windows.go b/component/smart/tcpstats/tcpstats_windows.go
@@ -12741,9 +13299,18 @@ index 05ea8ebd32f444ca49f94f7e794aedc93e114bfd..2f58ad56d67ab24e899bbfbad5508c82
  	switch rt {
  	case Domain:
 diff --git a/go.mod b/go.mod
-index 13e840336772b0443596e8b0807d3362d8a61427..8d4ad7046b34c4b0a02dc60bfe38d7c70d827221 100644
+index 13e840336772b0443596e8b0807d3362d8a61427..da7caa9c3809a26ebbca421fd756a4b42b3fd5ef 100644
 --- a/go.mod
 +++ b/go.mod
+@@ -41,7 +41,7 @@ require (
+ 	github.com/metacubex/sing-shadowsocks2 v0.2.8
+ 	github.com/metacubex/sing-tun v0.4.27
+ 	github.com/metacubex/sing-vmess v0.2.5
+-	github.com/metacubex/sing-wireguard v0.0.0-20260826105301-c3ae17d19f9e
++	github.com/metacubex/sing-wireguard v0.0.0-20261002050126-e5fa1a607406
+ 	github.com/metacubex/smux v0.0.0-20260105030934-d0c8756d3141
+ 	github.com/metacubex/ssh v0.1.0
+ 	github.com/metacubex/tailscale v0.0.0-20260821153257-ff0ecd818181
 @@ -56,6 +56,7 @@ require (
  	github.com/samber/lo v1.53.0
  	github.com/sirupsen/logrus v1.9.4
@@ -12753,9 +13320,20 @@ index 13e840336772b0443596e8b0807d3362d8a61427..8d4ad7046b34c4b0a02dc60bfe38d7c7
  	github.com/yosida95/uritemplate/v3 v3.0.2
  	gitlab.com/go-extension/aes-ccm v0.0.0-20230221065045-e58665ef23c7
 diff --git a/go.sum b/go.sum
-index 9852404cac53b4a55773df2148a467c81eea4f08..147dc75dddc5291ff2cbb7a03b4495108f4c907c 100644
+index 9852404cac53b4a55773df2148a467c81eea4f08..f4b58da58eded944a4b9a7af5b8acffabc71c604 100644
 --- a/go.sum
 +++ b/go.sum
+@@ -167,8 +167,8 @@ github.com/metacubex/sing-tun v0.4.27 h1:dWCpFDlWelQrhH3y5KkMrJXEXYeJ0V2LROP8Cxv
+ github.com/metacubex/sing-tun v0.4.27/go.mod h1:5nlmrOy+FG0yhiLm+O/pzmirZVrpLuDQZuA+qI9x5kg=
+ github.com/metacubex/sing-vmess v0.2.5 h1:m9Zt5I27lB9fmLMZfism9sH2LcnAfShZfwSkf6/KJoE=
+ github.com/metacubex/sing-vmess v0.2.5/go.mod h1:AwtlzUgf8COe9tRYAKqWZ+leDH7p5U98a0ZUpYehl8Q=
+-github.com/metacubex/sing-wireguard v0.0.0-20260826105301-c3ae17d19f9e h1:KGKZt//rrELT/dEwgYcHCqNYEGr3a7uVutlZrzrZZWY=
+-github.com/metacubex/sing-wireguard v0.0.0-20260826105301-c3ae17d19f9e/go.mod h1:OiYj4hitKrN1YIrgGHXp6zKnc9asCspF+SrYlLN2hYQ=
++github.com/metacubex/sing-wireguard v0.0.0-20261002050126-e5fa1a607406 h1:sronRtbNXPCT9sOpcsISq87w4mLufxP7mQFUEg+zUCY=
++github.com/metacubex/sing-wireguard v0.0.0-20261002050126-e5fa1a607406/go.mod h1:OiYj4hitKrN1YIrgGHXp6zKnc9asCspF+SrYlLN2hYQ=
+ github.com/metacubex/smux v0.0.0-20260105030934-d0c8756d3141 h1:DK2l6m2Fc85H2BhiAPgbJygiWhesPlfGmF+9Vw6ARdk=
+ github.com/metacubex/smux v0.0.0-20260105030934-d0c8756d3141/go.mod h1:/yI4OiGOSn0SURhZdJF3CbtPg3nwK700bG8TZLMBvAg=
+ github.com/metacubex/ssh v0.1.0 h1:iGfr99qk/eMHzUnQ/0bTxXT8+8SWqLSHBWDHoAhngzw=
 @@ -255,6 +255,8 @@ github.com/tailscale/peercred v0.0.0-20250107143737-35a0c7bd7edc h1:24heQPtnFR+y
  github.com/tailscale/peercred v0.0.0-20250107143737-35a0c7bd7edc/go.mod h1:f93CXfllFsO9ZQVq+Zocb1Gp4G5Fz0b0rXHLOzt/Djc=
  github.com/u-root/uio v0.0.0-20230220225925-ffce2a382923 h1:tHNk7XK9GkmKUR6Gh8gVBKXc2MVSZ4G/NnWLtzw4gNA=
@@ -13624,10 +14202,10 @@ index b44ce29521a838a495be140a06c3fa29464ccf97..f693865ebb380b1f128b832ee4c2d8ce
 +}
 diff --git a/tunnel/statistic/tracker_close_test.go b/tunnel/statistic/tracker_close_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..c33a479cd1d5021fd9a7bd8dac31cbeabfb2898a
+index 0000000000000000000000000000000000000000..4f68eb70afd26c15bf8f55503de64c36f116aec4
 --- /dev/null
 +++ b/tunnel/statistic/tracker_close_test.go
-@@ -0,0 +1,189 @@
+@@ -0,0 +1,190 @@
 +package statistic_test
 +
 +import (
@@ -13727,7 +14305,8 @@ index 0000000000000000000000000000000000000000..c33a479cd1d5021fd9a7bd8dac31cbea
 +func TestTCPTrackerCloseReentrant(t *testing.T) {
 +	manager := &statistic.Manager{}
 +	leaf := &closeTestConn{}
-+	tracker := statistic.NewTCPTracker(outbound.NewConn(leaf, closeTestAdapter()), manager, &C.Metadata{}, nil, 0, 0, false)
++	wrapped := callback.NewFirstWriteCallBackConn(outbound.NewConn(leaf, closeTestAdapter()), func(error) {})
++	tracker := statistic.NewTCPTracker(wrapped, manager, &C.Metadata{}, nil, 0, 0, false)
 +	leaf.closeFn = func() error {
 +		// Bound the old implementation's recursion so regression failure is safe.
 +		if leaf.closes.Load() == 1 {

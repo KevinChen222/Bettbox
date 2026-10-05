@@ -4,6 +4,9 @@ import 'dart:io';
 import 'package:bett_box/clash/clash.dart';
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
+import 'package:bett_box/features/node_import/menu.dart';
+import 'package:bett_box/features/node_import/nodes.dart';
+import 'package:bett_box/features/node_import/view.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:bett_box/pages/editor.dart';
 import 'package:bett_box/providers/providers.dart';
@@ -11,6 +14,7 @@ import 'package:bett_box/state.dart';
 import 'package:bett_box/widgets/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:yaml/yaml.dart';
 
 class EditProfileView extends StatefulWidget {
   final Profile profile;
@@ -265,6 +269,48 @@ class EditProfileViewState extends State<EditProfileView> {
     );
   }
 
+  Future<void> _addNodes(BuildContext buttonContext) async {
+    try {
+      var content = fileData == null ? rawText : utf8.decode(fileData!);
+      if (content == null) {
+        final path = await appPath.getProfilePath(profile.id);
+        content = await File(path).readAsString();
+      }
+      final config = loadYaml(content);
+      if (config is! Map) throw const FormatException('Invalid YAML profile');
+      if (!buttonContext.mounted) return;
+      final nodes = await importExternalNodes(
+        buttonContext,
+        reservedNames: nodeNames(config),
+      );
+      if (nodes == null || !mounted) return;
+      final updated = appendNodesToProfile(content, nodes);
+      final message = await clashCore.validateConfig(
+        utils.patchValidateConfig(updated),
+        ageSecretKey: ageSecretKeyController.text.trim(),
+      );
+      if (message.isNotEmpty) throw FormatException(message);
+      if (!mounted) return;
+      setState(() {
+        rawText = updated;
+        fileData = Uint8List.fromList(utf8.encode(updated));
+        fileInfoNotifier.value = fileInfoNotifier.value?.copyWith(
+          size: fileData!.length,
+          lastModified: DateTime.now(),
+        );
+      });
+      context.showSnackBar(
+        nodeImportText(
+          context,
+          '已添加 ${nodes.length} 个节点，保存后生效',
+          '${nodes.length} nodes added. Save to apply.',
+        ),
+      );
+    } catch (error) {
+      if (mounted) context.showSnackBar(error.toString());
+    }
+  }
+
   Future<void> _handleBack() async {
     final res = await globalState.showMessage(
       title: appLocalizations.tip,
@@ -444,33 +490,56 @@ class EditProfileViewState extends State<EditProfileView> {
         _handleBack();
         return false;
       },
-      child: FloatLayout(
-        floatingWidget: FloatWrapper(
-          child: FloatingActionButton.extended(
-            heroTag: null,
-            onPressed: _handleConfirm,
-            label: Text(appLocalizations.save),
-            icon: const Icon(Icons.save),
-          ),
-        ),
-        child: Form(
-          key: _formKey,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: ListView.separated(
-              padding: kMaterialListPadding.copyWith(
-                bottom: 72 + MediaQuery.viewPaddingOf(context).bottom,
+      child: Stack(
+        children: [
+          FloatLayout(
+            floatingWidget: FloatWrapper(
+              child: FloatingActionButton.extended(
+                heroTag: null,
+                onPressed: _handleConfirm,
+                label: Text(appLocalizations.save),
+                icon: const Icon(Icons.save),
               ),
-              itemBuilder: (_, index) {
-                return items[index];
-              },
-              separatorBuilder: (_, _) {
-                return const SizedBox(height: 24);
-              },
-              itemCount: items.length,
+            ),
+            child: Form(
+              key: _formKey,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: ListView.separated(
+                  padding: kMaterialListPadding.copyWith(
+                    bottom: 72 + MediaQuery.viewPaddingOf(context).bottom,
+                  ),
+                  itemBuilder: (_, index) {
+                    return items[index];
+                  },
+                  separatorBuilder: (_, _) {
+                    return const SizedBox(height: 24);
+                  },
+                  itemCount: items.length,
+                ),
+              ),
             ),
           ),
-        ),
+          if (!widget.isNew)
+            Positioned(
+              left: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                right: false,
+                child: FloatWrapper(
+                  child: Builder(
+                    builder: (buttonContext) => FloatingActionButton.extended(
+                      heroTag: null,
+                      onPressed: () => _addNodes(buttonContext),
+                      label: Text(nodeImportText(context, '添加节点', 'Add nodes')),
+                      icon: const Icon(Icons.add),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
