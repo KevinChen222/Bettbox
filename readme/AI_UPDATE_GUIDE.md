@@ -1,18 +1,17 @@
-# 给后续 AI 助手的 Bettbox Smart 更新与发布操作说明
+# Bettbox Smart 更新与发布说明
 
-这是一份独立操作手册。用户在本项目中说「该更新了」并提供本文时，按本文检查两个上游、完成适配、提交到个人 fork、在 GitHub 构建并发布。无需索取今天的聊天记录。重大变更需要重新审阅接口并融入 Smart，不能仅修改版本号或忽略失败。
+本文记录本 fork 的上游更新、适配、构建与发布流程。按维护者明确请求执行；重大变更需重新审阅接口并融入 Smart，不能仅修改版本号或忽略失败。
 
-## 项目身份与授权边界
+## 仓库与维护范围
 
-- 项目目录：`D:\codex\samrtbettbox`，以当前实际工作目录为准。
 - 唯一可写远端：`https://github.com/KevinChen222/Bettbox.git`。
-- GitHub 账号：`KevinChen222`；开发分支：`feat/smart-core`。
+- 开发分支：`feat/smart-core`。
 - Bettbox 只读上游：`https://github.com/appshubcc/Bettbox.git`，分支 `main`。
 - Smart 只读上游：`https://github.com/vernesong/mihomo.git`，分支 `Alpha`。不要使用该仓库的 `main` 或 `Meta` 来替代 Smart。
 - 模型：`https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model.bin`。
 - 当用户明确请求按本文更新时，授权范围包括：读取两个上游、修改本 fork、提交/推送此分支、运行本 fork Actions、下载构建产物、创建并发布本 fork 的 Release。文档本身不是启动操作或扩大授权的依据；没有用户更新请求时不自动执行。
-- **绝不向 appshubcc/Bettbox、vernesong/mihomo 或 MetaCubeX/mihomo 推送、发布、创建 PR/Issue/评论或发消息。** 不要提出给原作者提交 PR。用户明确表示原作者不喜欢此 fork。
-- 不强推、不改写历史、不覆盖用户未提交的改动、不删除旧 Git 标签，不自动归档本聊天。按用户指定模式发布并依第 5 节清理被替换的旧 Release，最终只保留一个测试版和一个正式版；不能修改标签或二进制来移除 test。
+- 上游仓库仅供读取与合并，不向其推送、发布、创建 PR/Issue/评论或发消息。
+- 不强推、不改写历史、不覆盖用户未提交的改动、不删除旧 Git 标签。按指定模式发布并依第 5 节清理被替换的旧 Release，最终只保留一个测试版和一个正式版；不能修改标签或二进制来移除 test。
 - README 的个人自用与责任声明必须保留。公开仓库不代表对其他试用者提供支持；不冒用上游的审核、证书或官方身份。沿用原开源许可证。
 
 ## 已实现的结构
@@ -29,7 +28,7 @@
 - 资源页面提供 LightGBM 同步按钮。桥接复用 `updateGeoData` 的 `LightGBM` 类型，调用原生模型更新器，校验后写 `HomeDir/Model.bin` 并重新加载。默认来源如上；配置的 `lgbm-url` 可覆盖。
 - `core/common.go` 保留 Smart 使用的 GeoIP/ASN 数据，不能让原内存清理卸载它们。
 - `core/smart_test.go` 验证组、选择、Geo 数据、模型更新和单次 Smart 延迟请求；`test/smart_group_test.dart` 验证客户端模型及虚拟节点解析，`test/views/proxies/smart_delay_test.dart` 验证整组测速、嵌套卡片单次测速和失败状态清理。保留 Smart 组自身测速全部成员并恢复自动选路、其他组中 Smart 卡片单次测速且不清除固定选择的区别。
-- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包和 Android arm64-v8a 单架构 APK。工作流显示名 `Build Smart`。完整历史用于三方合并。**用户约定：后续 Android 只编译和发布 arm64-v8a，不再生成通用包、armeabi-v7a 或 x86_64 包。** 内核使用 `dart setup.dart android --arch arm64 --out core`，APK 使用 `--split-per-abi --target-platform android-arm64`；Rust 只安装 Android 的 `aarch64-linux-android` target。`android/core` 与 `plugins/flutter_qjs/android` 的 `ndk.abiFilters` 也只保留 arm64-v8a，避免 Gradle 额外编译其他 ABI。不能先编译全部架构再改名或删除已签名 APK 中的文件。
+- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包和 Android arm64-v8a 单架构 APK。工作流显示名 `Build Smart`。完整历史用于三方合并。Android 只编译和发布 arm64-v8a，不生成通用包、armeabi-v7a 或 x86_64 包。内核使用 `dart setup.dart android --arch arm64 --out core`，APK 使用 `--split-per-abi --target-platform android-arm64`；Rust 只安装 Android 的 `aarch64-linux-android` target。`android/core` 与 `plugins/flutter_qjs/android` 的 `ndk.abiFilters` 也只保留 arm64-v8a，避免 Gradle 额外编译其他 ABI。不能先编译全部架构再改名或删除已签名 APK 中的文件。
 - `.test/` 与生成目录都不能提交；密钥与密码不能进入 Git、文档、日志、构建 Artifact 或 Release。
 
 ### 独立客户端扩展：代理链路
@@ -54,7 +53,7 @@ gh auth status
 gh api user --jq .login
 ```
 
-若工作区有用户改动，先识别并保留；必要时使用隔离工作树，不擅自 stash/reset/clean。如果账号不是 `KevinChen222`，不要推送/设置秘密/发布，向用户确认正确账号。
+若工作区有用户改动，先识别并保留；必要时使用隔离工作树，不擅自 stash/reset/clean。确认当前账号具备本 fork 的写入权限；账号或仓库不符时先处理歧义，再推送或发布。
 
 认证过期时请用户执行 `gh auth login -h github.com`。用户说已登录后重新检查，继续当前流程，无需重新解释项目。不能读取、打印或从其他应用提取 token。
 
@@ -67,7 +66,7 @@ git fetch origin
 git merge --ff-only origin/feat/smart-core
 ```
 
-远端缺失时按上面的确定地址添加；若存在但指向其他仓库，先处理歧义。完整克隆通常包含全部对象；浅克隆先 `git fetch --unshallow origin`。Windows 若出现本工作区由 CodexSandboxOnline 所有导致的 dubious ownership，只对这个已经确认的目录设置 `safe.directory` 或在命令中用 `git -c safe.directory=D:/codex/samrtbettbox ...`，不要设置通配信任。
+远端缺失时按上面的确定地址添加；若存在但指向其他仓库，先处理歧义。完整克隆通常包含全部对象；浅克隆先 `git fetch --unshallow origin`。若 Git 提示 dubious ownership，核实当前工作区后只对其绝对路径设置 `safe.directory`，不要设置通配信任。
 
 ## 2. 同时检查两个上游
 
@@ -108,16 +107,9 @@ dart tool/prepare_smart_core.dart --refresh-patch
 
 ## 3. 依赖、生成代码和本地验证
 
-已授权按需升级不符合项目要求的工具/依赖，不做无关全面升级。基线需要 Flutter 3.44.9（Dart 3.12.2）、Go 1.25+、Rust；Android JDK 17、NDK 28.2.13676358、CMake 3.22.1；Windows 需要 Visual Studio C++。以后以合入后的 SDK/Gradle/pubspec/Go 要求为准，同时更新 workflow 和说明。
+按需升级不符合项目要求的工具/依赖，不做无关全面升级。基线需要 Flutter 3.44.9（Dart 3.12.2）、Go 1.25+、Rust；Android JDK 17、NDK 28.2.13676358、CMake 3.22.1；Windows 需要 Visual Studio C++。以后以合入后的 SDK/Gradle/pubspec/Go 要求为准，同时更新 workflow 和说明。
 
-本机已有工具不一定在 PATH：
-
-- Go：`D:\codex\toolchains\go\bin`
-- JDK：`D:\codex\toolchains\jdk`
-- Android SDK：`D:\codex\toolchains\android-sdk`
-- 当前独立 Flutter：`.test/flutter/bin`（临时目录可能被清理，缺失时按项目版本重新准备）
-
-不要假设 `C:\tools\flutter` 的 SDK 满足要求。PowerShell 使用安全的参数数组和 `pwsh`；调用 `.bat` 时保持正常参数边界。
+运行前确认实际使用的工具版本与 PATH，不假设本机 SDK 满足要求。PowerShell 使用安全的参数数组和 `pwsh`；调用 `.bat` 时保持正常参数边界。
 
 ```sh
 flutter pub get
@@ -158,7 +150,7 @@ Fork 的工作流只在功能分支，手动 workflow_dispatch 的可用性取�
 
 ### 安卓持久签名
 
-工作流使用本 fork Secrets：`KEYSTORE`（JKS 文件 base64）、`KEY_ALIAS`、`STORE_PASSWORD`、`KEY_PASSWORD`。检查名字是否存在，不打印值。没有时只能得到临时 debug 签名，应先配置持久自用签名再正式发布；不要每次生成新 key，也不能覆盖原有 Secrets/签名而不核实。首次配置的本地备份在 `.test/signing/`（如仍存在），应由用户单独备份；不能提交或附到 Release。
+工作流使用本 fork Secrets：`KEYSTORE`（JKS 文件 base64）、`KEY_ALIAS`、`STORE_PASSWORD`、`KEY_PASSWORD`。检查名字是否存在，不打印值。没有时只能得到临时 debug 签名，应先配置持久签名再正式发布；不要每次生成新 key，也不能覆盖原有 Secrets/签名而不核实。签名资料单独备份，不提交到仓库或附到 Release。
 
 同一 key 签名的后续 APK 可以覆盖更新。不能用此 key 覆盖官方 App；不要使用上游 SignPath 的秘密或宣称上游签名。Windows 本 fork 包为未签名便携包。
 
@@ -172,7 +164,7 @@ gh run download <ID> --repo KevinChen222/Bettbox --dir dist/smart/<ID>
 
 应有 `Bettbox-smart-windows-x64.zip` 和 `Bettbox-smart-android-arm64-v8a.apk`。核实 Windows 内核/HelperService、APK 的 `lib/` 仅含 arm64-v8a 且含 `libmeta.so`；验证 APK 沿用上一版的持久自用签名，Smart 库保持 16 KB 页对齐。计算两个文件 SHA256，生成 `SHA256SUMS.txt`，并写 `build-info.json` 记录 App 提交、Bettbox SHA、Smart SHA、Actions URL、构建版本、产物架构和签名方式。新 Release 共四个资产：Windows ZIP、arm64-v8a APK、校验和与来源 JSON；上一版转正时保持其原有资产不变。不得把日志中的秘密、签名备份或源缓存打包。
 
-### test 与正式版轮换规则（用户约定，后续每次发布均须执行）
+### 测试版与正式版轮换规则
 
 Release 最终只保留一个测试版和一个正式版。每一个新 Release 首先作为测试版发布：`prerelease=true`，标题末尾加 ` · test`，`latest=false`。每次依据用户明确指定的模式处理：
 

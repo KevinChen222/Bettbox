@@ -23,7 +23,7 @@
 >
 > **开源许可保持有效**：本声明说明个人维护范围及使用风险，不修改原有开源许可证，也不额外限制许可证已经授予的使用、修改或再分发权利。
 
-**[本 fork 特有功能使用说明：Smart 与手动创建链式代理](readme/Fork-Features.md)**
+[使用说明：Smart 与代理链路](readme/Fork-Features.md)
 
 ---
 
@@ -136,7 +136,7 @@ Bettbox意为: Better Experience, Out of the box - 更好的体验，亦开箱�
 
 `feat/smart-core` 分支已集成 vernesong/mihomo Smart 策略组，支持 Windows 和 Android。配置方法、内核来源和构建产物见 [Smart 使用说明](readme/Smart.md)。
 
-后续更新两个上游、在个人 fork 提交/构建/发布的操作步骤见 [给 AI 助手的更新说明](readme/AI_UPDATE_GUIDE.md)，本次版本变化见 [更新日志](readme/Smart-Release-Notes.md)。
+更新与发布流程见 [维护说明](readme/AI_UPDATE_GUIDE.md)，本次版本变化见 [更新日志](readme/Smart-Release-Notes.md)。
 
 ##  开发构建及UI适配
 
