@@ -783,6 +783,9 @@ class GlobalState {
     if (rawConfig['profile'] == null) {
       rawConfig['profile'] = <String, dynamic>{};
     }
+    if (targetProfile.url.isEmpty) {
+      await seedLocalProfileProviderCaches(targetProfile.id, rawConfig);
+    }
     if (rawConfig['proxy-providers'] != null) {
       final proxyProviders = rawConfig['proxy-providers'] as Map;
       for (final key in proxyProviders.keys) {

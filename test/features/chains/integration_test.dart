@@ -34,6 +34,50 @@ void main() {
   });
   tearDownAll(() => directory.delete(recursive: true));
 
+  test(
+    'local snapshots seed both HTTP caches before profile path rewriting',
+    () async {
+      final config = <String, dynamic>{};
+      for (final type in {
+        'proxy-providers': 'proxies',
+        'rule-providers': 'rules',
+      }.entries) {
+        final url = 'https://example.com/${type.value}';
+        final original = File(
+          await appPath.getProvidersFilePath('source', type.value, url),
+        );
+        await original.parent.create(recursive: true);
+        await original.writeAsBytes([0, 1, 2, 255]);
+        config[type.key] = {
+          'cached': {'type': 'http', 'url': url, 'path': original.path},
+        };
+      }
+      await seedLocalProfileProviderCaches('snapshot', config);
+      for (final type in ['proxies', 'rules']) {
+        final cache = File(
+          await appPath.getProvidersFilePath(
+            'snapshot',
+            type,
+            'https://example.com/$type',
+          ),
+        );
+        expect(await cache.readAsBytes(), [0, 1, 2, 255]);
+        await cache.writeAsBytes([3, 4]);
+      }
+      await seedLocalProfileProviderCaches('snapshot', config);
+      for (final type in ['proxies', 'rules']) {
+        final cache = File(
+          await appPath.getProvidersFilePath(
+            'snapshot',
+            type,
+            'https://example.com/$type',
+          ),
+        );
+        expect(await cache.readAsBytes(), [3, 4]);
+      }
+    },
+  );
+
   test('runtime applies only enabled chains for the target profile', () async {
     final store = await getChainStore();
     final config = <String, dynamic>{

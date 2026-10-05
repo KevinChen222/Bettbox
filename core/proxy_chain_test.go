@@ -23,6 +23,13 @@ import (
 // Exercise dialer-proxy through two real local HTTP CONNECT hops. The Dart
 // compiler tests verify that generated configs use this same hop direction.
 func TestProxyChainConnectDirection(t *testing.T) {
+	for _, entryType := range []string{"node", "select", "smart"} {
+		t.Run(entryType, func(t *testing.T) { testProxyChainEntry(t, entryType) })
+	}
+}
+
+func testProxyChainEntry(t *testing.T, entryType string) {
+	t.Helper()
 	constant.SetHomeDir(t.TempDir())
 	t.Cleanup(func() { _ = cachefile.Cache().Close() })
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,25 +44,34 @@ func TestProxyChainConnectDirection(t *testing.T) {
 	defer first.Close()
 	firstHost, firstPort, _ := net.SplitHostPort(first.Listener.Addr().String())
 	lastHost, lastPort, _ := net.SplitHostPort(last.Listener.Addr().String())
+	dialer, groupType := "Entry", entryType
+	if entryType == "node" {
+		dialer, groupType = "First", "select"
+	}
 	cfg, err := config.Parse([]byte(fmt.Sprintf(`
 mode: rule
 proxies:
-  - name: __bettbox_chain_1_route_1_1_First
+  - name: First
     type: http
     server: %s
     port: %s
-  - name: __bettbox_chain_1_route_1_2_Last
+  - name: Last via Entry
     type: http
     server: %s
     port: %s
-    dialer-proxy: __bettbox_chain_1_route_1_1_First
+    dialer-proxy: %s
 proxy-groups:
+  - name: Entry
+    type: %s
+    proxies: [First]
+    uselightgbm: false
+    collectdata: false
   - name: route
     type: select
-    proxies: [__bettbox_chain_1_route_1_2_Last]
+    proxies: [Last via Entry]
 rules:
   - MATCH,route
-`, firstHost, firstPort, lastHost, lastPort)))
+`, firstHost, firstPort, lastHost, lastPort, dialer, groupType)))
 	if err != nil {
 		t.Fatal(err)
 	}

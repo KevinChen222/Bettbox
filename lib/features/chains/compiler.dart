@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // See LICENSE in this directory and readme/Proxy-Chains.md.
 
+import 'dart:convert';
+
 enum ChainTargetKind { node, group, localEndpoint }
 
 enum ChainDiagnosticSeverity { warning, error }
@@ -148,6 +150,7 @@ class DialerChainCompiler {
         diagnostics,
         <String>{},
         'hops[$index]',
+        referenceGroup: index == 0 && request.hops.length > 1,
       );
       if (hopChoices.isEmpty) {
         return ChainCompileResult(
@@ -184,7 +187,12 @@ class DialerChainCompiler {
 
     final paths = <ChainPath>[];
     final generated = <String, Map<String, dynamic>>{};
-    final usedNames = <String>{...request.reservedNames};
+    final usedNames = <String>{
+      ...request.reservedNames,
+      ...request.groups.keys,
+      for (final entry in request.nodes.entries)
+        if (entry.key == entry.value['name']) entry.key,
+    };
     final selectorName = request.name.trim();
     final groupName = _allocateName(
       selectorName.isEmpty ? 'chain' : selectorName,
@@ -198,13 +206,48 @@ class DialerChainCompiler {
       final generatedNames = <String>[];
       final pathName = [
         for (var index = 0; index < selected.length; index++)
-          request.hops[index].target.kind == ChainTargetKind.group
+          index < selected.length - 1 &&
+                  request.hops[index].target.kind == ChainTargetKind.group
               ? request.hops[index].target.id!
               : selected[index].name,
       ].join(' → ');
       String? previous;
       for (var hopIndex = 0; hopIndex < selected.length; hopIndex++) {
         final target = selected[hopIndex];
+        if (hopIndex == 0 && selected.length > 1) {
+          // Use the original entry and its live group selection. Provider nodes
+          // and custom endpoints need one named copy in the proxy registry.
+          if (request.hops.first.target.kind != ChainTargetKind.group &&
+              (target.key != target.name ||
+                  request.hops.first.target.kind ==
+                      ChainTargetKind.localEndpoint) &&
+              !generated.containsKey(target.name)) {
+            final entryConfig = {
+              ..._copyMap(target.config),
+              'name': target.name,
+            };
+            if (usedNames.contains(target.name)) {
+              if (jsonEncode(request.nodes[target.name]) !=
+                  jsonEncode(entryConfig)) {
+                diagnostics.add(
+                  ChainDiagnostic(
+                    severity: ChainDiagnosticSeverity.error,
+                    code: 'entry-name-conflict',
+                    message:
+                        'The entry name ${target.name} conflicts with an existing proxy or group.',
+                    path: request.name,
+                  ),
+                );
+                return;
+              }
+            } else {
+              generated[target.name] = entryConfig;
+              usedNames.add(target.name);
+            }
+          }
+          previous = target.name;
+          continue;
+        }
         _addCompatibilityWarnings(
           target,
           hopIndex: hopIndex,
@@ -245,8 +288,8 @@ class DialerChainCompiler {
       terminals.add(generatedNames.last);
     });
 
-    // Intermediate copies remain namespaced; selectable terminals show all
-    // configured hops, preserving group names rather than expanded member names.
+    // Only downstream hops are copied. The first hop retains its original name
+    // and selector behavior; terminal labels include the actual exit node.
     return ChainCompileResult(
       generatedProxies: Map.unmodifiable(generated),
       generatedGroups: [
@@ -262,8 +305,9 @@ class DialerChainCompiler {
     ChainCompileRequest request,
     List<ChainDiagnostic> diagnostics,
     Set<String> groupStack,
-    String path,
-  ) {
+    String path, {
+    bool referenceGroup = false,
+  }) {
     switch (target.kind) {
       case ChainTargetKind.node:
         final id = target.id;
@@ -323,6 +367,9 @@ class DialerChainCompiler {
           );
           return const [];
         }
+        if (referenceGroup) {
+          return [_ResolvedTarget(key: id, name: id, config: const {})];
+        }
         if (groupStack.contains(id)) {
           diagnostics.add(
             ChainDiagnostic(
@@ -359,7 +406,8 @@ class DialerChainCompiler {
             ),
           );
         }
-        return result;
+        final seen = <String>{};
+        return result.where((item) => seen.add(item.key)).toList();
     }
   }
 

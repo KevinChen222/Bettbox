@@ -4,8 +4,8 @@ import 'compiler.dart';
 import 'filter.dart';
 import 'model.dart';
 
-/// A snapshot of source nodes and group members. Group hops expand to paths;
-/// they do not change or follow the source group's live selection.
+/// Source nodes and group members. An entry group remains a live reference;
+/// downstream group hops resolve to node copies.
 class ChainCatalog {
   ChainCatalog(Map<String, dynamic> config, {this.providers = const {}}) {
     for (final raw in config['proxies'] as List? ?? []) {
@@ -106,18 +106,21 @@ class ChainCatalog {
       ? value.split('`').map(chainFilter).toList()
       : [];
 
-  ChainCompileResult compile(ProxyChain chain, Set<String> reserved) =>
-      DialerChainCompiler().compile(
-        ChainCompileRequest(
-          name: chain.name,
-          hops: chain.hops.map((hop) => ChainHop(target: hop)).toList(),
-          nodes: nodes,
-          groups: groups,
-          branchLimit: chain.branchLimit,
-          generatedPrefix: '__bettbox_chain_${chain.id}',
-          reservedNames: reserved,
-        ),
-      );
+  ChainCompileResult compile(
+    ProxyChain chain,
+    Set<String> reserved, [
+    Map<String, Map<String, dynamic>> existingNodes = const {},
+  ]) => DialerChainCompiler().compile(
+    ChainCompileRequest(
+      name: chain.name,
+      hops: chain.hops.map((hop) => ChainHop(target: hop)).toList(),
+      nodes: {...nodes, ...existingNodes},
+      groups: groups,
+      branchLimit: chain.branchLimit,
+      generatedPrefix: '__bettbox_chain_${chain.id}',
+      reservedNames: reserved,
+    ),
+  );
 }
 
 Map<String, dynamic> assembleChains(
@@ -139,7 +142,10 @@ Map<String, dynamic> assembleChains(
     for (final raw in [...proxies, ...groups]) (raw as Map)['name'] as String,
   };
   for (final chain in chains) {
-    final result = catalog.compile(chain, reserved);
+    final result = catalog.compile(chain, reserved, {
+      for (final raw in proxies)
+        raw['name'] as String: Map<String, dynamic>.from(raw as Map),
+    });
     if (!result.isValid) {
       throw FormatException(
         '${chain.name}: ${result.diagnostics.where((d) => d.isError).map((d) => d.message).join('\n')}',
@@ -154,6 +160,10 @@ Map<String, dynamic> assembleChains(
       if (group['type'] == 'relay') {
         throw FormatException('${chain.name}: 不支持将链路加入 relay 策略组');
       }
+      if (chain.hops.length > 1 &&
+          _usesGroup(chain.hops.first, entry, catalog, {})) {
+        throw FormatException('${chain.name}: 前置依赖策略组 "$entry"，不能将链路加入该组以免循环');
+      }
       group['proxies'] = [...group['proxies'] as List? ?? [], selector.name];
     }
     proxies.addAll(result.generatedProxies.values);
@@ -161,21 +171,59 @@ Map<String, dynamic> assembleChains(
     reserved.addAll(result.generatedProxies.keys);
     reserved.add(selector.name);
   }
+  final generatedNames = proxies
+      .skip((source['proxies'] as List? ?? []).length)
+      .map(
+        (raw) => RegExp.escape(raw['name'] as String).replaceAll('`', r'\x60'),
+      )
+      .join('|');
+  if (generatedNames.isNotEmpty) {
+    // include-all groups must not discover their own downstream copies.
+    for (final group in groups.take(
+      (source['proxy-groups'] as List? ?? []).length,
+    )) {
+      if (group['include-all'] != true &&
+          group['include-all-proxies'] != true) {
+        continue;
+      }
+      final exclude = group['exclude-filter'] as String? ?? '';
+      group['exclude-filter'] =
+          '${exclude.isEmpty ? '' : '$exclude`'}^($generatedNames)\$';
+    }
+  }
   config['proxies'] = proxies;
   config['proxy-groups'] = groups;
   return config;
 }
 
-/// A new local profile or exported config should actually route through its
-/// chain, regardless of the source subscription's rule targets.
+bool _usesGroup(
+  ChainTarget target,
+  String group,
+  ChainCatalog catalog,
+  Set<String> visited,
+) {
+  if (!visited.add('${target.kind}:${target.id}')) return false;
+  if (target.kind == ChainTargetKind.group) {
+    return target.id == group ||
+        (catalog.groups[target.id] ?? []).any(
+          (member) => _usesGroup(member, group, catalog, visited),
+        );
+  }
+  final dialer = (target.config ?? catalog.nodes[target.id])?['dialer-proxy'];
+  if (dialer is! String) return false;
+  return _usesGroup(
+    catalog.groups.containsKey(dialer)
+        ? ChainTarget.group(dialer)
+        : ChainTarget.node(dialer),
+    group,
+    catalog,
+    visited,
+  );
+}
+
+/// Keep the source routing rules when creating a local snapshot or YAML export.
 Map<String, dynamic> createChainProfileConfig(
   Map<String, dynamic> source,
   ProxyChain chain,
   ChainCatalog catalog,
-) {
-  final config = assembleChains(source, [chain], catalog);
-  final selectorName = (config['proxy-groups'] as List).last['name'];
-  config['mode'] = 'rule';
-  config['rules'] = ['MATCH,$selectorName'];
-  return config;
-}
+) => assembleChains(source, [chain], catalog);

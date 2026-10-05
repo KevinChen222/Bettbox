@@ -16,6 +16,40 @@ Future<ChainStore> getChainStore() => _store ??= _createStore();
 Future<ChainStore> _createStore() async =>
     ChainStore(File(join(await appPath.homeDirPath, chainLibraryFileName)));
 
+/// A local YAML snapshot still points to its source profile's managed caches.
+/// Seed the new profile's paths before the normal path rewrite and core load.
+Future<void> seedLocalProfileProviderCaches(
+  String profileId,
+  Map<String, dynamic> config,
+) async {
+  final cacheRoot = join(await appPath.profilesPath, 'providers');
+  for (final type in {
+    'proxy-providers': 'proxies',
+    'rule-providers': 'rules',
+  }.entries) {
+    for (final raw in (config[type.key] as Map? ?? {}).values) {
+      final provider = raw as Map;
+      final path = provider['path'];
+      final url = provider['url'];
+      if (provider['type'] != 'http' ||
+          path is! String ||
+          url is! String ||
+          !isAbsolute(path) ||
+          !isWithin(cacheRoot, normalize(path))) {
+        continue;
+      }
+      final destination = File(
+        await appPath.getProvidersFilePath(profileId, type.value, url),
+      );
+      final source = File(path);
+      if (await destination.exists() || !await source.exists()) continue;
+      await destination.parent.create(recursive: true);
+      await source.copy(destination.path);
+      await destination.setLastModified(await source.lastModified());
+    }
+  }
+}
+
 Future<ChainCatalog> loadChainCatalog(
   String profileId,
   Map<String, dynamic> config,

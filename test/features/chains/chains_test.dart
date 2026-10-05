@@ -104,17 +104,28 @@ void main() {
     },
   );
   test(
-    'new profile and YAML export route through the actual allocated chain name',
+    'new profile and YAML export preserve rules and provider definitions',
     () {
       final config = source();
+      config['rule-providers'] = {
+        'ads': {
+          'type': 'http',
+          'url': 'https://example.com/ads',
+          'path': 'cached-rules',
+        },
+      };
+      config['rules'] = ['RULE-SET,ads,REJECT', 'MATCH,入口'];
+      config['mode'] = 'rule';
       final created = createChainProfileConfig(
         config,
         chain(name: '入口'),
         ChainCatalog(config),
       );
-      expect(created['rules'], ['MATCH,入口 (2)']);
+      expect(created['rules'], config['rules']);
+      expect(created['rule-providers'], config['rule-providers']);
+      expect((created['proxy-groups'] as List).last['name'], '入口 (2)');
       expect(created['mode'], 'rule');
-      expect(config['rules'], ['MATCH,入口']);
+      expect(config['rules'], ['RULE-SET,ads,REJECT', 'MATCH,入口']);
     },
   );
   test('three-hop direction, terminal selector and source isolation', () {
@@ -137,9 +148,9 @@ void main() {
     expect(result.isValid, isTrue);
     final names = result.paths.single.generatedNames;
     expect(names.last, 'A → B → exit');
-    expect(result.generatedProxies[names[0]]!['dialer-proxy'], isNull);
+    expect(names, hasLength(2));
+    expect(result.generatedProxies[names[0]]!['dialer-proxy'], 'A');
     expect(result.generatedProxies[names[1]]!['dialer-proxy'], names[0]);
-    expect(result.generatedProxies[names[2]]!['dialer-proxy'], names[1]);
     expect(result.generatedGroups.single.proxies, [names.last]);
     final assembled = assembleChains(config, [route], catalog);
     expect((assembled['proxy-groups'] as List).first['proxies'], [
@@ -194,8 +205,7 @@ void main() {
         {},
       );
       expect(result.generatedGroups.single.proxies, [
-        '入口策略组 → 日本跳板 → 本地跳板 → 出口策略组',
-        '入口策略组 → 日本跳板 → 本地跳板 → 出口策略组 (2)',
+        '入口策略组 → 日本跳板 → 本地跳板 → 🇺🇸 美国出口',
       ]);
       for (final path in result.paths) {
         for (var index = 1; index < path.generatedNames.length; index++) {
@@ -241,29 +251,39 @@ void main() {
     expect(proxies.take(3), config['proxies']);
   });
 
-  test('groups expand all combinations, cap branches and detect cycles', () {
-    final config = source();
-    final catalog = ChainCatalog(config);
-    final route = chain(
-      hops: const [ChainTarget.group('入口'), ChainTarget.group('Smart')],
-    );
-    expect(catalog.compile(route, {}).paths, hasLength(4));
-    final limited = chain(hops: route.hops, limit: 3);
-    expect(
-      catalog.compile(limited, {}).diagnostics.single.code,
-      'branch-limit-exceeded',
-    );
-    (config['proxy-groups'] as List).add({
-      'name': 'loop',
-      'type': 'select',
-      'proxies': ['loop'],
-    });
-    final cycle = ChainCatalog(
-      config,
-    ).compile(chain(hops: const [ChainTarget.group('loop')]), {});
-    expect(cycle.isValid, isFalse);
-    expect(cycle.diagnostics.single.code, 'group-cycle');
-  });
+  test(
+    'live entry groups produce one path per exit, cap exits and detect cycles',
+    () {
+      final config = source();
+      final catalog = ChainCatalog(config);
+      final route = chain(
+        hops: const [ChainTarget.group('入口'), ChainTarget.group('Smart')],
+      );
+      final result = catalog.compile(route, {});
+      expect(result.paths, hasLength(2));
+      expect(result.generatedProxies, hasLength(2));
+      expect(
+        result.generatedProxies.values.map((proxy) => proxy['dialer-proxy']),
+        ['入口', '入口'],
+      );
+      expect(result.generatedGroups.single.proxies, ['入口 → A', '入口 → B']);
+      final limited = chain(hops: route.hops, limit: 1);
+      expect(
+        catalog.compile(limited, {}).diagnostics.single.code,
+        'branch-limit-exceeded',
+      );
+      (config['proxy-groups'] as List).add({
+        'name': 'loop',
+        'type': 'select',
+        'proxies': ['loop'],
+      });
+      final cycle = ChainCatalog(
+        config,
+      ).compile(chain(hops: const [ChainTarget.group('loop')]), {});
+      expect(cycle.isValid, isFalse);
+      expect(cycle.diagnostics.single.code, 'group-cycle');
+    },
+  );
 
   test(
     'collisions allocate names without changing original rules or nodes',
@@ -289,7 +309,8 @@ void main() {
       refreshed['proxies'][0] = node('A', server: 'new.example.com');
       final catalog = ChainCatalog(refreshed);
       final result = catalog.compile(chain(), {});
-      expect(result.generatedProxies.values.first['server'], 'new.example.com');
+      expect(result.generatedProxies.values.single['dialer-proxy'], 'A');
+      expect(catalog.nodes['A']!['server'], 'new.example.com');
       refreshed['proxies'].removeAt(0);
       expect(
         () => assembleChains(refreshed, [chain()], ChainCatalog(refreshed)),
@@ -384,13 +405,114 @@ void main() {
       isFalse,
     );
     catalog.nodes['A']!['dialer-proxy'] = 'outside';
+    catalog.nodes['B']!['dialer-proxy'] = 'other';
     final result = catalog.compile(chain(), {});
     expect(
       result.diagnostics.map((d) => d.code),
       contains('existing-dialer-proxy'),
     );
-    expect(result.generatedProxies.values.first['dialer-proxy'], isNull);
+    expect(result.generatedProxies.values.single['dialer-proxy'], 'A');
     expect(catalog.nodes['A']!['dialer-proxy'], 'outside');
+    expect(catalog.nodes['B']!['dialer-proxy'], 'other');
+  });
+
+  test('Smart entry stays live without cached members or entry fanout', () {
+    final config = source();
+    config['proxy-groups'][1]['use'] = ['uncached'];
+    final route = chain(
+      hops: const [ChainTarget.group('Smart'), ChainTarget.node('B')],
+    );
+    final created = assembleChains(config, [route], ChainCatalog(config));
+    expect((created['proxies'] as List).skip(2), [
+      {...node('B'), 'name': 'Smart → B', 'dialer-proxy': 'Smart'},
+    ]);
+    expect(created['proxy-groups'][1], config['proxy-groups'][1]);
+  });
+
+  test(
+    'entry dependencies reject binding cycles and include-all excludes copies',
+    () {
+      final config = source();
+      config['proxy-groups'].add({
+        'name': 'all',
+        'type': 'smart',
+        'include-all': true,
+        'exclude-filter': '(?i)blocked',
+      });
+      final route = chain(
+        hops: const [ChainTarget.group('all'), ChainTarget.node('B')],
+      );
+      final created = assembleChains(config, [route], ChainCatalog(config));
+      final catalog = ChainCatalog(created);
+      expect(catalog.groups['all']!.map((hop) => hop.id), ['A', 'B']);
+      expect(
+        () => assembleChains(config, [
+          chain(hops: route.hops, entries: ['all']),
+        ], ChainCatalog(config)),
+        throwsFormatException,
+      );
+      config['proxy-groups'].add({
+        'name': 'nested',
+        'type': 'select',
+        'proxies': ['入口'],
+      });
+      expect(
+        () => assembleChains(config, [
+          chain(
+            hops: const [ChainTarget.group('nested'), ChainTarget.node('B')],
+          ),
+        ], ChainCatalog(config)),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test('provider and custom entry names are retained once across exits', () {
+    final config = source();
+    final catalog = ChainCatalog(
+      config,
+      providers: {
+        'sub': [node('HK')],
+      },
+    );
+    final entry = catalog.nodes.keys.firstWhere(
+      (id) => id.startsWith('provider:'),
+    );
+    final result = catalog.compile(
+      chain(hops: [ChainTarget.node(entry), const ChainTarget.group('Smart')]),
+      {},
+    );
+    expect(result.isValid, isTrue);
+    expect(result.generatedProxies, hasLength(3));
+    expect(result.generatedProxies['HK'], node('HK'));
+    final assembled = assembleChains(config, [
+      chain(hops: [ChainTarget.node(entry), const ChainTarget.node('B')]),
+      chain(
+        id: '2',
+        name: 'second',
+        hops: [ChainTarget.node(entry), const ChainTarget.node('A')],
+      ),
+    ], catalog);
+    expect(
+      (assembled['proxies'] as List).where((proxy) => proxy['name'] == 'HK'),
+      hasLength(1),
+    );
+    expect(
+      result.generatedProxies.values
+          .skip(1)
+          .map((proxy) => proxy['dialer-proxy']),
+      ['HK', 'HK'],
+    );
+    final endpoint = catalog.compile(
+      chain(
+        hops: [
+          ChainTarget.localEndpoint(node('local')),
+          const ChainTarget.node('B'),
+        ],
+      ),
+      {},
+    );
+    expect(endpoint.generatedProxies['local'], node('local'));
   });
 
   test(

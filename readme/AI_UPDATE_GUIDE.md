@@ -38,7 +38,7 @@
 
 合并 Bettbox 更新时保留三处接入：`lib/views/tools.dart` 的独立入口及搜索项；`lib/state.dart` 在脚本/过滤之后、加载内核之前应用链路；`lib/controller.dart` 的链路库备份、恢复及清空处理。UI 改版时移动入口即可，不能用旧 Avalon UI 覆盖 Bettbox 的新 UI。订阅原文件、Profile/Config 生成模型保持原结构。`proxy-chains.json` 跟随应用数据目录与备份，更新应用时不能删除。
 
-移植来源记录在 `lib/features/chains/avalon-source.json`；保留编译器的 Avalon 版权头、模块内 AGPL 许可及根目录 `NOTICE`，原项目 GPL 许可和个人自用声明仍须保留。链路默认不改变原规则/选中节点。组作为一跳展开成员，不能把它误改成跟随原组实时选路。
+移植来源记录在 `lib/features/chains/avalon-source.json`；保留编译器的 Avalon 版权头、模块内 AGPL 许可及根目录 `NOTICE`，原项目 GPL 许可和个人自用声明仍须保留。链路默认不改变原规则/选中节点。多跳链路第一跳直接引用原节点或策略组，前置组跟随实时选择（含 Smart 自动选路），不能再展开前置成员或重命名前置。后续节点生成副本，出口组按实际落地节点展开；两跳链路的选项数只取决于落地节点数。创建本地配置/导出 YAML 保留原规则，切换本地配置前继承源配置已有的 HTTP provider/规则集缓存，不能因新配置 ID 强制重新下载。
 
 `Build Smart` 会把模块许可和根目录 `NOTICE` 打包进 Flutter 的 `assets/data/avalon-chain-LICENSE.txt` 与 `avalon-chain-NOTICE.txt`。发布检查时核实 Windows ZIP 和两个 APK 都包含这两项，不能在已签名 APK 上直接补文件。
 
@@ -140,7 +140,7 @@ go test -tags=with_gvisor ./adapter/outboundgroup ./component/smart/... ./tunnel
 
 ## 4. 提交、构建与失败处理
 
-先更新 `readme/Smart-Release-Notes.md`，只说明本次实际更新内容，包括客户端/内核功能、修复、模型、工具链或打包变化。用户要求 Release 说明不列测试通过、测试清单或验证过程；验证记录放 Actions、构建来源 JSON 或维护文档，来源 SHA 保存在来源 JSON 和构建来源 JSON。无新代码时不要造空提交或新 Release；若仅模型更新，它由 App 按钮/自动更新获取，通常无需重新发布 App。
+先更新 `readme/Smart-Release-Notes.md`，仅说明本次主要更新内容，包括实际功能、修复、模型、工具链或打包变化。不列测试通过、测试清单或验证过程，也不把内核基线沿用、发布轮换过程写入更新日志；这些记录放 Actions、构建来源 JSON 或维护文档，来源 SHA 保存在来源 JSON 和构建来源 JSON。无新代码时不要造空提交或新 Release；若仅模型更新，它由 App 按钮/自动更新获取，通常无需重新发布 App。
 
 ```sh
 git diff --check

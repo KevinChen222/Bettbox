@@ -468,9 +468,18 @@ class _ChainEditorViewState extends State<ChainEditorView> {
           : assembleChains(widget.source, [_draft], widget.catalog);
       final yaml = await encodeCompactYamlTask(generated);
       if (createProfile) {
-        final profile = await Profile.normal(
-          label: _draft.name,
-        ).copyWith(useScriptOverride: false).saveFileWithString(yaml);
+        final profile = await Profile.normal(label: _draft.name)
+            .copyWith(
+              useScriptOverride: false,
+              selectedMap:
+                  globalState.config.profiles
+                      .where((profile) => profile.id == widget.chain.profileId)
+                      .firstOrNull
+                      ?.selectedMap ??
+                  {},
+            )
+            .saveFileWithString(yaml);
+        await seedLocalProfileProviderCaches(profile.id, generated);
         await globalState.appController.addProfile(profile);
         await globalState.appController.savePreferences();
         if (mounted) {
@@ -532,8 +541,8 @@ class _ChainEditorViewState extends State<ChainEditorView> {
           Text(
             _text(
               context,
-              '按「客户端 → 第一跳 → … → 最后一跳 → 目标」排序。策略组展开成员组合，不跟随原组的实时选择。',
-              'Order: client → first hop → … → last hop → destination. Group hops expand their members into paths; live group selections are not followed.',
+              '按「客户端 → 第一跳 → … → 最后一跳 → 目标」排序。前置节点或策略组保留原名，前置组实时选路；仅复制后续节点，出口组按落地节点生成选项。',
+              'Order: client → first hop → … → last hop → destination. The original entry node or group is reused, following its live selection; only downstream nodes are copied, with one option per exit node.',
             ),
           ),
           for (var i = 0; i < _hops.length; i++)
