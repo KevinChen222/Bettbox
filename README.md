@@ -87,7 +87,7 @@ Bettbox意为: Better Experience, Out of the box - 更好的体验，亦开箱�
 ---
 ## 🛠️ 安装与下载
 
-本 Smart 自用分支的 Windows x64 便携包、Android arm64-v8a 单架构 APK 和通用 APK 位于 **[[个人 fork Releases]](https://github.com/KevinChen222/Bettbox/releases)**。以下其他平台及安装方式沿用上游介绍，不表示本分支提供对应的 Smart 产物。
+本 Smart 自用分支的 Windows x64 便携包和 Android arm64-v8a 单架构 APK 位于 **[[个人 fork Releases]](https://github.com/KevinChen222/Bettbox/releases)**。以下其他平台及安装方式沿用上游介绍，不表示本分支提供对应的 Smart 产物。
 
 
 * **全平台桌面端**: 

@@ -36,7 +36,7 @@ LightGBM 使用纯 Go 推理，不需要额外的原生 DLL/SO。启用 `useligh
 
 本 fork 还提供独立的 **工具 → 代理链路** 功能，可组合节点、策略组和 HTTP/SOCKS5 端点，预览多跳路径、绑定已有策略组，以及创建本地配置。使用方法与后续上游合并注意事项见 [代理链路说明](Proxy-Chains.md)。
 
-`Build Smart` 工作流在 `feat/smart-core` 推送时运行，也支持 Actions 手动运行。产物在该次运行的 Artifacts 中：Windows x64 便携包（包含界面、内核和 HelperService）、Android arm64-v8a 单架构 APK，以及包含 arm64-v8a、armeabi-v7a、x86_64 内核的 Android 通用 APK。支持 arm64-v8a 的设备可下载体积更小的单架构包；两种 APK 使用相同版本和持久签名。Windows 内核使用兼容的 AMD64 v1 指令集；ARMv7 使用 `with_low_memory`。安卓 64 位库保留 16 KB 页对齐。
+`Build Smart` 工作流在 `feat/smart-core` 推送时运行，也支持 Actions 手动运行。产物在该次运行的 Artifacts 中：Windows x64 便携包（包含界面、内核和 HelperService）和 Android arm64-v8a 单架构 APK。后续 Android 构建只生成 arm64-v8a 内核与 APK，沿用持久签名。Windows 内核使用兼容的 AMD64 v1 指令集；安卓内核保留 16 KB 页对齐。
 
 Fork 构建不使用上游 SignPath 证书。安卓通过 fork Secrets 中的持久自用 keystore 签名；缺少 Secrets 时退回构建环境 debug 签名。Android 包名为 `com.kevinchen222.bettbox.smart`，可与原版 Bettbox 共存；从旧包名迁移时通过备份导入数据。更新检查只读取 `KevinChen222/Bettbox` 最新正式版，同时比较应用版本与构建日期/序号。
 
@@ -55,10 +55,8 @@ dart tool/prepare_smart_core.dart
 # Windows，包含 HelperService
 dart setup.dart windows --arch amd64 --out core --compatible
 # 将生成的内核/HelperService随 flutter build windows 产物一起打包
-# Android，生成所有 ABI 的共享内核
-dart setup.dart android --arch universal --out core
-flutter build apk --release --target-platform android-arm,android-arm64,android-x64
-# 复用已编译的内核，另生成仅含 arm64-v8a 的 APK
+# Android，只生成 arm64-v8a 内核和 APK
+dart setup.dart android --arch arm64 --out core
 flutter build apk --release --split-per-abi --target-platform android-arm64
 ```
 

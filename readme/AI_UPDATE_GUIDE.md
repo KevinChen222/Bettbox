@@ -29,7 +29,7 @@
 - 资源页面提供 LightGBM 同步按钮。桥接复用 `updateGeoData` 的 `LightGBM` 类型，调用原生模型更新器，校验后写 `HomeDir/Model.bin` 并重新加载。默认来源如上；配置的 `lgbm-url` 可覆盖。
 - `core/common.go` 保留 Smart 使用的 GeoIP/ASN 数据，不能让原内存清理卸载它们。
 - `core/smart_test.go` 验证组、选择、Geo 数据、模型更新和单次 Smart 延迟请求；`test/smart_group_test.dart` 验证客户端模型及虚拟节点解析，`test/views/proxies/smart_delay_test.dart` 验证整组测速、嵌套卡片单次测速和失败状态清理。保留 Smart 组自身测速全部成员并恢复自动选路、其他组中 Smart 卡片单次测速且不清除固定选择的区别。
-- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包、Android arm64-v8a 单架构 APK及三 ABI 通用 APK。工作流显示名 `Build Smart`。完整历史用于三方合并。单架构包使用 `--split-per-abi --target-platform android-arm64`，不能仅改名或删除已签名 APK 中的文件。
+- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包和 Android arm64-v8a 单架构 APK。工作流显示名 `Build Smart`。完整历史用于三方合并。**用户约定：后续 Android 只编译和发布 arm64-v8a，不再生成通用包、armeabi-v7a 或 x86_64 包。** 内核使用 `dart setup.dart android --arch arm64 --out core`，APK 使用 `--split-per-abi --target-platform android-arm64`；Rust 只安装 Android 的 `aarch64-linux-android` target。不能先编译全部架构再改名或删除已签名 APK 中的文件。
 - `.test/` 与生成目录都不能提交；密钥与密码不能进入 Git、文档、日志、构建 Artifact 或 Release。
 
 ### 独立客户端扩展：代理链路
@@ -40,7 +40,7 @@
 
 移植来源记录在 `lib/features/chains/avalon-source.json`；保留编译器的 Avalon 版权头、模块内 AGPL 许可及根目录 `NOTICE`，原项目 GPL 许可和个人自用声明仍须保留。链路默认不改变原规则/选中节点。多跳链路第一跳直接引用原节点或策略组，前置组跟随实时选择（含 Smart 自动选路），不能再展开前置成员或重命名前置。后续节点生成副本，出口组按实际落地节点展开；两跳链路的选项数只取决于落地节点数。创建本地配置/导出 YAML 保留原规则，切换本地配置前继承源配置已有的 HTTP provider/规则集缓存，不能因新配置 ID 强制重新下载。
 
-`Build Smart` 会把模块许可和根目录 `NOTICE` 打包进 Flutter 的 `assets/data/avalon-chain-LICENSE.txt` 与 `avalon-chain-NOTICE.txt`。发布检查时核实 Windows ZIP 和两个 APK 都包含这两项，不能在已签名 APK 上直接补文件。
+`Build Smart` 会把模块许可和根目录 `NOTICE` 打包进 Flutter 的 `assets/data/avalon-chain-LICENSE.txt` 与 `avalon-chain-NOTICE.txt`。发布检查时核实 Windows ZIP 和 arm64-v8a APK 都包含这两项，不能在已签名 APK 上直接补文件。
 
 ## 1. 检查账号、工作区和远端
 
@@ -131,12 +131,12 @@ dart analyze tool/prepare_smart_core.dart tool/update_smart_core.dart lib/views/
 go test -tags=with_gvisor ./...
 # 包含 TestProxyChainConnectDirection：实际验证两跳 HTTP CONNECT 链路
 # 在 core/.smart-mihomo 中：
-go test -tags=with_gvisor ./adapter/outboundgroup ./component/smart/... ./tunnel/statistic ./listener/sing_tun
+go test -tags=with_gvisor ./common/callback ./adapter/outboundgroup ./component/smart/... ./tunnel/statistic ./listener/sing_tun
 ```
 
 代码生成可能带来许多无关格式差异。只保留所需模型变更，确保 JSON 枚举有 `GroupType.Smart: 'Smart'`；不要漏掉生成模型，也不要把整个项目顺便重排。
 
-不能因本机缺少 VS/Rust 而声称已验证完整 App；可用 GitHub 完整构建做验证。Android arm64/x86_64 要检查 `.so` 的 ELF LOAD 页对齐至少 16 KB（`0x4000`），ARMv7 保留 `with_low_memory`。构建通过仍不等于真机 TUN/VPN/后台表现已验证，最终回复须准确说明验证范围。
+不能因本机缺少 VS/Rust 而声称已验证完整 App；可用 GitHub 完整构建做验证。Android arm64-v8a 要检查 `.so` 的 ELF LOAD 页对齐至少 16 KB（`0x4000`）。构建通过仍不等于真机 TUN/VPN/后台表现已验证，最终回复须准确说明验证范围。
 
 ## 4. 提交、构建与失败处理
 
@@ -164,13 +164,13 @@ Fork 的工作流只在功能分支，手动 workflow_dispatch 的可用性取�
 
 ## 5. 在个人 fork 发布
 
-完整构建成功后，从准确的运行下载三个 Artifact 到 `dist/smart/<运行ID>`：
+完整构建成功后，从准确的运行下载两个 Artifact 到 `dist/smart/<运行ID>`：
 
 ```sh
 gh run download <ID> --repo KevinChen222/Bettbox --dir dist/smart/<ID>
 ```
 
-应有 `Bettbox-smart-windows-x64.zip`、`Bettbox-smart-android-arm64-v8a.apk` 和 `Bettbox-smart-android-universal.apk`。核实 Windows 内核/HelperService、单架构 APK 的 `lib/` 仅含 arm64-v8a 且含 `libmeta.so`、通用 APK 含三个 ABI；验证两个 APK 签名一致且沿用持久自用签名、64 位 Smart 库保持 16 KB 页对齐。计算三个文件 SHA256，生成 `SHA256SUMS.txt`，并写 `build-info.json` 记录 App 提交、Bettbox SHA、Smart SHA、Actions URL、构建版本、产物架构和签名方式。不得把日志中的秘密、签名备份或源缓存打包。
+应有 `Bettbox-smart-windows-x64.zip` 和 `Bettbox-smart-android-arm64-v8a.apk`。核实 Windows 内核/HelperService、APK 的 `lib/` 仅含 arm64-v8a 且含 `libmeta.so`；验证 APK 沿用上一版的持久自用签名，Smart 库保持 16 KB 页对齐。计算两个文件 SHA256，生成 `SHA256SUMS.txt`，并写 `build-info.json` 记录 App 提交、Bettbox SHA、Smart SHA、Actions URL、构建版本、产物架构和签名方式。新 Release 共四个资产：Windows ZIP、arm64-v8a APK、校验和与来源 JSON；上一版转正时保持其原有资产不变。不得把日志中的秘密、签名备份或源缓存打包。
 
 ### test 与正式版轮换规则（用户约定，后续每次发布均须执行）
 
@@ -188,7 +188,7 @@ Release 最终只保留一个测试版和一个正式版。每一个新 Release 
 标签格式仍为 `smart-v<App版本>-<台北日期YYYYMMDD>.<序号>`，例 `smart-v1.19.4-20261004.1`。**标签不加 test 后缀**，方便转正时只修改 Release 元数据。检查远端是否已存在；存在则核实并复用未完成的草稿，或选择下一个序号，不能移动已有标签。标签不要以裸 `v` 开头，避免触发上游原发布工作流。
 
 ```sh
-gh release create <标签> <windows.zip> <android-arm64.apk> <android-universal.apk> <SHA256SUMS.txt> <build-info.json> --repo KevinChen222/Bettbox --target <本次绿色构建的完整提交SHA> --title "Bettbox Smart <版本> · <台北日期.序号> · test" --notes-file readme/Smart-Release-Notes.md --draft --prerelease --latest=false
+gh release create <标签> <windows.zip> <android-arm64.apk> <SHA256SUMS.txt> <build-info.json> --repo KevinChen222/Bettbox --target <本次绿色构建的完整提交SHA> --title "Bettbox Smart <版本> · <台北日期.序号> · test" --notes-file readme/Smart-Release-Notes.md --draft --prerelease --latest=false
 gh release view <标签> --repo KevinChen222/Bettbox --json tagName,targetCommitish,assets,isDraft,isPrerelease,url
 ```
 

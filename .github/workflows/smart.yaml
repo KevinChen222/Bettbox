@@ -45,7 +45,7 @@ jobs:
           cache: true
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'android' && 'aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android' || 'x86_64-pc-windows-msvc' }}
+          targets: ${{ matrix.platform == 'android' && 'aarch64-linux-android' || 'x86_64-pc-windows-msvc' }}
       - uses: actions/setup-java@v5
         if: matrix.platform == 'android'
         with:
@@ -61,10 +61,6 @@ jobs:
           cat > ~/.cargo/config.toml <<EOF
           [target.aarch64-linux-android]
           linker = "${ANDROID_SDK_ROOT}/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
-          [target.armv7-linux-androideabi]
-          linker = "${ANDROID_SDK_ROOT}/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi26-clang"
-          [target.x86_64-linux-android]
-          linker = "${ANDROID_SDK_ROOT}/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"
           EOF
       - name: Flutter dependencies and generated models
         run: |
@@ -111,9 +107,7 @@ jobs:
             printf '%s' "$KEYSTORE" | base64 --decode > android/app/keystore.jks
             printf '\nkeyAlias=%s\nstorePassword=%s\nkeyPassword=%s\n' "$KEY_ALIAS" "$STORE_PASSWORD" "$KEY_PASSWORD" >> android/local.properties
           fi
-          dart setup.dart android --arch universal --out core
-          flutter build apk --release --target-platform android-arm,android-arm64,android-x64 --dart-define=APP_ENV=pre
-          cp build/app/outputs/flutter-apk/app-release.apk Bettbox-smart-android-universal.apk
+          dart setup.dart android --arch arm64 --out core
           flutter build apk --release --split-per-abi --target-platform android-arm64 --dart-define=APP_ENV=pre
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk Bettbox-smart-android-arm64-v8a.apk
       - name: Upload Windows package
@@ -122,13 +116,6 @@ jobs:
         with:
           name: Bettbox-smart-windows-x64
           path: Bettbox-smart-windows-x64.zip
-          if-no-files-found: error
-      - name: Upload Android package
-        if: matrix.platform == 'android'
-        uses: actions/upload-artifact@v7
-        with:
-          name: Bettbox-smart-android-universal
-          path: Bettbox-smart-android-universal.apk
           if-no-files-found: error
       - name: Upload Android arm64 package
         if: matrix.platform == 'android'
