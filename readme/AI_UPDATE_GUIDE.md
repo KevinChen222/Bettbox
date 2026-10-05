@@ -29,7 +29,7 @@
 - 资源页面提供 LightGBM 同步按钮。桥接复用 `updateGeoData` 的 `LightGBM` 类型，调用原生模型更新器，校验后写 `HomeDir/Model.bin` 并重新加载。默认来源如上；配置的 `lgbm-url` 可覆盖。
 - `core/common.go` 保留 Smart 使用的 GeoIP/ASN 数据，不能让原内存清理卸载它们。
 - `core/smart_test.go` 验证组、选择、Geo 数据、模型更新和单次 Smart 延迟请求；`test/smart_group_test.dart` 验证客户端模型及虚拟节点解析，`test/views/proxies/smart_delay_test.dart` 验证整组测速、嵌套卡片单次测速和失败状态清理。保留 Smart 组自身测速全部成员并恢复自动选路、其他组中 Smart 卡片单次测速且不清除固定选择的区别。
-- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包和 Android arm64-v8a 单架构 APK。工作流显示名 `Build Smart`。完整历史用于三方合并。**用户约定：后续 Android 只编译和发布 arm64-v8a，不再生成通用包、armeabi-v7a 或 x86_64 包。** 内核使用 `dart setup.dart android --arch arm64 --out core`，APK 使用 `--split-per-abi --target-platform android-arm64`；Rust 只安装 Android 的 `aarch64-linux-android` target。不能先编译全部架构再改名或删除已签名 APK 中的文件。
+- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包和 Android arm64-v8a 单架构 APK。工作流显示名 `Build Smart`。完整历史用于三方合并。**用户约定：后续 Android 只编译和发布 arm64-v8a，不再生成通用包、armeabi-v7a 或 x86_64 包。** 内核使用 `dart setup.dart android --arch arm64 --out core`，APK 使用 `--split-per-abi --target-platform android-arm64`；Rust 只安装 Android 的 `aarch64-linux-android` target。`android/core` 与 `plugins/flutter_qjs/android` 的 `ndk.abiFilters` 也只保留 arm64-v8a，避免 Gradle 额外编译其他 ABI。不能先编译全部架构再改名或删除已签名 APK 中的文件。
 - `.test/` 与生成目录都不能提交；密钥与密码不能进入 Git、文档、日志、构建 Artifact 或 Release。
 
 ### 独立客户端扩展：代理链路
