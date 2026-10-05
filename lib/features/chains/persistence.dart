@@ -15,12 +15,31 @@ String writeChainsToProfile(
   List<ProxyChain> chains,
   ChainCatalog catalog,
 ) {
+  final previous = loadYaml(content) as Map;
+  final preferredNames = <String, Map<String, String>>{};
+  for (final chain in chains) {
+    final names = <String, String>{};
+    for (final group in previous['proxy-groups'] as List? ?? []) {
+      if (group['x-bettbox-chain-id'] == chain.id &&
+          group['x-bettbox-chain-name'] == chain.name) {
+        names['group'] = group['name'] as String;
+      }
+    }
+    for (final node in previous['proxies'] as List? ?? []) {
+      if (node['x-bettbox-chain-id'] == chain.id &&
+          node['x-bettbox-chain-key'] is String) {
+        names[node['x-bettbox-chain-key'] as String] = node['name'] as String;
+      }
+    }
+    if (chain.enabled) preferredNames[chain.id] = names;
+  }
   final base = chainProfileBase(content);
   final generated = assembleChains(
     base,
     chains.where((chain) => chain.enabled).toList(),
     catalog,
     persist: true,
+    preferredNames: preferredNames,
   );
   var updated = replaceProfileSection(
     content,

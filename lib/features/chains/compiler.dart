@@ -57,6 +57,7 @@ class ChainCompileRequest {
     this.branchLimit = 64,
     this.generatedPrefix = '__bettbox_chain',
     this.reservedNames = const {},
+    this.preferredNames = const {},
   });
 
   final String name;
@@ -66,7 +67,11 @@ class ChainCompileRequest {
   final int branchLimit;
   final String generatedPrefix;
   final Set<String> reservedNames;
+  final Map<String, String> preferredNames;
 }
+
+String chainPathKey(List<String> targets, int hopIndex) =>
+    jsonEncode([hopIndex, ...targets]);
 
 class ChainPath {
   const ChainPath({required this.targets, required this.generatedNames});
@@ -195,7 +200,8 @@ class DialerChainCompiler {
     };
     final selectorName = request.name.trim();
     final groupName = _allocateName(
-      selectorName.isEmpty ? 'chain' : selectorName,
+      request.preferredNames['group'] ??
+          (selectorName.isEmpty ? 'chain' : selectorName),
       usedNames,
     );
     usedNames.add(groupName);
@@ -259,7 +265,14 @@ class DialerChainCompiler {
         final desiredName = hopIndex == selected.length - 1
             ? pathName
             : '${request.generatedPrefix}_${_segment(request.name)}_${pathIndex}_${hopIndex + 1}_$base';
-        final generatedName = _allocateName(desiredName, usedNames);
+        final key = chainPathKey(
+          selected.map((item) => item.key).toList(),
+          hopIndex,
+        );
+        final generatedName = _allocateName(
+          request.preferredNames[key] ?? desiredName,
+          usedNames,
+        );
         usedNames.add(generatedName);
         final config = _copyMap(target.config);
         config['name'] = generatedName;

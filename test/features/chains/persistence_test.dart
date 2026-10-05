@@ -40,6 +40,43 @@ String write(String content, List<ProxyChain> chains) => writeChainsToProfile(
 
 void main() {
   test(
+    'deleting a colliding chain retains the remaining group and path names across later saves',
+    () {
+      final first = ProxyChain.fromJson({
+        ...chain('1').toJson(),
+        'name': 'same',
+      });
+      final second = ProxyChain.fromJson({
+        ...chain('2').toJson(),
+        'name': 'same',
+      });
+      final both = write(source, [first, second]).replaceFirst(
+        '  - MATCH,main',
+        '  - DOMAIN,example.com,same (2)\n  - MATCH,main',
+      );
+      final before = loadYaml(both)['proxy-groups'].last;
+      expect(before['name'], 'same (2)');
+      var remaining = write(both, [second]);
+      for (var i = 0; i < 2; i++) {
+        final after = loadYaml(remaining)['proxy-groups'].last;
+        expect(after['name'], before['name']);
+        expect(after['proxies'], before['proxies']);
+        expect(
+          loadYaml(remaining)['rules'],
+          contains('DOMAIN,example.com,same (2)'),
+        );
+        remaining = write(remaining, [
+          ProxyChain.fromJson({...second.toJson(), 'hidden': false}),
+        ]);
+      }
+      final added = loadYaml(
+        write(remaining, [second, chain('3')]),
+      )['proxy-groups'];
+      expect(added[2]['name'], before['name']);
+      expect(added[2]['proxies'], before['proxies']);
+    },
+  );
+  test(
     'multiple chains persist in one YAML and deleting restores only additions',
     () {
       final first = write(source, [chain('1')]);

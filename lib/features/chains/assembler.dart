@@ -110,6 +110,7 @@ class ChainCatalog {
     ProxyChain chain,
     Set<String> reserved, [
     Map<String, Map<String, dynamic>> existingNodes = const {},
+    Map<String, String> preferredNames = const {},
   ]) => DialerChainCompiler().compile(
     ChainCompileRequest(
       name: chain.name,
@@ -123,6 +124,7 @@ class ChainCatalog {
       branchLimit: chain.branchLimit,
       generatedPrefix: '__bettbox_chain_${chain.id}',
       reservedNames: reserved,
+      preferredNames: preferredNames,
     ),
   );
 }
@@ -132,6 +134,7 @@ Map<String, dynamic> assembleChains(
   List<ProxyChain> chains,
   ChainCatalog catalog, {
   bool persist = false,
+  Map<String, Map<String, String>> preferredNames = const {},
 }) {
   if (chains.isEmpty) return source;
   final config = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
@@ -177,7 +180,16 @@ Map<String, dynamic> assembleChains(
       for (final raw in proxies)
         raw['name'] as String: Map<String, dynamic>.from(raw as Map),
     };
-    final result = catalog.compile(chain, reserved, existingNodes);
+    final result = catalog.compile(
+      chain,
+      {
+        ...reserved,
+        for (final entry in preferredNames.entries)
+          if (entry.key != chain.id) ...entry.value.values,
+      },
+      existingNodes,
+      preferredNames[chain.id] ?? const {},
+    );
     if (!result.isValid) {
       throw FormatException(
         '${chain.name}: ${result.diagnostics.where((d) => d.isError).map((d) => d.message).join('\n')}',
@@ -204,15 +216,29 @@ Map<String, dynamic> assembleChains(
       }
       group['proxies'] = [...group['proxies'] as List? ?? [], selector.name];
     }
+    final keys = {
+      for (final path in result.paths)
+        for (var i = 0; i < path.generatedNames.length; i++)
+          path.generatedNames[i]: chainPathKey(
+            path.targets,
+            i + (chain.hops.length > 1 ? 1 : 0),
+          ),
+    };
     proxies.addAll(
       result.generatedProxies.values.map(
-        (node) => {...node, if (persist) 'x-bettbox-chain-id': chain.id},
+        (node) => {
+          ...node,
+          if (persist) 'x-bettbox-chain-id': chain.id,
+          if (persist && keys.containsKey(node['name']))
+            'x-bettbox-chain-key': keys[node['name']],
+        },
       ),
     );
     groups.add({
       ...selector.toConfig(),
       'hidden': chain.hidden,
       if (persist) 'x-bettbox-chain-id': chain.id,
+      if (persist) 'x-bettbox-chain-name': chain.name,
     });
     reserved.addAll(result.generatedProxies.keys);
     reserved.add(selector.name);
