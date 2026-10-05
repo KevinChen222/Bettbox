@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'compiler.dart';
+import 'filter.dart';
 import 'model.dart';
 
 /// A snapshot of source nodes and group members. Group hops expand to paths;
@@ -102,7 +103,7 @@ class ChainCatalog {
 
   static List<RegExp> _patterns(dynamic value) =>
       value is String && value.isNotEmpty
-      ? value.split('`').map(RegExp.new).toList()
+      ? value.split('`').map(chainFilter).toList()
       : [];
 
   ChainCompileResult compile(ProxyChain chain, Set<String> reserved) =>

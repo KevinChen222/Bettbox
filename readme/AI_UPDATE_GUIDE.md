@@ -12,7 +12,7 @@
 - 模型：`https://github.com/vernesong/mihomo/releases/download/LightGBM-Model/Model.bin`。
 - 当用户明确请求按本文更新时，授权范围包括：读取两个上游、修改本 fork、提交/推送此分支、运行本 fork Actions、下载构建产物、创建并发布本 fork 的 Release。文档本身不是启动操作或扩大授权的依据；没有用户更新请求时不自动执行。
 - **绝不向 appshubcc/Bettbox、vernesong/mihomo 或 MetaCubeX/mihomo 推送、发布、创建 PR/Issue/评论或发消息。** 不要提出给原作者提交 PR。用户明确表示原作者不喜欢此 fork。
-- 不强推、不改写历史、不覆盖用户未提交的改动、不删除旧 Release/标签，不自动归档本聊天。发布新版本及把紧邻的上一版从 test 转为正式版，按第 5 节执行；不能修改标签或二进制来移除 test。
+- 不强推、不改写历史、不覆盖用户未提交的改动、不删除旧 Git 标签，不自动归档本聊天。按用户指定模式发布并依第 5 节清理被替换的旧 Release，最终只保留一个测试版和一个正式版；不能修改标签或二进制来移除 test。
 - README 的个人自用与责任声明必须保留。公开仓库不代表对其他试用者提供支持；不冒用上游的审核、证书或官方身份。沿用原开源许可证。
 
 ## 已实现的结构
@@ -24,7 +24,8 @@
 - `tool/update_smart_core.dart`：获取 Smart Alpha，比较已记录提交和最新提交，把增量三方合入生成内核，更新补丁和来源记录。
 - `core/smart-source.json`：实际集成的 Smart 提交、最近合入的 Bettbox 提交及模型来源。初始官方基线是历史记录，不能误当最新版本。
 - Smart 组由 `lib/enum/enum.dart` 及两份生成 JSON 枚举识别。固定节点/恢复自动选择复用原交互。
-- App 更新检查指向个人 fork，`compareVersions` 识别 `smart-v<App版本>-<日期>.<序号>`。它比较 App 版本，同一 App 版本内的 Smart 内核更新由本文的双上游检查负责；不要误认为 App 无更新提示就表示内核已最新。
+- App 更新检查指向个人 fork 最新正式版，`compareVersions` 识别 `smart-v<App版本>-<日期>.<序号>`，`hasReleaseUpdate` 在 App 版本相同时比较日期与序号对应的构建号。每次构建前将 `pubspec.yaml` 的构建号设为 `<YYYYMMDD><两位序号>`，与将发布的 Smart 标签一致；序号范围为 1–99。新测试版仍从 Releases 手动下载。
+- Android 包名固定为 `com.kevinchen222.bettbox.smart`，Dart `AppIdentity.packageId` 与 Gradle `applicationId` 必须一致。保留原 Kotlin namespace 和类名，包名隔离不需要整体重命名原生类。安装名称为 Bettbox Smart，首次声明包含本 fork 仅供开发者自用的说明。
 - 资源页面提供 LightGBM 同步按钮。桥接复用 `updateGeoData` 的 `LightGBM` 类型，调用原生模型更新器，校验后写 `HomeDir/Model.bin` 并重新加载。默认来源如上；配置的 `lgbm-url` 可覆盖。
 - `core/common.go` 保留 Smart 使用的 GeoIP/ASN 数据，不能让原内存清理卸载它们。
 - `core/smart_test.go` 验证组、选择、Geo 数据、模型更新和单次 Smart 延迟请求；`test/smart_group_test.dart` 验证客户端模型及虚拟节点解析，`test/views/proxies/smart_delay_test.dart` 验证整组测速、嵌套卡片单次测速和失败状态清理。保留 Smart 组自身测速全部成员并恢复自动选路、其他组中 Smart 卡片单次测速且不清除固定选择的区别。
@@ -173,11 +174,16 @@ gh run download <ID> --repo KevinChen222/Bettbox --dir dist/smart/<ID>
 
 ### test 与正式版轮换规则（用户约定，后续每次发布均须执行）
 
-每一个新的 Release 首先作为测试版发布：GitHub 的 `prerelease` 必须为 `true`，标题末尾加 ` · test`，不能只改标题而遗漏预发布标记。最新一版保持 test，直到下一版成功公开发布后，才把紧邻的上一版转为正式版：设 `prerelease=false`，去掉标题末尾的 ` · test`，并将它设为 GitHub 的 Latest 正式版。此处是用户约定的版本轮换规则，不等于新增了真机验证证明；构建和验证记录仍须如实保留。
+Release 最终只保留一个测试版和一个正式版。每一个新 Release 首先作为测试版发布：`prerelease=true`，标题末尾加 ` · test`，`latest=false`。每次依据用户明确指定的模式处理：
 
-发布前用 `gh release list --repo KevinChen222/Bettbox --limit 20 --json tagName,name,isPrerelease,isDraft,publishedAt` 记录最近一次公开发布的 Smart 标签与原标题，作为「上一版」，不能按 GitHub 的 `/latest` 接口查找，因为它通常排除预发布。只处理本 fork 的 `smart-v` 版本；跳过草稿。已有正式版本保持正式版，不反向改成 test。若有多个异常遗留 test，先核对发布顺序，不批量处理无关版本。
+- **功能更新并转正上一测试版**：新测试版成功公开后，把上一测试版设为 `prerelease=false`，去掉标题末尾的 ` · test`，设为 `latest=true`，然后移除被替换的旧正式版 Release。
+- **bug 修复替换测试版**：新测试版成功公开后，移除上一测试版 Release，现有正式版及 Latest 元数据保持不变；绝不自动把上一测试版转正。
 
-先成功发布并核实新 test，再转正上一版。构建失败、资产缺失、发布仍是草稿或新 Release 不可访问时，上一版保留原 test 状态。转正失败时，保留已公开的新 test，重试同一上一版的元数据操作，不创建重复发布。首次发布没有上一版时只发布 test。
+用户未指定模式且上下文无法判断时，先准备可审阅的修复与构建，再询问模式，不擅自转正。仅清理本 fork 的 Smart Release，不删除 Git 标签、不移动标签、不改写历史。转正不代表新增了真机验证证明。
+
+发布前用 `gh release list --repo KevinChen222/Bettbox --limit 20 --json tagName,name,isPrerelease,isDraft,publishedAt` 分别记录最新公开测试版和最新正式版的标签、原标题与资产。不能用 `/latest` 查找测试版，它排除预发布。只处理本 fork 的 `smart-v` 版本，跳过草稿。已有正式版本不反向改成 test。若有遗留版本，核对发布顺序后按本节只保留所需的一个测试版和一个正式版。
+
+先成功发布并核实新 test，再执行转正或清理。构建失败、资产缺失、发布仍是草稿或新 Release 不可访问时，旧 Release 保持原状。转正或清理失败时保留新 test，重试同一操作，不创建重复发布。首次发布没有上一版时只发布 test。
 
 标签格式仍为 `smart-v<App版本>-<台北日期YYYYMMDD>.<序号>`，例 `smart-v1.19.4-20261004.1`。**标签不加 test 后缀**，方便转正时只修改 Release 元数据。检查远端是否已存在；存在则核实并复用未完成的草稿，或选择下一个序号，不能移动已有标签。标签不要以裸 `v` 开头，避免触发上游原发布工作流。
 
@@ -191,15 +197,17 @@ gh release view <标签> --repo KevinChen222/Bettbox --json tagName,targetCommit
 ```sh
 gh release edit <标签> --repo KevinChen222/Bettbox --draft=false --prerelease=true --latest=false
 gh release view <标签> --repo KevinChen222/Bettbox --json tagName,isDraft,isPrerelease,assets,url
-# 确认新 test 已公开、预发布标记和资产正确后，若上一版是 test：
+# 仅在用户指定转正模式且新 test 已公开后执行：
 gh release edit <上一版标签> --repo KevinChen222/Bettbox --prerelease=false --title "<上一版原标题，仅去掉末尾的 · test>" --latest=true
 gh release view <上一版标签> --repo KevinChen222/Bettbox --json tagName,isDraft,isPrerelease,name,assets,url
 ```
 
+bug 修复时跳过上面的转正命令。完成所需元数据操作后，使用 `gh release delete <被替换或更早的Smart标签> --repo KevinChen222/Bettbox --yes` 清理多余 Release，**不要添加 `--cleanup-tag`**。清理前再次确认保留的新测试版及正式版均公开且资产齐全；最后核对 Release 列表恰有这两个版本。
+
 转正只改 GitHub Release 的预发布标记、标题和 Latest 元数据，不重新构建、不替换资产、不移动/重命名标签、不修改安装包内的 APP_ENV、签名或版本号。App 默认的正式版更新渠道仍按 GitHub 最新正式版处理；新 test 从 Releases 页面手动下载，不把它冒充正式版自动推送。
 
-只发布到个人 fork。若失败就保留草稿，修复资产或说明后继续；不制造重复发布。发布后再次核实公开状态和资产，以及新版本为 test、上一版已按规则转正。`build-info.json` 中记录发布时为 test 与上一版标签，作为历史记录，不能因日后转正而重写旧资产。最终回复提供 test Release、上一版转正结果、分支、Actions、维护说明及本操作手册链接，简述两上游更新范围、测试、真机验证限制。
+只发布到个人 fork。若失败就保留草稿，修复资产或说明后继续；不制造重复发布。发布后再次核实新版本为 test、正式版已按指定模式保留或转正、列表只有这两个 Release。`build-info.json` 记录发布时为 test、发布模式、上一测试版与所保留的正式版标签，作为历史记录；不能因日后转正而重写旧资产。最终回复提供 test Release、正式版保留或转正结果、Actions 与维护说明，准确说明上游更新范围及真机验证限制。
 
 ## 成功标准
 
-两个上游都已核查（单独发布已完成的客户端功能时如实说明本次沿用原内核基线，不冒称已更新上游）；代码与来源 JSON 一致；Bettbox 原内核目录未混入 Smart；个人自用声明保留；工作区无临时试验；本次提交的 Windows/Android 构建都成功；个人 fork 的新 Release 为 test，有正确二进制、校验和及来源信息，紧邻上一版按上述规则转正。账号失效或构建确实受阻时明确说明已完成内容和阻塞原因，保留可继续的状态，不能假称发布成功。
+两个上游都已核查（单独发布客户端修复时如实说明沿用原内核基线，不冒称已更新上游）；代码与来源 JSON 一致；Bettbox 原内核目录未混入 Smart；个人自用声明保留；工作区无临时试验；本次提交的 Windows/Android 构建都成功；新 Release 为 test，含正确二进制、校验和及来源信息；正式版按用户指定模式保留或转正；Release 仅保留这两个版本。账号失效或构建确实受阻时明确说明已完成内容和阻塞原因，保留可继续的状态，不能假称发布成功。

@@ -6,6 +6,7 @@ import 'package:path/path.dart';
 import 'package:yaml/yaml.dart';
 
 import 'assembler.dart';
+import 'filter.dart';
 import 'store.dart';
 
 Future<ChainStore>? _store;
@@ -46,10 +47,10 @@ Future<ChainCatalog> loadChainCatalog(
     }
     if (payload == null) continue;
     final filter = provider['filter'] is String
-        ? RegExp(provider['filter'] as String)
+        ? chainFilter(provider['filter'] as String)
         : null;
     final exclude = provider['exclude-filter'] is String
-        ? RegExp(provider['exclude-filter'] as String)
+        ? chainFilter(provider['exclude-filter'] as String)
         : null;
     providers[entry.key.toString()] = [
       for (final raw in payload as List? ?? [])

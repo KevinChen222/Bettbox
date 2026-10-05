@@ -57,6 +57,58 @@ void main() {
     expect(utils.compareVersions('v1.19.5', '1.19.4'), 1);
   });
 
+  test('Smart updates compare release builds without offering a downgrade', () {
+    final utils = Utils();
+    expect(
+      utils.hasReleaseUpdate(
+        'smart-v1.19.4-20261005.1',
+        '1.19.4',
+        '2026100101',
+      ),
+      isTrue,
+    );
+    expect(
+      utils.hasReleaseUpdate(
+        'smart-v1.19.4-20261005.1',
+        '1.19.4',
+        '2026100501',
+      ),
+      isFalse,
+    );
+    expect(
+      utils.hasReleaseUpdate(
+        'smart-v1.19.4-20261004.3',
+        '1.19.4',
+        '2026100501',
+      ),
+      isFalse,
+    );
+    expect(
+      utils.hasReleaseUpdate(
+        'smart-v1.19.4-20261005.2',
+        '1.19.4',
+        '2026100501',
+      ),
+      isTrue,
+    );
+    expect(
+      utils.hasReleaseUpdate(
+        'smart-v1.19.5-20261004.1',
+        '1.19.4',
+        '2026100501',
+      ),
+      isTrue,
+    );
+    expect(
+      utils.hasReleaseUpdate(
+        'smart-v1.19.3-20261006.1',
+        '1.19.4',
+        '2026100501',
+      ),
+      isFalse,
+    );
+  });
+
   test('Smart profile group is accepted', () {
     final group = ProxyGroup.fromJson({
       'name': 'Smart',

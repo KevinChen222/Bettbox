@@ -332,7 +332,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "disabled": MessageLookupByLibrary.simpleMessage("사용 안 함"),
     "disclaimer": MessageLookupByLibrary.simpleMessage("면책 조항"),
     "disclaimerDesc": MessageLookupByLibrary.simpleMessage(
-      "본 소프트웨어는 오픈 소스 무료 소프트웨어이며, 학습 및 테스트 목적으로만 제공됩니다. 프록시 제공업체의 행위는 본 소프트웨어와 무관합니다.",
+      "본 소프트웨어는 오픈 소스 무료 소프트웨어이며, 학습 및 테스트 목적으로만 제공됩니다. 프록시 제공업체의 행위는 본 소프트웨어와 무관합니다.\n\n이 포크는 개발자 본인의 개인 사용만을 위한 것으로 기술 지원이나 보증을 제공하지 않습니다. 다른 사람이 다운로드, 수정 또는 사용하여 발생하는 결과는 사용자 본인의 책임이며, 원본 프로젝트와 이 포크의 개발자는 책임을 지지 않습니다.",
     ),
     "discoverNewVersion": MessageLookupByLibrary.simpleMessage(
       "새로운 버전을 발견했습니다",

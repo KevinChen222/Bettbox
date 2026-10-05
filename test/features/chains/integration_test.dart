@@ -154,10 +154,17 @@ void main() {
       );
       final catalog = await loadChainCatalog('profile', {
         'proxy-providers': {
-          'file': {'type': 'file', 'path': 'local.yaml', 'filter': '^HK'},
+          'file': {'type': 'file', 'path': 'local.yaml', 'filter': '(?i)^hk'},
           'inline': {
             'type': 'inline',
+            'exclude-filter': '(?i)BLOCKED',
             'payload': [
+              {
+                'name': 'blocked',
+                'type': 'http',
+                'server': 'localhost',
+                'port': 8080,
+              },
               {
                 'name': 'local',
                 'type': 'http',

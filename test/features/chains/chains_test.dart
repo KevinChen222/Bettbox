@@ -51,6 +51,32 @@ ProxyChain chain({
 );
 
 void main() {
+  test('inline case flags preserve names and negative-lookahead filtering', () {
+    final names = ['🇭🇰 hk Gomami 12.9', '🇺🇸 US zgo', 'DIRECT', 'direct-v4'];
+    final config = <String, dynamic>{
+      'proxies': names.map(node).toList(),
+      'proxy-groups': [
+        {
+          'name': '🐸 手动切换',
+          'type': 'select',
+          'include-all': true,
+          'filter': '(?i)^(?!.*(direct))',
+        },
+        {
+          'name': '🇭🇰 香港节点',
+          'type': 'select',
+          'include-all': true,
+          'filter': '(?i)HK`(?i)US',
+          'exclude-filter': '(?i)ZGO',
+        },
+      ],
+    };
+    final catalog = ChainCatalog(config);
+    expect(catalog.groups['🐸 手动切换']!.map((hop) => hop.id), names.take(2));
+    expect(catalog.groups['🇭🇰 香港节点']!.single.id, names.first);
+    expect(catalog.nodes.keys, names);
+  });
+
   test(
     'filters match core semantics for explicit nodes and excluded group types',
     () {

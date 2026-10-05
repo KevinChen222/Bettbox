@@ -267,12 +267,11 @@ class Request {
         final remoteVersion = location.split('/').last.trim();
         if (remoteVersion.isNotEmpty) {
           final version = globalState.packageInfo.version;
-          final hasUpdate =
-              utils.compareVersions(
-                remoteVersion,
-                version,
-              ) >
-              0;
+          final hasUpdate = utils.hasReleaseUpdate(
+            remoteVersion,
+            version,
+            globalState.packageInfo.buildNumber,
+          );
           if (!hasUpdate) return null;
           return {
             'tag_name': remoteVersion,

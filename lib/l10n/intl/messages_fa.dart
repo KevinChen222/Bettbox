@@ -403,7 +403,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "disabled": MessageLookupByLibrary.simpleMessage("غیرفعال"),
     "disclaimer": MessageLookupByLibrary.simpleMessage("سلب مسئولیت"),
     "disclaimerDesc": MessageLookupByLibrary.simpleMessage(
-      "این نرم‌افزار رایگان و متن‌باز است و صرفاً برای استفاده شخصی و آموزشی ارائه شده است.",
+      "این نرم‌افزار رایگان و متن‌باز است و صرفاً برای استفاده شخصی و آموزشی ارائه شده است.\n\nاین فورک فقط برای استفاده شخصی توسعه‌دهنده است و بدون پشتیبانی فنی یا ضمانت ارائه می‌شود. مسئولیت پیامدهای دانلود، تغییر یا استفاده توسط دیگران بر عهده خود کاربران است و پروژه‌های اصلی و توسعه‌دهنده این فورک مسئولیتی ندارند.",
     ),
     "discoverNewVersion": MessageLookupByLibrary.simpleMessage(
       "نسخه جدیدی پیدا شد",

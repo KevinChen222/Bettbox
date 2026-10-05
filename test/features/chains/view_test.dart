@@ -47,6 +47,15 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    final addHop = find.widgetWithText(OutlinedButton, 'Add hop');
+    final paths = find.byType(DropdownButtonFormField<int>);
+    await tester.ensureVisible(paths);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(paths).dy - tester.getBottomLeft(addHop).dy,
+      greaterThanOrEqualTo(16),
+    );
+    await tester.ensureVisible(find.byTooltip('Move down').first);
     await tester.tap(find.byTooltip('Move down').first);
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(

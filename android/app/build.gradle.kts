@@ -31,7 +31,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.appshub.bettbox"
+        applicationId = "com.kevinchen222.bettbox.smart"
         minSdk = 26
         targetSdk = 36
         versionCode = flutter.versionCode

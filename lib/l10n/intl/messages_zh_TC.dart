@@ -292,7 +292,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "disabled": MessageLookupByLibrary.simpleMessage("已關閉"),
     "disclaimer": MessageLookupByLibrary.simpleMessage("免責聲明"),
     "disclaimerDesc": MessageLookupByLibrary.simpleMessage(
-      "本軟體為開源免費軟體，僅供學習交流等非商業性質的個人測試使用，代理服務商的行為均與本軟體無關，同意聲明代表您已完全知曉並確認了這一點，如不同意，請選擇退出！",
+      "本軟體為開源免費軟體，僅供學習交流等非商業性質的個人測試使用，代理服務商的行為均與本軟體無關，同意聲明代表您已完全知曉並確認了這一點，如不同意，請選擇退出！\n\n本 fork 僅供開發者本人自用，不提供技術支援或任何擔保。其他人自行下載、修改或使用所產生的後果由使用者自行承擔，與原專案及本 fork 開發者無關。",
     ),
     "discoverNewVersion": MessageLookupByLibrary.simpleMessage("發現新版本"),
     "discovery": MessageLookupByLibrary.simpleMessage("發現新版本"),

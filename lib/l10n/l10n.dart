@@ -4094,10 +4094,10 @@ class AppLocalizations {
     return Intl.message('Disclaimer', name: 'disclaimer', desc: '', args: []);
   }
 
-  /// `This free open-source software is for non-commercial learning and personal use only. Proxy services are independent of this software. By agreeing, you acknowledge this; otherwise, please exit.`
+  /// `This free open-source software is for non-commercial learning and personal use only. Proxy services are independent of this software. By agreeing, you acknowledge this; otherwise, please exit.\n\nThis fork is solely for personal use by its developer, without technical support or warranties. Anyone else downloading, modifying or using it assumes responsibility for the consequences; the upstream projects and the developer of this fork are not responsible.`
   String get disclaimerDesc {
     return Intl.message(
-      'This free open-source software is for non-commercial learning and personal use only. Proxy services are independent of this software. By agreeing, you acknowledge this; otherwise, please exit.',
+      'This free open-source software is for non-commercial learning and personal use only. Proxy services are independent of this software. By agreeing, you acknowledge this; otherwise, please exit.\n\nThis fork is solely for personal use by its developer, without technical support or warranties. Anyone else downloading, modifying or using it assumes responsibility for the consequences; the upstream projects and the developer of this fork are not responsible.',
       name: 'disclaimerDesc',
       desc: '',
       args: [],

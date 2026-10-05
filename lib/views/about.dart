@@ -38,10 +38,10 @@ class AboutView extends StatelessWidget {
       items: [
         _LinkGridRow(
           left: _LinkGridTile(
-            title: 'Github Releases',
+            title: 'GitHub · KevinChen222/Bettbox',
             icon: Icons.star,
             onTap: () =>
-                globalState.openUrl('https://github.com/appshubcc/Bettbox'),
+                globalState.openUrl('https://github.com/$repository'),
           ),
           right: _LinkGridTile(
             title: appLocalizations.checkUpdate,
@@ -51,16 +51,16 @@ class AboutView extends StatelessWidget {
         ),
         _LinkGridRow(
           left: _LinkGridTile(
-            title: 'Telegram Group',
+            title: 'bettbox',
             icon: Icons.launch,
             onTap: () =>
-                globalState.openUrl('https://telegram.me/appshub_chat'),
+                globalState.openUrl('https://github.com/appshubcc/Bettbox'),
           ),
           right: _LinkGridTile(
-            title: 'Channel',
+            title: 'Avalon',
             icon: Icons.launch,
             onTap: () =>
-                globalState.openUrl('https://telegram.me/appshub_channel'),
+                globalState.openUrl('https://github.com/MasterAlanLab/avalon'),
           ),
         ),
         _LinkGridRow(

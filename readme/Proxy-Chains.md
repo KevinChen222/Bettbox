@@ -24,6 +24,7 @@
 | `lib/features/chains/compiler.dart` | 来自 Avalon 的独立 dialer-proxy 编译器 |
 | `assembler.dart` | Bettbox 节点/组快照、过滤、名称分配与入口组绑定 |
 | `integration.dart` | Provider 缓存解析与运行时接入 |
+| `filter.dart` | 策略组与 Provider 共用的 `(?i)` 过滤兼容 |
 | `model.dart` / `store.dart` | 版本化链路库与串行、原子写入 |
 | `view.dart` | 独立管理与编辑界面 |
 | `avalon-source.json` / `LICENSE` | 实际移植来源和 Avalon 编译器许可 |

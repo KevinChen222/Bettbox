@@ -585,6 +585,7 @@ class _ChainEditorViewState extends State<ChainEditorView> {
             icon: const Icon(Icons.add),
             label: Text(_text(context, '添加一跳', 'Add hop')),
           ),
+          const SizedBox(height: 16),
           DropdownButtonFormField<int>(
             initialValue: _limit,
             decoration: InputDecoration(

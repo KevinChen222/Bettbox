@@ -832,6 +832,16 @@ class Utils {
     return build1.compareTo(build2);
   }
 
+  bool hasReleaseUpdate(String tag, String version, String buildNumber) {
+    final comparison = compareVersions(tag, version);
+    if (comparison != 0) return comparison > 0;
+    final match = RegExp(r'^smart-v\d+\.\d+\.\d+-(\d{8})\.(\d+)$')
+        .firstMatch(tag);
+    if (match == null) return false;
+    final releaseBuild = int.parse(match[1]!) * 100 + int.parse(match[2]!);
+    return releaseBuild > (int.tryParse(buildNumber) ?? 0);
+  }
+
   String getPinyin(String value) {
     return value.isNotEmpty
         ? PinyinHelper.getFirstWordPinyin(value.substring(0, 1))
