@@ -402,6 +402,7 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
                         ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
+                          spacing: 8,
                           children: [
                             Tooltip(
                               message: _text(
@@ -423,7 +424,6 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
                                       }),
                               ),
                             ),
-                            const SizedBox(width: 8),
                             TextButton(
                               onPressed: _busy
                                   ? null
