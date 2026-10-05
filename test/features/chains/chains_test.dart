@@ -136,6 +136,7 @@ void main() {
     final result = catalog.compile(route, {});
     expect(result.isValid, isTrue);
     final names = result.paths.single.generatedNames;
+    expect(names.last, 'A → B → exit');
     expect(result.generatedProxies[names[0]]!['dialer-proxy'], isNull);
     expect(result.generatedProxies[names[1]]!['dialer-proxy'], names[0]);
     expect(result.generatedProxies[names[2]]!['dialer-proxy'], names[1]);
@@ -154,6 +155,90 @@ void main() {
     );
     ((assembled['proxies'] as List).last as Map)['server'] = 'changed';
     expect(jsonEncode(config), before);
+  });
+
+  test(
+    'path names preserve Unicode, group hops and every intermediate hop',
+    () {
+      final names = ['🇭🇰 香港入口', '日本跳板', '🇺🇸 美国出口'];
+      final config = <String, dynamic>{
+        'proxies': names.map(node).toList(),
+        'proxy-groups': [
+          {
+            'name': '入口策略组',
+            'type': 'select',
+            'proxies': names.take(2).toList(),
+          },
+          {
+            'name': '出口策略组',
+            'type': 'smart',
+            'proxies': [names.last],
+          },
+        ],
+      };
+      final catalog = ChainCatalog(config);
+      final result = catalog.compile(
+        chain(
+          hops: const [
+            ChainTarget.group('入口策略组'),
+            ChainTarget.node('日本跳板'),
+            ChainTarget.localEndpoint({
+              'name': '本地跳板',
+              'type': 'http',
+              'server': '127.0.0.1',
+              'port': 8080,
+            }),
+            ChainTarget.group('出口策略组'),
+          ],
+        ),
+        {},
+      );
+      expect(result.generatedGroups.single.proxies, [
+        '入口策略组 → 日本跳板 → 本地跳板 → 出口策略组',
+        '入口策略组 → 日本跳板 → 本地跳板 → 出口策略组 (2)',
+      ]);
+      for (final path in result.paths) {
+        for (var index = 1; index < path.generatedNames.length; index++) {
+          expect(
+            result.generatedProxies[path
+                .generatedNames[index]]!['dialer-proxy'],
+            path.generatedNames[index - 1],
+          );
+        }
+      }
+      final nodeRoute = catalog.compile(
+        chain(hops: names.map(ChainTarget.node).toList()),
+        {},
+      );
+      expect(nodeRoute.generatedGroups.single.proxies, [names.join(' → ')]);
+    },
+  );
+
+  test('path labels cannot take the selector or existing proxy names', () {
+    final config = source();
+    config['proxies'].add(node('A → B'));
+    final result = assembleChains(config, [
+      chain(name: 'A → B'),
+      chain(id: '2', name: 'A → B'),
+      chain(id: 'single', name: 'single', hops: const [ChainTarget.node('A')]),
+    ], ChainCatalog(config));
+    final groups = (result['proxy-groups'] as List).skip(2).toList();
+    expect(groups.map((group) => group['name']), [
+      'A → B (2)',
+      'A → B (4)',
+      'single',
+    ]);
+    expect(groups.map((group) => group['proxies']), [
+      ['A → B (3)'],
+      ['A → B (5)'],
+      ['A (2)'],
+    ]);
+    final proxies = result['proxies'] as List;
+    expect(
+      proxies.map((proxy) => proxy['name']).toSet(),
+      hasLength(proxies.length),
+    );
+    expect(proxies.take(3), config['proxies']);
   });
 
   test('groups expand all combinations, cap branches and detect cycles', () {

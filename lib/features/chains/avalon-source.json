@@ -7,7 +7,7 @@
   "adaptations": [
     "Retain the standalone DialerChainCompiler and its copy/name helpers only",
     "Remove Avalon database, node-library and EffectiveConfigAssembler dependencies",
-    "Use __bettbox_chain as the generated proxy prefix",
+    "Use __bettbox_chain as the intermediate proxy prefix; name selectable terminals with all configured node/group hops joined by arrows",
     "Include the missing node/provider reference in compile diagnostics"
   ]
 }

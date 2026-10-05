@@ -185,11 +185,23 @@ class DialerChainCompiler {
     final paths = <ChainPath>[];
     final generated = <String, Map<String, dynamic>>{};
     final usedNames = <String>{...request.reservedNames};
+    final selectorName = request.name.trim();
+    final groupName = _allocateName(
+      selectorName.isEmpty ? 'chain' : selectorName,
+      usedNames,
+    );
+    usedNames.add(groupName);
     final terminals = <String>[];
     var pathIndex = 0;
     _walkPaths(choices, 0, <_ResolvedTarget>[], (selected) {
       pathIndex++;
       final generatedNames = <String>[];
+      final pathName = [
+        for (var index = 0; index < selected.length; index++)
+          request.hops[index].target.kind == ChainTargetKind.group
+              ? request.hops[index].target.id!
+              : selected[index].name,
+      ].join(' → ');
       String? previous;
       for (var hopIndex = 0; hopIndex < selected.length; hopIndex++) {
         final target = selected[hopIndex];
@@ -201,8 +213,9 @@ class DialerChainCompiler {
           emitted: compatibilityWarnings,
         );
         final base = _segment(target.name);
-        final desiredName =
-            '${request.generatedPrefix}_${_segment(request.name)}_${pathIndex}_${hopIndex + 1}_$base';
+        final desiredName = hopIndex == selected.length - 1
+            ? pathName
+            : '${request.generatedPrefix}_${_segment(request.name)}_${pathIndex}_${hopIndex + 1}_$base';
         final generatedName = _allocateName(desiredName, usedNames);
         usedNames.add(generatedName);
         final config = _copyMap(target.config);
@@ -232,14 +245,8 @@ class DialerChainCompiler {
       terminals.add(generatedNames.last);
     });
 
-    // Generated proxy names stay namespaced because they are implementation
-    // details, while the selector is exposed on the proxies page. Keep that
-    // user-facing selector aligned with the chain name.
-    final selectorName = request.name.trim();
-    final groupName = _allocateName(
-      selectorName.isEmpty ? 'chain' : selectorName,
-      usedNames,
-    );
+    // Intermediate copies remain namespaced; selectable terminals show all
+    // configured hops, preserving group names rather than expanded member names.
     return ChainCompileResult(
       generatedProxies: Map.unmodifiable(generated),
       generatedGroups: [
