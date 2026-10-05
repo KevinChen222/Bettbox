@@ -40,6 +40,50 @@ String write(String content, List<ProxyChain> chains) => writeChainsToProfile(
 
 void main() {
   test(
+    'persisted chains can share the same provider entry without metadata conflicts',
+    () {
+      final base = chainProfileBase(source);
+      final catalog = ChainCatalog(
+        base,
+        providers: {
+          'provider': [
+            {
+              'name': 'provider entry',
+              'type': 'socks5',
+              'server': 'entry.example',
+              'port': 1080,
+            },
+          ],
+        },
+      );
+      final entry = catalog.nodes.keys.firstWhere(
+        (key) => key.startsWith('provider:'),
+      );
+      final chains = [
+        for (final id in ['one', 'two'])
+          ProxyChain(
+            id: id,
+            name: id,
+            profileId: 'p',
+            hops: [ChainTarget.node(entry), const ChainTarget.node('exit')],
+          ),
+      ];
+      final generated = assembleChains(base, chains, catalog, persist: true);
+      expect(
+        (generated['proxies'] as List)
+            .where((node) => node['name'] == 'provider entry')
+            .length,
+        1,
+      );
+      expect(
+        (generated['proxy-groups'] as List)
+            .where((group) => group['x-bettbox-chain-id'] != null)
+            .length,
+        2,
+      );
+    },
+  );
+  test(
     'deleting a colliding chain retains the remaining group and path names across later saves',
     () {
       final first = ProxyChain.fromJson({

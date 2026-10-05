@@ -162,7 +162,8 @@ Map<String, dynamic> assembleChains(
         final original = existing == null
             ? null
             : (Map<String, dynamic>.from(existing as Map)
-                ..remove('x-bettbox-chain-id'));
+                ..remove('x-bettbox-chain-id')
+                ..remove('x-bettbox-chain-key'));
         if (original == null || jsonEncode(original) != jsonEncode(node)) {
           throw FormatException(
             '${chain.name}: External node name conflict: $name',
@@ -178,7 +179,9 @@ Map<String, dynamic> assembleChains(
     }
     final existingNodes = {
       for (final raw in proxies)
-        raw['name'] as String: Map<String, dynamic>.from(raw as Map),
+        raw['name'] as String: (Map<String, dynamic>.from(raw as Map)
+          ..remove('x-bettbox-chain-id')
+          ..remove('x-bettbox-chain-key')),
     };
     final result = catalog.compile(
       chain,
