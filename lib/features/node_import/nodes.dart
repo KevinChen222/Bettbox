@@ -58,10 +58,17 @@ String replaceProfileSection(String content, String name, dynamic value) {
   final anchor = RegExp(
     r'^&[^\s]+\s*',
   ).firstMatch(section.span.text)?.group(0)?.trim();
+  // Indentless block lists are valid YAML; their flow replacements need indent.
+  final indent =
+      section is YamlList &&
+          section.style == CollectionStyle.BLOCK &&
+          section.span.start.column == key.span.start.column
+      ? '  '
+      : '';
   return content.replaceRange(
     section.span.start.offset,
     _sectionEnd(section),
-    '${anchor == null ? '' : '$anchor '}${jsonEncode(value)}',
+    '$indent${anchor == null ? '' : '$anchor '}${jsonEncode(value)}',
   );
 }
 

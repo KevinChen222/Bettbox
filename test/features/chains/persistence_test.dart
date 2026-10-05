@@ -40,6 +40,57 @@ String write(String content, List<ProxyChain> chains) => writeChainsToProfile(
 
 void main() {
   test(
+    'chain saves and node deletion preserve indentless YAML lists before DNS',
+    () {
+      const input = '''proxies:
+- name: entry
+  type: socks5
+  server: entry.example
+  port: 1080
+- name: exit
+  type: socks5
+  server: exit.example
+  port: 1080
+proxy-groups:
+- name: main
+  type: select
+  proxies:
+  - entry
+  - exit
+- name: auto
+  type: select
+  include-all: true
+dns:
+  enable: true
+  nameserver:
+  - https://dns.example/dns-query
+# keep routing comment
+rules:
+- MATCH,main
+''';
+      for (final content in [input, input.replaceAll('\n', '\r\n')]) {
+        final nodesDeleted = loadYaml(
+          removeNodesFromProfile(content, {'exit'}),
+        );
+        expect(nodesDeleted['proxies'].map((node) => node['name']), ['entry']);
+        expect(nodesDeleted['proxy-groups'][0]['proxies'], ['entry']);
+        final saved = write(content, [chain('1')]);
+        final repeated = write(saved, [chain('1'), chain('2')]);
+        expect(loadYaml(repeated)['proxy-groups'].last['name'], 'route2');
+        expect(
+          repeated.substring(repeated.indexOf('dns:')),
+          content.substring(content.indexOf('dns:')),
+        );
+        final restored = write(repeated, []);
+        expect(jsonEncode(loadYaml(restored)), jsonEncode(loadYaml(content)));
+        if (content.contains('\r\n')) {
+          expect(restored.replaceAll('\r\n', ''), isNot(contains('\n')));
+        }
+      }
+    },
+  );
+
+  test(
     'persisted chains can share the same provider entry without metadata conflicts',
     () {
       final base = chainProfileBase(source);
@@ -244,6 +295,8 @@ void main() {
       'common: &nodes [{name: original}]\nproxies: *nodes\nrules: ["MATCH,DIRECT"]\n',
       'proxies: &nodes [{name: original}]\nother: *nodes\nrules: ["MATCH,DIRECT"]\n',
       'proxies:\n  - {name: original}\n# rules\nrules: ["MATCH,DIRECT"]\n',
+      'proxies:\n- {name: original}\n# rules\nrules: ["MATCH,DIRECT"]\n',
+      '  proxies:\n  - {name: original}\n  rules: ["MATCH,DIRECT"]\n',
       'rules: ["MATCH,DIRECT"]\n',
     ]) {
       for (final content in [yaml, yaml.replaceAll('\n', '\r\n')]) {
