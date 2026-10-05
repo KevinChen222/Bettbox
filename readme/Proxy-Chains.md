@@ -61,10 +61,13 @@ dart analyze lib/features/chains test/features/chains lib/state.dart lib/views/t
 flutter test test/features/chains test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart
 # 在 core 中，Windows 关闭 CGO，与便携包内核一致
 go test -tags=with_gvisor -run TestProxyChainConnectDirection -count=1 .
+go test -tags=with_gvisor -run TestImport -count=1 .
 git diff --check
 ```
 
 链路测试覆盖前置实时引用、出口展开/循环/数量限制、名称冲突、原规则不变、订阅节点变化、Provider 排序与新配置缓存继承、存储/恢复、手机宽度编辑交互。Go 测试通过两个本地 HTTP CONNECT 代理访问目标，分别验证原节点、select 和 Smart 策略组作为前置。它不代表 Android 真机 VPN/TUN 或远程多协议链路已经验证；完整应用发布仍按 `AI_UPDATE_GUIDE.md` 的 Windows/Android 构建流程执行。
+
+节点导入测试覆盖 SS2022、普通 SS 的 AEAD/传统加密与新旧链接格式、SSR、VMess 两种链接、VLESS/Reality、Trojan、Hysteria/Hy2、TUIC、AnyTLS、HTTP(S)、SOCKS 和 Mieru；同时核对 YAML/JSON 字段保留、混合与 Base64 订阅、SS 的 IPv6/obfs 参数。这些测试验证解析及内核参数校验，不代表已连接远程服务端；测试项目只记录在维护文档与 Actions，不写进 Release 更新说明。
 
 ## 来源与许可
 
