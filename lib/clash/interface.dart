@@ -22,6 +22,8 @@ mixin ClashInterface {
 
   Future<Result<String>> importNodes(String data);
 
+  Future<Result<String>> parseProviderNodes(String data);
+
   FutureOr<String> decryptAgeConfig(String data, String ageSecretKey);
 
   FutureOr<Result> getConfig(String path, {String? ageSecretKey});
@@ -129,6 +131,7 @@ abstract class ClashHandlerInterface with ClashInterface {
           return;
         case ActionMethod.getConfig:
         case ActionMethod.importNodes:
+        case ActionMethod.parseProviderNodes:
         case ActionMethod.convertAgeSecretKeyToPublicKey:
           completer?.complete(result.toResult);
           return;
@@ -528,6 +531,20 @@ abstract class ClashHandlerInterface with ClashInterface {
       method: ActionMethod.importNodes,
       data: data,
       defaultValue: Result.error('节点解析超时 / Node import timed out'),
+    );
+    return Result<String>(
+      data: res.data?.toString(),
+      type: res.type,
+      message: res.message,
+    );
+  }
+
+  @override
+  Future<Result<String>> parseProviderNodes(String data) async {
+    final res = await invoke<Result>(
+      method: ActionMethod.parseProviderNodes,
+      data: data,
+      defaultValue: Result.error('订阅解析超时 / Provider parsing timed out'),
     );
     return Result<String>(
       data: res.data?.toString(),

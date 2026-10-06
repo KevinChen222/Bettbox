@@ -97,6 +97,7 @@ const (
 	shutdownMethod                 Method = "shutdown"
 	validateConfigMethod           Method = "validateConfig"
 	importNodesMethod              Method = "importNodes"
+	parseProviderNodesMethod       Method = "parseProviderNodes"
 	decryptAgeConfigMethod         Method = "decryptAgeConfig"
 	updateConfigMethod             Method = "updateConfig"
 	getProxiesMethod               Method = "getProxies"

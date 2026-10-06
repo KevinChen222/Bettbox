@@ -39,6 +39,41 @@ String write(String content, List<ProxyChain> chains) => writeChainsToProfile(
 );
 
 void main() {
+  test('chain profile resolves YAML provider and node merge anchors', () {
+    const input = '''p: &p {type: http, interval: 86400}
+n: &n {type: socks5, server: entry.example, port: 1080}
+proxy-providers:
+  SubscribeIEPL:
+    <<: *p
+    url: https://example.com/iepl
+    path: ./proxies/provider2.yaml
+proxies:
+  - {<<: *n, name: entry}
+  - {<<: [*n, {port: 8080}], name: exit, server: exit.example}
+proxy-groups:
+  - {name: main, type: select, proxies: [entry, exit]}
+  - {name: auto, type: select, include-all: true}
+rules: [MATCH,main]
+''';
+    final base = chainProfileBase(input);
+    expect(base['proxy-providers']['SubscribeIEPL']['type'], 'http');
+    expect(base['proxies'][0]['type'], 'socks5');
+    expect(base['proxies'][1]['port'], 1080);
+    expect(base['proxies'][1]['server'], 'exit.example');
+    final saved = write(input, [chain('1')]);
+    expect(chainProfileBase(saved)['proxies'].last['type'], 'socks5');
+    expect(
+      saved
+          .substring(saved.indexOf('proxy-providers:'))
+          .split('proxies:')
+          .first,
+      input
+          .substring(input.indexOf('proxy-providers:'))
+          .split('proxies:')
+          .first,
+    );
+  });
+
   test(
     'chain saves and node deletion preserve indentless YAML lists before DNS',
     () {

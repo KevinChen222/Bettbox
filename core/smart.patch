@@ -3202,6 +3202,74 @@ index 22d6b1890bdb17213f7a7a1b5e193223959ff5fc..d5222145b08275d7f9b61215681216cc
  var _ SelectAble = (*URLTest)(nil)
  var _ SelectAble = (*Selector)(nil)
 +var _ SelectAble = (*Smart)(nil)
+diff --git a/adapter/provider/patch.go b/adapter/provider/patch.go
+index 1f3306a62b3626f372a4b821994a2cd24c137630..d7434a6e216e9779e8f8d98951faa27e9a710dc0 100644
+--- a/adapter/provider/patch.go
++++ b/adapter/provider/patch.go
+@@ -1,5 +1,38 @@
+ package provider
+ 
++import (
++	"github.com/metacubex/mihomo/common/structure"
++	C "github.com/metacubex/mihomo/constant"
++)
++
+ func (pp *proxySetProvider) GetSubscriptionInfo() *SubscriptionInfo {
+ 	return pp.subscriptionInfo
+ }
++
++// ParseProxyProviderNodes returns the definitions used by the runtime parser,
++// including credentials and provider overrides, for persisted proxy chains.
++func ParseProxyProviderNodes(buf []byte, mapping map[string]any) ([]map[string]any, error) {
++	schema := &proxyProviderSchema{}
++	decoder := structure.NewDecoder(structure.Option{TagName: "provider", WeaklyTypedInput: true})
++	if err := decoder.Decode(mapping, schema); err != nil {
++		return nil, err
++	}
++	nodes := []map[string]any{}
++	var parsed []C.Proxy
++	defer func() {
++		for _, proxy := range parsed {
++			_ = proxy.Close()
++		}
++	}()
++	parser, err := newProxiesParser("", nil, schema.Filter, schema.ExcludeFilter, schema.ExcludeType, schema.DialerProxy, schema.Override, schema.AgeSecretKey, func(node map[string]any, proxy C.Proxy) {
++		nodes = append(nodes, node)
++		parsed = append(parsed, proxy)
++	})
++	if err != nil {
++		return nil, err
++	}
++	if _, err := parser(buf); err != nil {
++		return nil, err
++	}
++	return nodes, nil
++}
+diff --git a/adapter/provider/provider.go b/adapter/provider/provider.go
+index fa7d56bc21af615c715ac09737449fa45559b809..a7f8137f4dac831b1f72a6421c2278da02d8ebdf 100644
+--- a/adapter/provider/provider.go
++++ b/adapter/provider/provider.go
+@@ -341,6 +341,10 @@ func (cp *CompatibleProvider) Close() error {
+ }
+ 
+ func NewProxiesParser(pdName string, tunnel C.Tunnel, filter string, excludeFilter string, excludeType string, dialerProxy string, override overrideSchema, ageSecretKey string) (resource.Parser[[]C.Proxy], error) {
++	return newProxiesParser(pdName, tunnel, filter, excludeFilter, excludeType, dialerProxy, override, ageSecretKey, nil)
++}
++
++func newProxiesParser(pdName string, tunnel C.Tunnel, filter string, excludeFilter string, excludeType string, dialerProxy string, override overrideSchema, ageSecretKey string, onParsed func(map[string]any, C.Proxy)) (resource.Parser[[]C.Proxy], error) {
+ 	var excludeTypeArray []string
+ 	if excludeType != "" {
+ 		excludeTypeArray = strings.Split(excludeType, "|")
+@@ -453,6 +457,9 @@ func NewProxiesParser(pdName string, tunnel C.Tunnel, filter string, excludeFilt
+ 
+ 				proxiesSet[name] = struct{}{}
+ 				proxies = append(proxies, proxy)
++				if onParsed != nil {
++					onParsed(mapping, proxy)
++				}
+ 			}
+ 		}
+ 
 diff --git a/common/atomic/type.go b/common/atomic/type.go
 index 12ae4cffae758e880e81424c51d1e483a180b0c8..f99e1465d39d1f678dbbd65fdec40c70487b1f7a 100644
 --- a/common/atomic/type.go

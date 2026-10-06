@@ -1,12 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:bett_box/clash/core.dart';
 import 'package:bett_box/common/common.dart';
 import 'package:path/path.dart';
-import 'package:yaml/yaml.dart';
 
 import 'assembler.dart';
-import 'filter.dart';
 import 'store.dart';
 
 Future<ChainStore>? _store;
@@ -52,15 +51,20 @@ Future<void> seedLocalProfileProviderCaches(
 
 Future<ChainCatalog> loadChainCatalog(
   String profileId,
-  Map<String, dynamic> config,
-) async {
+  Map<String, dynamic> config, {
+  Future<List<Map<String, dynamic>>> Function(
+    List<int> content,
+    Map<String, dynamic> provider,
+  )?
+  parseProviderNodes,
+}) async {
   final providers = <String, List<Map<String, dynamic>>>{};
   final home = await appPath.homeDirPath;
   final rawProviders = config['proxy-providers'] as Map? ?? {};
   for (final entry in rawProviders.entries) {
     final provider = entry.value as Map;
-    dynamic payload = provider['payload'];
-    if (payload == null) {
+    List<int>? content;
+    if (provider['type'] != 'inline') {
       String? path = provider['path'] as String?;
       if (provider['type'] == 'http' && provider['url'] is String) {
         path = await appPath.getProvidersFilePath(
@@ -72,26 +76,19 @@ Future<ChainCatalog> loadChainCatalog(
       if (path != null) {
         final file = File(isAbsolute(path) ? path : join(home, path));
         if (await file.exists()) {
-          final document = jsonDecode(
-            jsonEncode(loadYaml(await file.readAsString())),
-          );
-          if (document is Map) payload = document['proxies'];
+          content = await file.readAsBytes();
         }
       }
     }
-    if (payload == null) continue;
-    final filter = provider['filter'] is String
-        ? chainFilter(provider['filter'] as String)
-        : null;
-    final exclude = provider['exclude-filter'] is String
-        ? chainFilter(provider['exclude-filter'] as String)
-        : null;
-    providers[entry.key.toString()] = [
-      for (final raw in payload as List? ?? [])
-        if ((filter == null || filter.hasMatch(raw['name'].toString())) &&
-            (exclude == null || !exclude.hasMatch(raw['name'].toString())))
-          Map<String, dynamic>.from(raw as Map),
-    ];
+    if (content == null && provider['payload'] != null) {
+      content = utf8.encode(jsonEncode({'proxies': provider['payload']}));
+    }
+    if (content == null) continue;
+    providers[entry.key.toString()] =
+        await (parseProviderNodes ?? clashCore.parseProviderNodes)(
+          content,
+          Map<String, dynamic>.from(provider),
+        );
   }
   return ChainCatalog(config, providers: providers);
 }

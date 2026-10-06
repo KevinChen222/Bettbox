@@ -231,6 +231,7 @@ enum ActionMethod {
   shutdown,
   validateConfig,
   importNodes,
+  parseProviderNodes,
   updateConfig,
   getConfig,
   getProxies,

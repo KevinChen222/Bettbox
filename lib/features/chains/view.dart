@@ -136,11 +136,15 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
       );
       if (decrypted.isNotEmpty) content = decrypted;
     }
-    final base = chainProfileBase(content);
+    final source = await globalState.patchRawConfig(
+      patchConfig: globalState.config.patchClashConfig,
+      profile: profile,
+      includeProxyChains: false,
+    );
     final updated = writeChainsToProfile(
       content,
       profileChains,
-      await loadChainCatalog(profile.id, base),
+      await loadChainCatalog(profile.id, source),
     );
     final saved = await profile
         .copyWith(

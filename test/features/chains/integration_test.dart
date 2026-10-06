@@ -6,6 +6,7 @@ import 'package:bett_box/features/chains/compiler.dart';
 import 'package:bett_box/features/chains/assembler.dart';
 import 'package:bett_box/features/chains/integration.dart';
 import 'package:bett_box/features/chains/model.dart';
+import 'package:bett_box/features/chains/persistence.dart';
 import 'package:bett_box/features/node_import/nodes.dart';
 import 'package:bett_box/models/profile.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -179,7 +180,7 @@ void main() {
   });
 
   test(
-    'loads HTTP provider cache using Bettbox path and current contents',
+    'saves and copies two-hop chains using anchored HTTP provider caches',
     () async {
       final cache = File(
         await appPath.getProvidersFilePath(
@@ -192,23 +193,33 @@ void main() {
       await cache.writeAsString(
         'proxies:\n  - name: HK\n    type: socks5\n    server: updated.example.com\n    port: 1080\n',
       );
-      final config = <String, dynamic>{
-        'proxy-providers': {
-          'sub': {
-            'type': 'http',
-            'url': 'https://example.com/sub',
-            'path': 'unused.yaml',
-          },
-        },
-        'proxy-groups': [
-          {
-            'name': 'provider',
-            'type': 'select',
-            'use': ['sub'],
-          },
-        ],
-      };
-      final catalog = await loadChainCatalog('profile', config);
+      const source = '''p: &p {type: http, interval: 86400}
+proxy-providers:
+  sub:
+    <<: *p
+    url: https://example.com/sub
+    path: unused.yaml
+proxy-groups:
+  - {name: provider, type: select, use: [sub]}
+rules: [MATCH,provider]
+''';
+      final config = chainProfileBase(source);
+      Future<List<Map<String, dynamic>>> parse(
+        List<int> content,
+        Map<String, dynamic> provider,
+      ) async {
+        expect(provider['type'], 'http');
+        return [
+          for (final node in loadYaml(utf8.decode(content))['proxies'])
+            Map<String, dynamic>.from(node as Map),
+        ];
+      }
+
+      final catalog = await loadChainCatalog(
+        'profile',
+        config,
+        parseProviderNodes: parse,
+      );
       final result = catalog.compile(
         const ProxyChain(
           id: '1',
@@ -222,8 +233,49 @@ void main() {
         result.generatedProxies.values.single['server'],
         'updated.example.com',
       );
+      const chain = ProxyChain(
+        id: 'original',
+        name: 'route',
+        profileId: 'profile',
+        hops: [
+          ChainTarget.group('provider'),
+          ChainTarget.node('provider:["sub","HK"]'),
+        ],
+      );
+      final saved = writeChainsToProfile(source, [chain], catalog);
+      final copied = writeChainsToProfile(
+        saved,
+        [
+          chain,
+          const ProxyChain(
+            id: 'copy',
+            name: 'route (copy)',
+            profileId: 'profile',
+            hops: [
+              ChainTarget.group('provider'),
+              ChainTarget.node('provider:["sub","HK"]'),
+            ],
+          ),
+        ],
+        await loadChainCatalog(
+          'profile',
+          chainProfileBase(saved),
+          parseProviderNodes: parse,
+        ),
+      );
+      expect(
+        (loadYaml(copied)['proxy-groups'] as List)
+            .where((group) => group['x-bettbox-chain-id'] != null)
+            .length,
+        2,
+      );
+      expect(copied, contains('<<: *p'));
       await cache.delete();
-      final missing = await loadChainCatalog('profile', config);
+      final missing = await loadChainCatalog(
+        'profile',
+        config,
+        parseProviderNodes: parse,
+      );
       expect(
         missing
             .compile(
@@ -242,7 +294,7 @@ void main() {
   );
 
   test(
-    'reads local and inline providers and honours provider filters',
+    'passes local and inline contents and provider options to the core parser',
     () async {
       final file = File('${await appPath.homeDirPath}/local.yaml');
       await file.writeAsString(
@@ -263,33 +315,54 @@ void main() {
           ],
         }),
       );
-      final catalog = await loadChainCatalog('profile', {
-        'proxy-providers': {
-          'file': {'type': 'file', 'path': 'local.yaml', 'filter': '(?i)^hk'},
-          'inline': {
-            'type': 'inline',
-            'exclude-filter': '(?i)BLOCKED',
-            'payload': [
-              {
-                'name': 'blocked',
-                'type': 'http',
-                'server': 'localhost',
-                'port': 8080,
-              },
-              {
-                'name': 'local',
-                'type': 'http',
-                'server': 'localhost',
-                'port': 8080,
-              },
-            ],
+      final calls = <Map<String, dynamic>>[];
+      final catalog = await loadChainCatalog(
+        'profile',
+        {
+          'proxy-providers': {
+            'file': {'type': 'file', 'path': 'local.yaml', 'filter': '(?i)^hk'},
+            'inline': {
+              'type': 'inline',
+              'exclude-filter': '(?i)BLOCKED',
+              'payload': [
+                {
+                  'name': 'blocked',
+                  'type': 'http',
+                  'server': 'localhost',
+                  'port': 8080,
+                },
+                {
+                  'name': 'local',
+                  'type': 'http',
+                  'server': 'localhost',
+                  'port': 8080,
+                },
+              ],
+            },
           },
+          'proxy-groups': [
+            {'name': 'all', 'type': 'select', 'include-all-providers': true},
+          ],
         },
-        'proxy-groups': [
-          {'name': 'all', 'type': 'select', 'include-all-providers': true},
-        ],
-      });
+        parseProviderNodes: (content, provider) async {
+          calls.add(provider);
+          final nodes = loadYaml(utf8.decode(content))['proxies'] as List;
+          // The native parser's filters are covered by Go regression tests.
+          return [
+            Map<String, dynamic>.from(
+              nodes.firstWhere(
+                    (node) =>
+                        node['name'] ==
+                        (provider['type'] == 'file' ? 'HK' : 'local'),
+                  )
+                  as Map,
+            ),
+          ];
+        },
+      );
       expect(catalog.nodes.values.map((node) => node['name']), ['HK', 'local']);
+      expect(calls[0]['filter'], '(?i)^hk');
+      expect(calls[1]['exclude-filter'], '(?i)BLOCKED');
     },
   );
 }

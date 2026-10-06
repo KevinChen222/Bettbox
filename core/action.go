@@ -84,6 +84,14 @@ func handleAction(action *Action, result ActionResult) {
 		}
 		result.success(nodes)
 		return
+	case parseProviderNodesMethod:
+		nodes, err := handleParseProviderNodes(action.Data.(string))
+		if err != nil {
+			result.error(err.Error())
+			return
+		}
+		result.success(nodes)
+		return
 	case decryptAgeConfigMethod:
 		paramsString := action.Data.(string)
 		var params DecryptAgeConfigParams

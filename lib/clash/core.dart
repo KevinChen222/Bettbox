@@ -93,6 +93,22 @@ class ClashCore {
     return clashInterface.decryptAgeConfig(data, ageSecretKey);
   }
 
+  Future<List<Map<String, dynamic>>> parseProviderNodes(
+    List<int> content,
+    Map<String, dynamic> provider,
+  ) async {
+    final result = await clashInterface.parseProviderNodes(
+      jsonEncode({'content': base64Encode(content), 'provider': provider}),
+    );
+    if (!result.isSuccess || result.data == null) {
+      throw FormatException(result.message);
+    }
+    return [
+      for (final node in jsonDecode(result.data!) as List)
+        Map<String, dynamic>.from(node as Map),
+    ];
+  }
+
   Future<String> updateConfig(UpdateParams updateParams) async {
     return await clashInterface.updateConfig(updateParams);
   }

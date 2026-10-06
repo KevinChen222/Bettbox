@@ -298,6 +298,7 @@ const _$ActionMethodEnumMap = {
   ActionMethod.shutdown: 'shutdown',
   ActionMethod.validateConfig: 'validateConfig',
   ActionMethod.importNodes: 'importNodes',
+  ActionMethod.parseProviderNodes: 'parseProviderNodes',
   ActionMethod.updateConfig: 'updateConfig',
   ActionMethod.getConfig: 'getConfig',
   ActionMethod.getProxies: 'getProxies',
