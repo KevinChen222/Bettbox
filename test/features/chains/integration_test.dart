@@ -6,7 +6,10 @@ import 'package:bett_box/features/chains/compiler.dart';
 import 'package:bett_box/features/chains/assembler.dart';
 import 'package:bett_box/features/chains/integration.dart';
 import 'package:bett_box/features/chains/model.dart';
+import 'package:bett_box/features/node_import/nodes.dart';
+import 'package:bett_box/models/profile.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:yaml/yaml.dart';
 // PathProvider's platform interface is used only to replace native I/O in tests.
 // ignore: depend_on_referenced_packages
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -34,6 +37,61 @@ void main() {
     await appPath.dataDir.future;
   });
   tearDownAll(() => directory.delete(recursive: true));
+
+  test(
+    'profile refresh retains additions while updating the airport configuration',
+    () async {
+      final incoming = File('${directory.path}/subscription.yaml');
+      await incoming.writeAsString(
+        'proxies: [{name: airport, type: socks5, server: old.example, port: 1080}]\nrules: [MATCH,DIRECT]\n',
+      );
+      final manual = {
+        'name': 'manual',
+        'type': 'socks5',
+        'server': 'manual.example',
+        'port': 1080,
+      };
+      var profile = Profile.normal(url: Uri.file(incoming.path).toString())
+          .copyWith(
+            addedNodes: [manual],
+            addedProviders: {
+              'extra': subscriptionProvider(
+                'extra',
+                'https://example.com/sub',
+                {},
+              ),
+            },
+          );
+      profile = await profile.update(validate: false);
+      expect(profile.autoUpdate, true);
+      final saved =
+          loadYaml(await (await profile.getFile()).readAsString()) as Map;
+      expect(saved['proxies'].map((node) => node['name']), [
+        'manual',
+        'airport',
+      ]);
+      await incoming.writeAsString(
+        'proxies: [{name: airport-new, type: socks5, server: new.example, port: 1080}]\nrules: [MATCH,REJECT]\ndns: {enable: true}\n',
+      );
+      profile = await profile.update(validate: false);
+      final updated =
+          loadYaml(await (await profile.getFile()).readAsString()) as Map;
+      expect(updated['proxies'].map((node) => node['name']), [
+        'manual',
+        'airport-new',
+      ]);
+      expect(updated['proxy-providers']['extra']['interval'], 86400);
+      expect(updated['rules'], ['MATCH', 'REJECT']);
+      expect(updated['dns']['enable'], true);
+      profile = await profile
+          .copyWith(addedNodes: [], addedProviders: {})
+          .update(validate: false);
+      final deleted =
+          loadYaml(await (await profile.getFile()).readAsString()) as Map;
+      expect(deleted['proxies'].map((node) => node['name']), ['airport-new']);
+      expect(deleted['proxy-providers'], isNull);
+    },
+  );
 
   test(
     'local snapshots seed both HTTP caches before profile path rewriting',

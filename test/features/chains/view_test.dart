@@ -39,6 +39,9 @@ void main() {
                     'port': 1080,
                   },
               ],
+              externalSubscriptions: const {
+                'subscription': ['imported1', 'imported2'],
+              },
             ),
             profileLabel: 'profile',
             source: source,
@@ -51,21 +54,20 @@ void main() {
       await tester.tap(button);
       await tester.pumpAndSettle();
       expect(find.widgetWithText(CheckboxListTile, 'source'), findsNothing);
-      expect(find.byType(CheckboxListTile), findsNWidgets(2));
+      expect(find.byType(CheckboxListTile), findsNWidgets(3));
       await tester.tap(find.widgetWithText(CheckboxListTile, 'imported1'));
       await tester.tap(find.widgetWithText(CheckboxListTile, 'imported2'));
       await tester.pump();
       await tester.tap(find.widgetWithText(TextButton, 'Delete'));
       await tester.pumpAndSettle();
-      expect(find.text('Delete 2 nodes?'), findsOneWidget);
+      expect(find.text('Delete 0 subscriptions and 2 nodes?'), findsOneWidget);
       await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.pumpAndSettle();
-      expect(find.byType(CheckboxListTile), findsNWidgets(2));
-      await tester.tap(find.widgetWithText(CheckboxListTile, 'imported1'));
-      await tester.tap(find.widgetWithText(CheckboxListTile, 'imported2'));
+      expect(find.byType(CheckboxListTile), findsNWidgets(3));
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'subscription'));
       await tester.pump();
       await tester.tap(find.widgetWithText(TextButton, 'Delete'));
       await tester.pumpAndSettle();
@@ -165,4 +167,77 @@ void main() {
     expect(external, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'hop search finds distant nodes and groups and keeps added nodes first',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final source = <String, dynamic>{
+        'proxies': [
+          for (var i = 0; i < 300; i++)
+            {
+              'name': 'node $i',
+              'type': 'socks5',
+              'server': 'example.com',
+              'port': 1080,
+            },
+        ],
+        'proxy-groups': [
+          {
+            'name': 'HK group',
+            'type': 'select',
+            'proxies': ['node 299'],
+          },
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChainEditorView(
+            chain: const ProxyChain(
+              id: '1',
+              name: 'test',
+              profileId: 'p',
+              hops: [],
+              externalNodes: [
+                {
+                  'name': 'newest',
+                  'type': 'socks5',
+                  'server': 'example.com',
+                  'port': 1080,
+                },
+              ],
+            ),
+            profileLabel: 'profile',
+            source: source,
+            catalog: ChainCatalog(source),
+          ),
+        ),
+      );
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Add hop'));
+      await tester.pumpAndSettle();
+      expect(find.text('newest · socks5'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('newest · socks5')).dy,
+        lessThan(tester.getTopLeft(find.text('node 0 · socks5')).dy),
+      );
+      final search = find.widgetWithText(TextField, 'Search nodes or groups');
+      await tester.enterText(search, 'NODE 299');
+      await tester.pumpAndSettle();
+      expect(find.text('node 299 · socks5'), findsOneWidget);
+      expect(find.text('node 0 · socks5'), findsNothing);
+      await tester.enterText(search, 'hk');
+      await tester.pumpAndSettle();
+      expect(find.text('Group: HK group'), findsOneWidget);
+      await tester.enterText(search, 'absent');
+      await tester.pumpAndSettle();
+      expect(find.text('No matching nodes or groups'), findsOneWidget);
+      await tester.tap(find.byTooltip('Clear search'));
+      await tester.pumpAndSettle();
+      expect(find.text('newest · socks5'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

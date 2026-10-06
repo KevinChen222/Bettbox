@@ -8,6 +8,7 @@ class ProxyChain {
     required this.hops,
     this.entryGroups = const [],
     this.externalNodes = const [],
+    this.externalSubscriptions = const {},
     this.enabled = true,
     this.hidden = true,
     this.originalAutoUpdate,
@@ -20,6 +21,7 @@ class ProxyChain {
   final List<ChainTarget> hops;
   final List<String> entryGroups;
   final List<Map<String, dynamic>> externalNodes;
+  final Map<String, List<String>> externalSubscriptions;
   final bool enabled;
   final bool hidden;
   final bool? originalAutoUpdate;
@@ -38,6 +40,10 @@ class ProxyChain {
       for (final raw in json['externalNodes'] as List? ?? [])
         Map<String, dynamic>.from(raw as Map),
     ],
+    externalSubscriptions: {
+      for (final entry in (json['externalSubscriptions'] as Map? ?? {}).entries)
+        entry.key as String: List<String>.from(entry.value as List),
+    },
     hops: [
       for (final raw in json['hops'] as List)
         switch (raw['kind']) {
@@ -61,6 +67,7 @@ class ProxyChain {
     'branchLimit': branchLimit,
     'entryGroups': entryGroups,
     'externalNodes': externalNodes,
+    'externalSubscriptions': externalSubscriptions,
     'hops': [
       for (final hop in hops)
         {'kind': hop.kind.name, 'id': hop.id, 'config': hop.config},

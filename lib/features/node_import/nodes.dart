@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:yaml/yaml.dart';
 
@@ -143,8 +144,9 @@ List<Map<String, dynamic>> allocateImportedNodeNames(
   ];
 }
 
-/// Append without re-encoding the profile's rules, groups or comments.
-String appendNodesToProfile(String content, List<Map<String, dynamic>> nodes) {
+/// Prepend without re-encoding the profile's rules, groups or comments.
+String prependNodesToProfile(String content, List<Map<String, dynamic>> nodes) {
+  if (nodes.isEmpty) return content;
   final root = loadYamlNode(content);
   if (root is! YamlMap) {
     throw const FormatException('配置必须是 YAML 对象 / Expected a YAML profile');
@@ -201,29 +203,16 @@ String appendNodesToProfile(String content, List<Map<String, dynamic>> nodes) {
     return content.replaceRange(
       start,
       key.span.end.offset + alias.end,
-      jsonEncode([...proxies.value as List, ...nodes]),
+      jsonEncode([...nodes, ...proxies.value as List]),
     );
   }
   final list = proxies as YamlList;
   if (list.style == CollectionStyle.FLOW) {
-    final offset = proxies.span.end.offset - 1;
-    final separator =
-        list.isEmpty ||
-            content
-                .substring(proxies.span.start.offset, offset)
-                .trimRight()
-                .endsWith(',')
-        ? ''
-        : ',';
-    final addition = '$separator ${nodes.map(jsonEncode).join(', ')}';
+    final offset = content.indexOf('[', proxies.span.start.offset) + 1;
+    final addition =
+        '${nodes.map(jsonEncode).join(', ')}${list.isEmpty ? '' : ', '}';
     return content.replaceRange(offset, offset, addition);
   }
-  var offset = proxies.span.end.offset;
-  if (proxies.span.end.column != 0 && offset < content.length) {
-    final endOfLine = content.indexOf('\n', offset);
-    offset = endOfLine < 0 ? content.length : endOfLine + 1;
-  }
-  final prefix = offset > 0 && content[offset - 1] != '\n' ? newline : '';
   final firstRow = RegExp(
     r'(^|\n)( *)-(?:[ \r\n]|$)',
   ).firstMatch(proxies.span.text)!;
@@ -231,8 +220,236 @@ String appendNodesToProfile(String content, List<Map<String, dynamic>> nodes) {
       firstRow.group(2)!.length +
       (firstRow.start == 0 ? proxies.span.start.column : 0);
   final indent = ' ' * column;
+  final offset =
+      proxies.span.start.offset +
+      firstRow.start +
+      firstRow.group(1)!.length +
+      firstRow.group(2)!.length;
   final rows = nodes
-      .map((node) => '$indent- ${jsonEncode(node)}')
-      .join(newline);
-  return content.replaceRange(offset, offset, '$prefix$rows$newline');
+      .map((node) => '- ${jsonEncode(node)}')
+      .join('$newline$indent');
+  return content.replaceRange(offset, offset, '$rows$newline$indent');
+}
+
+String? subscriptionNameFromHeaders(Map<String, List<String>> headers) {
+  final title = headers['profile-title']?.firstOrNull;
+  if (title?.isNotEmpty == true) {
+    if (!title!.startsWith('base64:')) return title.trim();
+    return utf8
+        .decode(base64.decode(base64.normalize(title.substring(7))))
+        .trim();
+  }
+  final disposition = headers['content-disposition']?.firstOrNull;
+  if (disposition == null) return null;
+  final parameters = HeaderValue.parse(disposition).parameters;
+  final encoded = parameters['filename*'];
+  if (encoded != null) {
+    final parts = encoded.split("'");
+    if (parts.length >= 3) {
+      return Uri.decodeComponent(parts.skip(2).join("'")).trim();
+    }
+  }
+  return parameters['filename']?.trim();
+}
+
+String allocateSubscriptionName(String? requested, Set<String> reserved) {
+  final base = requested?.trim() ?? '';
+  if (base.isEmpty) {
+    var suffix = 1;
+    while (reserved.contains('新添加$suffix')) {
+      suffix++;
+    }
+    return '新添加$suffix';
+  }
+  var name = base;
+  var suffix = 2;
+  while (reserved.contains(name)) {
+    name = '$base (${suffix++})';
+  }
+  return name;
+}
+
+Map<String, dynamic> subscriptionProvider(
+  String name,
+  String url,
+  Map providers,
+) {
+  var filename = name
+      .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_')
+      .replaceAll(RegExp(r'[. ]+$'), '');
+  if (filename.isEmpty ||
+      RegExp(
+        r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)',
+        caseSensitive: false,
+      ).hasMatch(filename)) {
+    filename = 'provider_$filename';
+  }
+  final used = {
+    for (final provider in providers.values)
+      if (provider is Map && provider['path'] is String)
+        (provider['path'] as String)
+            .replaceAll('\\', '/')
+            .replaceFirst(RegExp(r'^\./'), '')
+            .toLowerCase(),
+  };
+  var path = './proxies/$filename.yaml';
+  var suffix = 2;
+  while (used.contains(path.substring(2).toLowerCase())) {
+    path = './proxies/$filename (${suffix++}).yaml';
+  }
+  return {
+    'type': 'http',
+    'url': url,
+    'path': path,
+    'interval': 86400,
+    'health-check': {
+      'enable': true,
+      'url': 'https://www.gstatic.com/generate_204',
+      'interval': 600,
+    },
+  };
+}
+
+String addProviderToProfile(
+  String content,
+  String name,
+  Map<String, dynamic> provider,
+) {
+  final root = loadYamlNode(content) as YamlMap;
+  final providers = root.nodes['proxy-providers'];
+  final key = root.nodes.keys
+      .where((key) => key.value == 'proxy-providers')
+      .firstOrNull;
+  if (providers is! YamlMap && providers?.value != null) {
+    throw const FormatException(
+      'proxy-providers 必须是对象 / proxy-providers must be a map',
+    );
+  }
+  final merged = <String, dynamic>{
+    if (providers is YamlMap) ...Map<String, dynamic>.from(providers.value),
+    name: provider,
+  };
+  if ((providers is YamlMap && providers.containsKey(name))) {
+    throw FormatException('Provider already exists: $name');
+  }
+  // Flow collections and aliases retain their original surrounding YAML.
+  if (root.style == CollectionStyle.FLOW ||
+      (providers is YamlMap && providers.style == CollectionStyle.FLOW) ||
+      (key != null &&
+          RegExp(
+            r'^\s*:\s*\*',
+          ).hasMatch(content.substring(key.span.end.offset)))) {
+    return replaceProfileSection(content, 'proxy-providers', merged);
+  }
+  final newline = content.contains('\r\n') ? '\r\n' : '\n';
+  final column = providers is YamlMap && providers.isNotEmpty
+      ? providers.nodes.keys.first.span.start.column
+      : (key?.span.start.column ?? root.span.start.column) + 2;
+  final indent = ' ' * column;
+  final rows = [
+    '$indent${jsonEncode(name)}:',
+    for (final entry in provider.entries)
+      if (entry.value is Map) ...[
+        '$indent  ${entry.key}:',
+        for (final field in (entry.value as Map).entries)
+          '$indent    ${field.key}: ${jsonEncode(field.value)}',
+      ] else
+        '$indent  ${entry.key}: ${jsonEncode(entry.value)}',
+  ].join(newline);
+  if (providers == null) {
+    final offset = root.span.end.offset;
+    return content.replaceRange(
+      offset,
+      offset,
+      '${offset > 0 && content[offset - 1] != '\n' ? newline : ''}${' ' * root.span.start.column}proxy-providers:$newline$rows$newline',
+    );
+  }
+  if (providers is! YamlMap || providers.isEmpty) {
+    if (providers.span.length == 0) {
+      final offset = content.indexOf(':', key!.span.end.offset) + 1;
+      return content.replaceRange(offset, offset, '$newline$rows');
+    }
+    return content.replaceRange(
+      providers.span.start.offset,
+      providers.span.end.offset,
+      '$newline$rows$newline',
+    );
+  }
+  var offset = _sectionEnd(providers);
+  if (offset < content.length && content[offset - 1] != '\n') {
+    final endOfLine = content.indexOf('\n', offset);
+    offset = endOfLine < 0 ? content.length : endOfLine + 1;
+  }
+  return content.replaceRange(
+    offset,
+    offset,
+    '${offset > 0 && content[offset - 1] != '\n' ? newline : ''}$rows$newline',
+  );
+}
+
+String removeProvidersFromProfile(String content, Set<String> names) {
+  final config =
+      jsonDecode(jsonEncode(loadYaml(content))) as Map<String, dynamic>;
+  final providers = config['proxy-providers'] as Map? ?? {};
+  providers.removeWhere((name, _) => names.contains(name));
+  var updated = replaceProfileSection(content, 'proxy-providers', providers);
+  final groups = config['proxy-groups'] as List? ?? [];
+  var changed = false;
+  for (final group in groups) {
+    final uses = group['use'] as List?;
+    if (uses == null || !uses.any(names.contains)) continue;
+    changed = true;
+    uses.removeWhere(names.contains);
+    if (uses.isEmpty &&
+        (group['proxies'] as List? ?? []).isEmpty &&
+        group['include-all'] != true &&
+        group['include-all-proxies'] != true &&
+        !(group['include-all-providers'] == true && providers.isNotEmpty)) {
+      group['proxies'] = ['DIRECT'];
+    }
+  }
+  if (changed) updated = replaceProfileSection(updated, 'proxy-groups', groups);
+  return updated;
+}
+
+/// Reapply only additions saved by the profile editor after a subscription refresh.
+({
+  String content,
+  List<Map<String, dynamic>> nodes,
+  Map<String, Map<String, dynamic>> providers,
+})
+mergeProfileAdditions(
+  String content,
+  List<Map<String, dynamic>> addedNodes,
+  Map<String, Map<String, dynamic>> addedProviders,
+) {
+  final config =
+      jsonDecode(jsonEncode(loadYaml(content))) as Map<String, dynamic>;
+  final nodes = allocateImportedNodeNames(addedNodes, nodeNames(config));
+  var updated = prependNodesToProfile(content, nodes);
+  final existing = Map<String, dynamic>.from(
+    config['proxy-providers'] as Map? ?? {},
+  );
+  final reserved = {
+    ...nodeNames(config),
+    ...nodes.map((node) => node['name'] as String),
+    ...existing.keys,
+  };
+  final providers = <String, Map<String, dynamic>>{};
+  for (final entry in addedProviders.entries) {
+    final name = allocateSubscriptionName(entry.key, reserved);
+    reserved.add(name);
+    final provider = {
+      ...entry.value,
+      'path': subscriptionProvider(
+        name,
+        entry.value['url'] as String,
+        existing,
+      )['path'],
+    };
+    updated = addProviderToProfile(updated, name, provider);
+    providers[name] = provider;
+    existing[name] = provider;
+  }
+  return (content: updated, nodes: nodes, providers: providers);
 }

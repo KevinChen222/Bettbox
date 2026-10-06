@@ -211,7 +211,7 @@ rules:
     'rebuilding preserves later unrelated edits and hidden/disabled state',
     () {
       final saved = write(source, [chain('1')]);
-      var edited = appendNodesToProfile(saved, [
+      var edited = prependNodesToProfile(saved, [
         {
           'name': 'later',
           'type': 'socks5',
@@ -233,7 +233,7 @@ rules:
       expect(visible['proxy-groups'].last['hidden'], false);
       final disabled =
           loadYaml(write(edited, [chain('1', enabled: false)])) as Map;
-      expect((disabled['proxies'] as List).last['name'], 'later');
+      expect((disabled['proxies'] as List).first['name'], 'later');
       expect(disabled['proxy-groups'][1]['exclude-filter'], 'later`original');
       expect(disabled['proxy-groups'].length, 2);
     },

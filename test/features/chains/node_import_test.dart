@@ -6,6 +6,9 @@ import 'package:bett_box/features/chains/model.dart';
 import 'package:bett_box/features/chains/store.dart';
 import 'package:bett_box/features/node_import/menu.dart';
 import 'package:bett_box/features/node_import/nodes.dart';
+import 'package:bett_box/features/node_import/view.dart';
+import 'package:bett_box/models/profile.dart';
+import 'package:bett_box/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yaml/yaml.dart';
@@ -18,7 +21,7 @@ Map<String, dynamic> node(String name) => {
 };
 
 void main() {
-  test('append preserves original nodes, comments, rules and CRLF', () {
+  test('prepend preserves original nodes, comments, rules and CRLF', () {
     for (final source in [
       '# keep\nproxies:\n  - {name: old, type: socks5, server: old.example, port: 1} # node\n# rules comment\nrules: [MATCH,DIRECT]\n',
       'proxies:\n- name: old\n  type: socks5\n  server: old.example\n  port: 1\nrules: [MATCH,DIRECT]',
@@ -36,10 +39,10 @@ void main() {
     ]) {
       for (final content in [source, source.replaceAll('\n', '\r\n')]) {
         final before = loadYaml(content) as Map;
-        final updated = appendNodesToProfile(content, [node('new')]);
+        final updated = prependNodesToProfile(content, [node('new')]);
         final after = loadYaml(updated) as Map;
         expect(after['proxies'], isList, reason: updated);
-        expect(after['proxies'].last['name'], 'new');
+        expect(after['proxies'].first['name'], 'new');
         expect(
           after['proxies'].length,
           (before['proxies'] as List? ?? []).length + 1,
@@ -58,6 +61,175 @@ void main() {
         }
       }
     }
+  });
+
+  test('providers preserve block indentation, anchors, comments and CRLF', () {
+    for (final source in [
+      '# keep\nrules: [MATCH,DIRECT]\n',
+      '---\nrules: [MATCH,DIRECT]\n...\n',
+      'proxy-providers:\nrules: [MATCH,DIRECT]\n',
+      'proxy-providers: null\nrules: [MATCH,DIRECT]\n',
+      'proxy-providers: {}\nrules: [MATCH,DIRECT]\n',
+      'proxy-providers:\n  old:\n    type: http\n    url: https://old.example/sub # keep\n    interval: 123\nrules: [MATCH,DIRECT]\n',
+      'proxy-providers:\n    old: {type: inline, payload: []} # keep\nrules: [MATCH,DIRECT]\n',
+      'proxy-providers: &providers\n  old: {type: inline, payload: []}\nrules: [MATCH,DIRECT]\n',
+      'common: &providers {old: {type: inline, payload: []}}\nproxy-providers: *providers # keep\nrules: [MATCH,DIRECT]\n',
+      '{proxy-providers: {old: {type: inline, payload: []}}, rules: [MATCH,DIRECT]}',
+      'proxy-providers: {old: {type: inline, payload: []}}\nrules: [MATCH,DIRECT]\n',
+    ]) {
+      for (final content in [source, source.replaceAll('\n', '\r\n')]) {
+        final before = loadYaml(content) as Map;
+        final provider = subscriptionProvider(
+          '新增: 订阅',
+          'https://example.com/xxx?x=1&flag=clash',
+          before['proxy-providers'] as Map? ?? {},
+        );
+        final updated = addProviderToProfile(content, '新增: 订阅', provider);
+        final after = loadYaml(updated) as Map;
+        expect(
+          jsonEncode(after['proxy-providers']['新增: 订阅']),
+          jsonEncode(provider),
+          reason: updated,
+        );
+        expect(after['proxy-providers']['新增: 订阅']['interval'], 86400);
+        expect(
+          after['proxy-providers']['新增: 订阅']['health-check']['interval'],
+          600,
+        );
+        expect(
+          after['proxy-providers']['新增: 订阅'].containsKey('override'),
+          false,
+        );
+        expect(
+          jsonEncode(after['proxy-providers']['old']),
+          jsonEncode((before['proxy-providers'] as Map? ?? {})['old']),
+        );
+        expect(jsonEncode(after['rules']), jsonEncode(before['rules']));
+        if (content.contains('# keep')) expect(updated, contains('# keep'));
+        if (before.containsKey('common')) {
+          expect(jsonEncode(after['common']), jsonEncode(before['common']));
+        }
+        if (content.contains('\r\n')) {
+          expect(updated.replaceAll('\r\n', ''), isNot(contains('\n')));
+        }
+      }
+    }
+  });
+
+  test(
+    'subscription names and provider cache paths do not overwrite existing entries',
+    () {
+      expect(
+        subscriptionNameFromHeaders({
+          'profile-title': ['base64:${base64Encode(utf8.encode('订阅名'))}'],
+        }),
+        '订阅名',
+      );
+      expect(
+        subscriptionNameFromHeaders({
+          'content-disposition': [
+            "attachment; filename*=UTF-8''%E8%AE%A2%E9%98%85.yaml",
+          ],
+        }),
+        '订阅.yaml',
+      );
+      expect(allocateSubscriptionName('', {'新添加1', '新添加2'}), '新添加3');
+      expect(allocateSubscriptionName('custom', {'custom'}), 'custom (2)');
+      final provider = subscriptionProvider('a/b', 'https://example.com', {
+        'old': {'path': './proxies/a_b.yaml'},
+      });
+      expect(provider['path'], './proxies/a_b (2).yaml');
+    },
+  );
+
+  test(
+    'provider deletion cleans use references and retains populated groups',
+    () {
+      const content = '''
+proxy-providers: {a: {type: inline, payload: []}, b: {type: inline, payload: []}}
+proxy-groups:
+  - {name: empty, type: select, use: [a]}
+  - {name: populated, type: select, use: [a, b], proxies: [DIRECT]}
+rules: [MATCH,empty] # keep
+''';
+      final updated = removeProvidersFromProfile(content, {'a'});
+      final config = loadYaml(updated) as Map;
+      expect(config['proxy-providers'].keys, ['b']);
+      expect(config['proxy-groups'][0]['proxies'], ['DIRECT']);
+      expect(config['proxy-groups'][1]['use'], ['b']);
+      expect(updated, contains('rules: [MATCH,empty] # keep'));
+    },
+  );
+
+  test('profile additions survive refreshed subscriptions and backup JSON', () {
+    final manual = [
+      node('manual'),
+      {...node('exit'), 'dialer-proxy': 'manual'},
+    ];
+    final providers = {
+      'subscription': subscriptionProvider(
+        'subscription',
+        'https://example.com',
+        {},
+      ),
+    };
+    final profile = Profile.normal(
+      url: 'https://main.example',
+    ).copyWith(addedNodes: manual, addedProviders: providers);
+    final restored = Profile.fromJson(
+      jsonDecode(jsonEncode(profile.toJson())) as Map<String, dynamic>,
+    );
+    expect(restored.addedNodes, manual);
+    expect(restored.addedProviders, providers);
+    final fresh =
+        'proxies: ${jsonEncode([node('manual')])}\nproxy-providers: {subscription: {type: inline, payload: []}}\nrules: [MATCH,DIRECT]\n';
+    final merged = mergeProfileAdditions(
+      fresh,
+      restored.addedNodes,
+      restored.addedProviders,
+    );
+    final config = loadYaml(merged.content) as Map;
+    expect(config['proxies'].map((node) => node['name']), [
+      'manual (2)',
+      'exit',
+      'manual',
+    ]);
+    expect(config['proxies'][1]['dialer-proxy'], 'manual (2)');
+    expect(config['proxy-providers'].keys, [
+      'subscription',
+      'subscription (2)',
+    ]);
+    final again = mergeProfileAdditions(fresh, merged.nodes, merged.providers);
+    expect(jsonEncode(loadYaml(again.content)), jsonEncode(config));
+    final deleted = mergeProfileAdditions(fresh, [], {});
+    expect(deleted.content, fresh);
+  });
+
+  testWidgets('provider subscription dialog has spaced name and URL fields', (
+    tester,
+  ) async {
+    await AppLocalizations.load(const Locale('en'));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showSubscriptionImport(context, provider: true),
+              child: const Text('provider'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('provider'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsNWidgets(2));
+    final fields = find.byType(TextField);
+    expect(
+      tester.getTopLeft(fields.last).dy - tester.getBottomLeft(fields.first).dy,
+      greaterThanOrEqualTo(24),
+    );
+    expect(tester.takeException(), isNull);
   });
 
   test(
@@ -93,8 +265,14 @@ void main() {
         profileId: 'p',
         hops: const [ChainTarget.node('entry'), ChainTarget.node('exit')],
         externalNodes: [node('exit'), node('unused')],
+        externalSubscriptions: const {
+          'sub': ['exit', 'unused'],
+        },
       );
       final restored = ChainStore.decode(ChainStore.encode([chain])).single;
+      expect(restored.externalSubscriptions, {
+        'sub': ['exit', 'unused'],
+      });
       final catalog = ChainCatalog(source);
       final generated = createChainProfileConfig(source, restored, catalog);
       expect(jsonEncode(source), before);

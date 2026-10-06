@@ -57,6 +57,16 @@ _Profile _$ProfileFromJson(Map<String, dynamic> json) => _Profile(
         (k, e) => MapEntry(k, e as bool),
       ) ??
       const {},
+  addedNodes:
+      (json['addedNodes'] as List<dynamic>?)
+          ?.map((e) => e as Map<String, dynamic>)
+          .toList() ??
+      const [],
+  addedProviders:
+      (json['addedProviders'] as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(k, e as Map<String, dynamic>),
+      ) ??
+      const {},
 );
 
 Map<String, dynamic> _$ProfileToJson(_Profile instance) => <String, dynamic>{
@@ -74,6 +84,8 @@ Map<String, dynamic> _$ProfileToJson(_Profile instance) => <String, dynamic>{
   'useScriptOverride': instance.useScriptOverride,
   'ageSecretKey': instance.ageSecretKey,
   'group-switches': instance.groupSwitches,
+  'addedNodes': instance.addedNodes,
+  'addedProviders': instance.addedProviders,
 };
 
 _OverrideData _$OverrideDataFromJson(Map<String, dynamic> json) =>

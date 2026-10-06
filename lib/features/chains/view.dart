@@ -404,24 +404,29 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
                           mainAxisAlignment: MainAxisAlignment.end,
                           spacing: 8,
                           children: [
-                            Tooltip(
-                              message: _text(
-                                context,
-                                '隐藏链路策略组',
-                                'Hide chain group',
-                              ),
-                              child: Switch(
-                                value: chain.hidden,
-                                onChanged: _busy
-                                    ? null
-                                    : (hidden) => _perform(() async {
-                                        await _writeChain(
-                                          ProxyChain.fromJson({
-                                            ...chain.toJson(),
-                                            'hidden': hidden,
+                            Flexible(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      _text(context, '隐藏策略组', 'Hide group'),
+                                    ),
+                                  ),
+                                  Checkbox(
+                                    value: chain.hidden,
+                                    onChanged: _busy
+                                        ? null
+                                        : (hidden) => _perform(() async {
+                                            await _writeChain(
+                                              ProxyChain.fromJson({
+                                                ...chain.toJson(),
+                                                'hidden': hidden == true,
+                                              }),
+                                            );
                                           }),
-                                        );
-                                      }),
+                                  ),
+                                ],
                               ),
                             ),
                             TextButton(
@@ -488,12 +493,16 @@ class _ChainEditorViewState extends State<ChainEditorView> {
     for (final node in widget.chain.externalNodes)
       Map<String, dynamic>.from(node),
   ];
+  late final _externalSubscriptions = {
+    for (final entry in widget.chain.externalSubscriptions.entries)
+      entry.key: List<String>.from(entry.value),
+  };
   late int _limit = widget.chain.branchLimit;
   bool _saving = false;
 
   late final _nodes = <String, Map<String, dynamic>>{
-    ...widget.catalog.nodes,
     for (final node in _externalNodes) node['name'] as String: node,
+    ...widget.catalog.nodes,
   };
 
   String _hopLabel(ChainTarget hop) {
@@ -516,6 +525,10 @@ class _ChainEditorViewState extends State<ChainEditorView> {
     hops: List.from(_hops),
     entryGroups: _entryGroups.toList(),
     externalNodes: List.from(_externalNodes),
+    externalSubscriptions: {
+      for (final entry in _externalSubscriptions.entries)
+        entry.key: List.from(entry.value),
+    },
     branchLimit: _limit,
     enabled: widget.chain.enabled,
     hidden: widget.chain.hidden,
@@ -526,6 +539,7 @@ class _ChainEditorViewState extends State<ChainEditorView> {
     final selected = await selectNodesToDelete(
       context,
       _externalNodes,
+      subscriptions: _externalSubscriptions,
       emptyMessage: _text(context, '未添加节点', 'No added nodes'),
       referenceMessage: _text(
         context,
@@ -535,21 +549,29 @@ class _ChainEditorViewState extends State<ChainEditorView> {
     );
     if (selected == null || !mounted) return;
     setState(() {
-      _externalNodes.removeWhere((node) => selected.contains(node['name']));
+      final names = selected.nodes;
+      _externalNodes.removeWhere((node) => names.contains(node['name']));
+      _externalSubscriptions.removeWhere(
+        (name, _) => selected.subscriptions.contains(name),
+      );
+      for (final members in _externalSubscriptions.values) {
+        members.removeWhere(names.contains);
+      }
+      _externalSubscriptions.removeWhere((_, members) => members.isEmpty);
       _hops.removeWhere(
-        (hop) => hop.kind == ChainTargetKind.node && selected.contains(hop.id),
+        (hop) => hop.kind == ChainTargetKind.node && names.contains(hop.id),
       );
       for (final node in _externalNodes) {
-        if (selected.contains(node['dialer-proxy'])) {
+        if (names.contains(node['dialer-proxy'])) {
           node.remove('dialer-proxy');
         }
       }
       _nodes
         ..clear()
-        ..addAll(widget.catalog.nodes)
         ..addAll({
           for (final node in _externalNodes) node['name'] as String: node,
-        });
+        })
+        ..addAll(widget.catalog.nodes);
     });
   }
 
@@ -558,59 +580,14 @@ class _ChainEditorViewState extends State<ChainEditorView> {
       if (!mounted) return;
       final target = await showDialog<Object>(
         context: context,
-        builder: (context) => SimpleDialog(
-          title: Text(_text(context, '添加一跳', 'Add hop')),
-          children: [
-            Builder(
-              builder: (buttonContext) => SimpleDialogOption(
-                onPressed: () async {
-                  final method = await showNodeImportMenu(buttonContext);
-                  if (context.mounted && method != null) {
-                    Navigator.pop(context, method);
-                  }
-                },
-                child: Row(
-                  children: [
-                    const Icon(Icons.add_circle_outline),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _text(context, '添加外部节点', 'Add external nodes'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SimpleDialogOption(
-              onPressed: () =>
-                  Navigator.pop(context, const ChainTarget.localEndpoint({})),
-              child: Text(
-                _text(
-                  context,
-                  '本地 / 自定义 HTTP、SOCKS 端点',
-                  'Local / custom HTTP or SOCKS endpoint',
-                ),
-              ),
-            ),
-            for (final entry in _nodes.entries)
-              SimpleDialogOption(
-                onPressed: () =>
-                    Navigator.pop(context, ChainTarget.node(entry.key)),
-                child: Text('${entry.value['name']} · ${entry.value['type']}'),
-              ),
-            for (final group in widget.catalog.groups.keys)
-              SimpleDialogOption(
-                onPressed: () =>
-                    Navigator.pop(context, ChainTarget.group(group)),
-                child: Text('${_text(context, '策略组', 'Group')}: $group'),
-              ),
-          ],
+        builder: (_) => _HopSelectionDialog(
+          nodes: _nodes,
+          groups: widget.catalog.groups.keys.toList(),
         ),
       );
       if (target == null || !mounted) return;
       if (target is NodeImportMethod) {
-        final nodes = await importExternalNodes(
+        final imported = await importExternalNodes(
           context,
           method: target,
           reservedNames: {
@@ -618,12 +595,24 @@ class _ChainEditorViewState extends State<ChainEditorView> {
             for (final node in _nodes.values) node['name'] as String,
           },
         );
-        if (nodes != null && mounted) {
+        if (imported != null && mounted) {
           setState(() {
-            _externalNodes.addAll(nodes);
-            for (final node in nodes) {
-              _nodes[node['name'] as String] = node;
+            _externalNodes.insertAll(0, imported.nodes);
+            if (imported.subscriptionName != null) {
+              final name = allocateSubscriptionName(
+                imported.subscriptionName,
+                _externalSubscriptions.keys.toSet(),
+              );
+              _externalSubscriptions[name] = imported.nodes
+                  .map((node) => node['name'] as String)
+                  .toList();
             }
+            _nodes
+              ..clear()
+              ..addAll({
+                for (final node in _externalNodes) node['name'] as String: node,
+              })
+              ..addAll(widget.catalog.nodes);
           });
         }
         continue;
@@ -891,6 +880,131 @@ class _ChainEditorViewState extends State<ChainEditorView> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HopSelectionDialog extends StatefulWidget {
+  const _HopSelectionDialog({required this.nodes, required this.groups});
+  final Map<String, Map<String, dynamic>> nodes;
+  final List<String> groups;
+
+  @override
+  State<_HopSelectionDialog> createState() => _HopSelectionDialogState();
+}
+
+class _HopSelectionDialogState extends State<_HopSelectionDialog> {
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final keyword = _search.text.trim().toLowerCase();
+    final nodes = widget.nodes.entries
+        .where(
+          (entry) => '${entry.value['name']} ${entry.key}'
+              .toLowerCase()
+              .contains(keyword),
+        )
+        .toList();
+    final groups = widget.groups
+        .where((name) => name.toLowerCase().contains(keyword))
+        .toList();
+    return AlertDialog(
+      title: Text(_text(context, '添加一跳', 'Add hop')),
+      content: SizedBox(
+        width: 420,
+        height: MediaQuery.sizeOf(context).height * 0.6,
+        child: Column(
+          children: [
+            TextField(
+              controller: _search,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: _text(context, '搜索节点或策略组', 'Search nodes or groups'),
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: keyword.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: _text(context, '清空搜索', 'Clear search'),
+                        icon: const Icon(Icons.clear),
+                        onPressed: () => setState(_search.clear),
+                      ),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Builder(
+              builder: (buttonContext) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.add_circle_outline),
+                title: Text(_text(context, '添加外部节点', 'Add external nodes')),
+                onTap: () async {
+                  final method = await showNodeImportMenu(buttonContext);
+                  if (context.mounted && method != null) {
+                    Navigator.pop(context, method);
+                  }
+                },
+              ),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                _text(
+                  context,
+                  '本地 / 自定义 HTTP、SOCKS 端点',
+                  'Local / custom HTTP or SOCKS endpoint',
+                ),
+              ),
+              onTap: () =>
+                  Navigator.pop(context, const ChainTarget.localEndpoint({})),
+            ),
+            const Divider(),
+            Expanded(
+              child: nodes.isEmpty && groups.isEmpty
+                  ? Center(
+                      child: Text(
+                        _text(
+                          context,
+                          '没有匹配的节点或策略组',
+                          'No matching nodes or groups',
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: nodes.length + groups.length,
+                      itemBuilder: (context, index) {
+                        if (index < nodes.length) {
+                          final entry = nodes[index];
+                          return ListTile(
+                            title: Text(
+                              '${entry.value['name']} · ${entry.value['type']}',
+                            ),
+                            onTap: () => Navigator.pop(
+                              context,
+                              ChainTarget.node(entry.key),
+                            ),
+                          );
+                        }
+                        final group = groups[index - nodes.length];
+                        return ListTile(
+                          title: Text(
+                            '${_text(context, '策略组', 'Group')}: $group',
+                          ),
+                          onTap: () =>
+                              Navigator.pop(context, ChainTarget.group(group)),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

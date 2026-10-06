@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:bett_box/clash/core.dart';
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
+import 'package:bett_box/features/node_import/nodes.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import 'clash_config.dart';
@@ -85,6 +86,8 @@ abstract class Profile with _$Profile {
     @Default(true) bool useScriptOverride,
     String? ageSecretKey,
     @JsonKey(name: 'group-switches') @Default({}) Map<String, bool> groupSwitches,
+    @Default([]) List<Map<String, dynamic>> addedNodes,
+    @Default({}) Map<String, Map<String, dynamic>> addedProviders,
   }) = _Profile;
 
   factory Profile.fromJson(Map<String, Object?> json) =>
@@ -196,10 +199,15 @@ extension ProfileExtension on Profile {
     return await copyWith(
       label: label ?? utils.getFileNameForDisposition(disposition) ?? id,
       subscriptionInfo: SubscriptionInfo.formHString(userinfo),
-    ).saveFile(response.data, validate: validate);
+    ).saveFile(response.data, validate: validate, retainAdded: true);
   }
 
-  Future<Profile> saveFile(Uint8List bytes, {bool validate = true}) async {
+  Future<Profile> saveFile(
+    Uint8List bytes, {
+    bool validate = true,
+    bool retainAdded = false,
+  }) async {
+    var savedProfile = this;
     String content = utf8.decode(bytes);
     final key = ageSecretKey;
     if (key != null && key.isNotEmpty) {
@@ -211,6 +219,14 @@ extension ProfileExtension on Profile {
       } catch (_) {}
     }
     content = utils.patchYamlConfig(content);
+    if (retainAdded && (addedNodes.isNotEmpty || addedProviders.isNotEmpty)) {
+      final merged = mergeProfileAdditions(content, addedNodes, addedProviders);
+      content = merged.content;
+      savedProfile = copyWith(
+        addedNodes: merged.nodes,
+        addedProviders: merged.providers,
+      );
+    }
     if (validate) {
       final message =
           await clashCore.validateConfig(content, ageSecretKey: ageSecretKey);
@@ -231,7 +247,7 @@ extension ProfileExtension on Profile {
     }
     final file = await getFile();
     await file.writeAsString(content);
-    return copyWith(lastUpdateDate: DateTime.now());
+    return savedProfile.copyWith(lastUpdateDate: DateTime.now());
   }
 
   Future<Profile> saveFileWithString(String value) async {

@@ -45,6 +45,13 @@ class EditProfileViewState extends State<EditProfileView> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final fileInfoNotifier = ValueNotifier<FileInfo?>(null);
   Uint8List? fileData;
+  bool _hasUnretainedEdits = false;
+  late final _addedNodes = [
+    for (final node in profile.addedNodes) Map<String, dynamic>.from(node),
+  ];
+  late final _addedProviders = Map<String, Map<String, dynamic>>.from(
+    profile.addedProviders,
+  );
 
   Profile get profile => widget.profile;
 
@@ -100,6 +107,8 @@ class EditProfileViewState extends State<EditProfileView> {
       autoUpdateDuration: Duration(
         minutes: int.parse(autoUpdateDurationController.text),
       ),
+      addedNodes: List.from(_addedNodes),
+      addedProviders: Map.from(_addedProviders),
     );
     if (widget.isNew) {
       final ref = appController.ref;
@@ -122,7 +131,9 @@ class EditProfileViewState extends State<EditProfileView> {
     } else {
       final hasUpdate = widget.profile.url != profile.url;
       if (fileData != null) {
-        if (profile.type == ProfileType.url && autoUpdate) {
+        if (profile.type == ProfileType.url &&
+            autoUpdate &&
+            _hasUnretainedEdits) {
           final res = await globalState.showMessage(
             title: appLocalizations.tip,
             message: TextSpan(text: appLocalizations.profileHasUpdate),
@@ -132,6 +143,24 @@ class EditProfileViewState extends State<EditProfileView> {
           }
         }
         try {
+          if (_addedNodes.isNotEmpty || _addedProviders.isNotEmpty) {
+            final config = loadYaml(utf8.decode(fileData!)) as Map;
+            profile = profile.copyWith(
+              addedNodes: [
+                for (final node in config['proxies'] as List? ?? [])
+                  if (_addedNodes.any((added) => added['name'] == node['name']))
+                    Map<String, dynamic>.from(node as Map),
+              ],
+              addedProviders: {
+                for (final entry
+                    in (config['proxy-providers'] as Map? ?? {}).entries)
+                  if (_addedProviders.containsKey(entry.key))
+                    entry.key as String: Map<String, dynamic>.from(
+                      entry.value as Map,
+                    ),
+              },
+            );
+          }
           final updatedProfile = await profile.saveFile(fileData!);
           appController.setProfileAndAutoApply(updatedProfile);
         } catch (e) {
@@ -250,6 +279,7 @@ class EditProfileViewState extends State<EditProfileView> {
     if (data == null) {
       return;
     }
+    if (data != rawText) _hasUnretainedEdits = true;
     rawText = data;
     fileData = Uint8List.fromList(utf8.encode(data));
     fileInfoNotifier.value = fileInfoNotifier.value?.copyWith(
@@ -263,6 +293,7 @@ class EditProfileViewState extends State<EditProfileView> {
       picker.pickerFile,
     );
     if (platformFile?.bytes == null) return;
+    _hasUnretainedEdits = true;
     fileData = platformFile?.bytes;
     fileInfoNotifier.value = fileInfoNotifier.value?.copyWith(
       size: fileData?.length ?? 0,
@@ -280,12 +311,50 @@ class EditProfileViewState extends State<EditProfileView> {
       final config = loadYaml(content);
       if (config is! Map) throw const FormatException('Invalid YAML profile');
       if (!buttonContext.mounted) return;
-      final nodes = await importExternalNodes(
-        buttonContext,
-        reservedNames: nodeNames(config),
-      );
-      if (nodes == null || !mounted) return;
-      final updated = appendNodesToProfile(content, nodes);
+      final method = await showNodeImportMenu(buttonContext);
+      if (method == null || !buttonContext.mounted) return;
+      String updated;
+      String notice;
+      List<Map<String, dynamic>> nodesToRetain = [];
+      Map<String, Map<String, dynamic>> providersToRetain = {};
+      if (method == NodeImportMethod.subscription) {
+        final subscription = await showSubscriptionImport(
+          buttonContext,
+          provider: true,
+        );
+        if (subscription == null || !mounted) return;
+        final providers = config['proxy-providers'] as Map? ?? {};
+        final name = allocateSubscriptionName(subscription.name, {
+          ...nodeNames(config),
+          ...providers.keys.cast<String>(),
+        });
+        final provider = subscriptionProvider(
+          name,
+          subscription.url,
+          providers,
+        );
+        updated = addProviderToProfile(content, name, provider);
+        providersToRetain = {name: provider};
+        notice = nodeImportText(
+          context,
+          '已添加订阅 $name，保存后生效',
+          'Subscription $name added. Save to apply.',
+        );
+      } else {
+        final imported = await importExternalNodes(
+          buttonContext,
+          method: method,
+          reservedNames: nodeNames(config),
+        );
+        if (imported == null || !mounted) return;
+        updated = prependNodesToProfile(content, imported.nodes);
+        nodesToRetain = imported.nodes;
+        notice = nodeImportText(
+          context,
+          '已添加 ${imported.nodes.length} 个节点，保存后生效',
+          '${imported.nodes.length} nodes added. Save to apply.',
+        );
+      }
       final message = await clashCore.validateConfig(
         utils.patchValidateConfig(updated),
         ageSecretKey: ageSecretKeyController.text.trim(),
@@ -293,6 +362,8 @@ class EditProfileViewState extends State<EditProfileView> {
       if (message.isNotEmpty) throw FormatException(message);
       if (!mounted) return;
       setState(() {
+        _addedNodes.insertAll(0, nodesToRetain);
+        _addedProviders.addAll(providersToRetain);
         rawText = updated;
         fileData = Uint8List.fromList(utf8.encode(updated));
         fileInfoNotifier.value = fileInfoNotifier.value?.copyWith(
@@ -300,13 +371,7 @@ class EditProfileViewState extends State<EditProfileView> {
           lastModified: DateTime.now(),
         );
       });
-      context.showSnackBar(
-        nodeImportText(
-          context,
-          '已添加 ${nodes.length} 个节点，保存后生效',
-          '${nodes.length} nodes added. Save to apply.',
-        ),
-      );
+      context.showSnackBar(notice);
     } catch (error) {
       if (mounted) context.showSnackBar(error.toString());
     }
@@ -334,20 +399,30 @@ class EditProfileViewState extends State<EditProfileView> {
       ).readAsString();
       final config = loadYaml(content) as Map;
       if (!mounted) return;
-      final names = await selectNodesToDelete(
+      final selected = await selectNodesToDelete(
         context,
         [
           for (final node in config['proxies'] as List? ?? [])
             Map<String, dynamic>.from(node as Map),
         ],
+        subscriptions: {
+          for (final name in (config['proxy-providers'] as Map? ?? {}).keys)
+            name as String: const [],
+        },
         referenceMessage: nodeImportText(
           context,
-          '同时移除策略组中的节点引用及相关前置引用；没有其他成员的策略组保留 DIRECT。保存后生效。',
-          'Group members and dialer references to these nodes will also be removed. Empty groups retain DIRECT. Save to apply.',
+          '同时移除策略组的订阅/节点引用及相关前置引用；没有其他成员的策略组保留 DIRECT。保存后生效。',
+          'Provider, group member and dialer references will also be removed. Empty groups retain DIRECT. Save to apply.',
         ),
       );
-      if (names == null || !mounted) return;
-      final updated = removeNodesFromProfile(content, names);
+      if (selected == null || !mounted) return;
+      var updated = content;
+      if (selected.subscriptions.isNotEmpty) {
+        updated = removeProvidersFromProfile(updated, selected.subscriptions);
+      }
+      if (selected.nodes.isNotEmpty) {
+        updated = removeNodesFromProfile(updated, selected.nodes);
+      }
       final message = await clashCore.validateConfig(
         utils.patchValidateConfig(updated),
         ageSecretKey: ageSecretKeyController.text.trim(),
@@ -355,6 +430,25 @@ class EditProfileViewState extends State<EditProfileView> {
       if (message.isNotEmpty) throw FormatException(message);
       if (!mounted) return;
       setState(() {
+        if (selected.nodes.any(
+              (name) => !_addedNodes.any((node) => node['name'] == name),
+            ) ||
+            selected.subscriptions.any(
+              (name) => !_addedProviders.containsKey(name),
+            )) {
+          _hasUnretainedEdits = true;
+        }
+        _addedNodes.removeWhere(
+          (node) => selected.nodes.contains(node['name']),
+        );
+        for (final node in _addedNodes) {
+          if (selected.nodes.contains(node['dialer-proxy'])) {
+            node.remove('dialer-proxy');
+          }
+        }
+        _addedProviders.removeWhere(
+          (name, _) => selected.subscriptions.contains(name),
+        );
         rawText = updated;
         fileData = Uint8List.fromList(utf8.encode(updated));
         fileInfoNotifier.value = fileInfoNotifier.value?.copyWith(
@@ -365,8 +459,8 @@ class EditProfileViewState extends State<EditProfileView> {
       context.showSnackBar(
         nodeImportText(
           context,
-          '已删除 ${names.length} 个节点，保存后生效',
-          '${names.length} nodes deleted. Save to apply.',
+          '已删除 ${selected.subscriptions.length} 个订阅、${selected.nodes.length} 个节点，保存后生效',
+          '${selected.subscriptions.length} subscriptions and ${selected.nodes.length} nodes deleted. Save to apply.',
         ),
       );
     } catch (error) {
