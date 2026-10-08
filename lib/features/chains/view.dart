@@ -141,10 +141,15 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
       profile: profile,
       includeProxyChains: false,
     );
+    final catalog = await loadChainCatalog(profile.id, source);
+    if (!delete && chain.enabled) {
+      assembleChains(source, [chain], catalog);
+    }
     final updated = writeChainsToProfile(
       content,
       profileChains,
-      await loadChainCatalog(profile.id, source),
+      catalog,
+      allowInvalidChains: true,
     );
     final saved = await profile
         .copyWith(

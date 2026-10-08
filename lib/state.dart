@@ -1131,7 +1131,13 @@ class GlobalState {
     rawConfig.remove('rule');
     rawConfig['rules'] = rules;
     return includeProxyChains
-        ? await applyProxyChains(targetProfile.id, rawConfig)
+        ? await applyProxyChains(
+            targetProfile.id,
+            rawConfig,
+            onInvalidChain: (error) => showNotifier(
+              '代理链路不可用，请重新编辑或删除 / Proxy chain unavailable; edit or delete: $error',
+            ),
+          )
         : rawConfig;
   }
 

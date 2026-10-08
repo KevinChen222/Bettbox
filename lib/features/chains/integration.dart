@@ -95,8 +95,10 @@ Future<ChainCatalog> loadChainCatalog(
 
 Future<Map<String, dynamic>> applyProxyChains(
   String profileId,
-  Map<String, dynamic> config,
-) async {
+  Map<String, dynamic> config, {
+  void Function(String)? onInvalidChain,
+}) async {
+  config = isolateBrokenPersistedChains(config);
   final persistedIds = {
     for (final group in config['proxy-groups'] as List? ?? [])
       if (group['x-bettbox-chain-id'] != null) group['x-bettbox-chain-id'],
@@ -105,15 +107,21 @@ Future<Map<String, dynamic>> applyProxyChains(
       .where(
         (chain) =>
             chain.enabled &&
-            chain.originalAutoUpdate == null &&
             chain.profileId == profileId &&
             !persistedIds.contains(chain.id),
       )
       .toList();
-  if (chains.isEmpty) return config;
-  return assembleChains(
-    config,
-    chains,
-    await loadChainCatalog(profileId, config),
-  );
+  final result = chains.isEmpty
+      ? config
+      : assembleChains(
+          config,
+          chains,
+          await loadChainCatalog(profileId, config),
+          allowInvalidChains: true,
+        );
+  for (final group in result['proxy-groups'] as List? ?? []) {
+    final error = group['x-bettbox-chain-error'];
+    if (error is String) onInvalidChain?.call(error);
+  }
+  return result;
 }

@@ -31,8 +31,9 @@ dynamic _resolveYamlMerges(dynamic value) {
 String writeChainsToProfile(
   String content,
   List<ProxyChain> chains,
-  ChainCatalog catalog,
-) {
+  ChainCatalog catalog, {
+  bool allowInvalidChains = false,
+}) {
   final previous = loadYaml(content) as Map;
   final preferredNames = <String, Map<String, String>>{};
   for (final chain in chains) {
@@ -58,6 +59,7 @@ String writeChainsToProfile(
     catalog,
     persist: true,
     preferredNames: preferredNames,
+    allowInvalidChains: allowInvalidChains,
   );
   var updated = replaceProfileSection(
     content,

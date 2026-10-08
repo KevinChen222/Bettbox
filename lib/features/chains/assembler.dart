@@ -135,6 +135,7 @@ Map<String, dynamic> assembleChains(
   ChainCatalog catalog, {
   bool persist = false,
   Map<String, Map<String, String>> preferredNames = const {},
+  bool allowInvalidChains = false,
 }) {
   if (chains.isEmpty) return source;
   final config = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
@@ -150,101 +151,151 @@ Map<String, dynamic> assembleChains(
     for (final raw in [...proxies, ...groups]) (raw as Map)['name'] as String,
   };
   for (final chain in chains) {
-    for (final node in chain.externalNodes) {
-      final name = node['name'];
-      if (name is! String || name.isEmpty || node['type'] is! String) {
-        throw FormatException('${chain.name}: Invalid external node');
+    final proxyCount = proxies.length;
+    final savedGroups = allowInvalidChains
+        ? jsonDecode(jsonEncode(groups)) as List
+        : null;
+    final savedNames = Set<String>.from(reserved);
+    try {
+      for (final node in chain.externalNodes) {
+        final name = node['name'];
+        if (name is! String || name.isEmpty || node['type'] is! String) {
+          throw FormatException('${chain.name}: Invalid external node');
+        }
+        if (reserved.contains(name)) {
+          final existing = proxies
+              .where((raw) => raw['name'] == name)
+              .firstOrNull;
+          final original = existing == null
+              ? null
+              : (Map<String, dynamic>.from(existing as Map)
+                  ..remove('x-bettbox-chain-id')
+                  ..remove('x-bettbox-chain-key'));
+          if (original == null || jsonEncode(original) != jsonEncode(node)) {
+            throw FormatException(
+              '${chain.name}: External node name conflict: $name',
+            );
+          }
+        } else {
+          proxies.add({
+            ...jsonDecode(jsonEncode(node)) as Map<String, dynamic>,
+            if (persist) 'x-bettbox-chain-id': chain.id,
+          });
+          reserved.add(name);
+        }
       }
-      if (reserved.contains(name)) {
-        final existing = proxies
-            .where((raw) => raw['name'] == name)
-            .firstOrNull;
-        final original = existing == null
-            ? null
-            : (Map<String, dynamic>.from(existing as Map)
-                ..remove('x-bettbox-chain-id')
-                ..remove('x-bettbox-chain-key'));
-        if (original == null || jsonEncode(original) != jsonEncode(node)) {
+      final existingNodes = {
+        for (final raw in proxies)
+          raw['name'] as String: (Map<String, dynamic>.from(raw as Map)
+            ..remove('x-bettbox-chain-id')
+            ..remove('x-bettbox-chain-key')),
+      };
+      final result = catalog.compile(
+        chain,
+        {
+          ...reserved,
+          for (final entry in preferredNames.entries)
+            if (entry.key != chain.id) ...entry.value.values,
+        },
+        existingNodes,
+        preferredNames[chain.id] ?? const {},
+      );
+      if (!result.isValid) {
+        throw FormatException(
+          '${chain.name}: ${result.diagnostics.where((d) => d.isError).map((d) => d.message).join('\n')}',
+        );
+      }
+      final selector = result.generatedGroups.single;
+      for (final entry in chain.entryGroups) {
+        final group = groups.where((raw) => raw['name'] == entry).firstOrNull;
+        if (group == null || !catalog.groups.containsKey(entry)) {
+          throw FormatException('${chain.name}: 策略组 "$entry" 已不存在，请重新编辑链路绑定');
+        }
+        if (group['type'] == 'relay') {
+          throw FormatException('${chain.name}: 不支持将链路加入 relay 策略组');
+        }
+        if (chain.hops.length > 1 &&
+            _usesGroup(chain.hops.first, entry, catalog, existingNodes, {})) {
           throw FormatException(
-            '${chain.name}: External node name conflict: $name',
+            '${chain.name}: 前置依赖策略组 "$entry"，不能将链路加入该组以免循环',
           );
         }
-      } else {
-        proxies.add({
-          ...jsonDecode(jsonEncode(node)) as Map<String, dynamic>,
-          if (persist) 'x-bettbox-chain-id': chain.id,
-        });
-        reserved.add(name);
+        if (persist) {
+          group.putIfAbsent(
+            'x-bettbox-chain-had-proxies',
+            () => group.containsKey('proxies'),
+          );
+        }
+        group['proxies'] = [...group['proxies'] as List? ?? [], selector.name];
       }
-    }
-    final existingNodes = {
-      for (final raw in proxies)
-        raw['name'] as String: (Map<String, dynamic>.from(raw as Map)
-          ..remove('x-bettbox-chain-id')
-          ..remove('x-bettbox-chain-key')),
-    };
-    final result = catalog.compile(
-      chain,
-      {
+      final keys = {
+        for (final path in result.paths)
+          for (var i = 0; i < path.generatedNames.length; i++)
+            path.generatedNames[i]: chainPathKey(
+              path.targets,
+              i + (chain.hops.length > 1 ? 1 : 0),
+            ),
+      };
+      proxies.addAll(
+        result.generatedProxies.values.map(
+          (node) => {
+            ...node,
+            if (persist) 'x-bettbox-chain-id': chain.id,
+            if (persist && keys.containsKey(node['name']))
+              'x-bettbox-chain-key': keys[node['name']],
+          },
+        ),
+      );
+      groups.add({
+        ...selector.toConfig(),
+        'hidden': chain.hidden,
+        if (persist) 'x-bettbox-chain-id': chain.id,
+        if (persist) 'x-bettbox-chain-name': chain.name,
+      });
+      reserved.addAll(result.generatedProxies.keys);
+      reserved.add(selector.name);
+    } on FormatException catch (error) {
+      if (!allowInvalidChains) rethrow;
+      proxies.removeRange(proxyCount, proxies.length);
+      groups
+        ..clear()
+        ..addAll(savedGroups!);
+      reserved
+        ..clear()
+        ..addAll(savedNames);
+      final unavailable = {
         ...reserved,
         for (final entry in preferredNames.entries)
           if (entry.key != chain.id) ...entry.value.values,
-      },
-      existingNodes,
-      preferredNames[chain.id] ?? const {},
-    );
-    if (!result.isValid) {
-      throw FormatException(
-        '${chain.name}: ${result.diagnostics.where((d) => d.isError).map((d) => d.message).join('\n')}',
-      );
+      };
+      final baseName = preferredNames[chain.id]?['group'] ?? chain.name.trim();
+      final desiredName = baseName.isEmpty ? 'chain' : baseName;
+      var name = desiredName;
+      for (var suffix = 2; unavailable.contains(name); suffix++) {
+        name = '$desiredName ($suffix)';
+      }
+      for (final entry in chain.entryGroups) {
+        final group = groups.where((raw) => raw['name'] == entry).firstOrNull;
+        if (group == null || group['type'] == 'relay') continue;
+        if (persist) {
+          group.putIfAbsent(
+            'x-bettbox-chain-had-proxies',
+            () => group.containsKey('proxies'),
+          );
+        }
+        group['proxies'] = [...group['proxies'] as List? ?? [], name];
+      }
+      groups.add({
+        'name': name,
+        'type': 'select',
+        'proxies': ['REJECT'],
+        'hidden': chain.hidden,
+        'x-bettbox-chain-error': error.message,
+        if (persist) 'x-bettbox-chain-id': chain.id,
+        if (persist) 'x-bettbox-chain-name': chain.name,
+      });
+      reserved.add(name);
     }
-    final selector = result.generatedGroups.single;
-    for (final entry in chain.entryGroups) {
-      final group = groups.where((raw) => raw['name'] == entry).firstOrNull;
-      if (group == null || !catalog.groups.containsKey(entry)) {
-        throw FormatException('${chain.name}: 策略组 "$entry" 已不存在，请重新编辑链路绑定');
-      }
-      if (group['type'] == 'relay') {
-        throw FormatException('${chain.name}: 不支持将链路加入 relay 策略组');
-      }
-      if (chain.hops.length > 1 &&
-          _usesGroup(chain.hops.first, entry, catalog, existingNodes, {})) {
-        throw FormatException('${chain.name}: 前置依赖策略组 "$entry"，不能将链路加入该组以免循环');
-      }
-      if (persist) {
-        group.putIfAbsent(
-          'x-bettbox-chain-had-proxies',
-          () => group.containsKey('proxies'),
-        );
-      }
-      group['proxies'] = [...group['proxies'] as List? ?? [], selector.name];
-    }
-    final keys = {
-      for (final path in result.paths)
-        for (var i = 0; i < path.generatedNames.length; i++)
-          path.generatedNames[i]: chainPathKey(
-            path.targets,
-            i + (chain.hops.length > 1 ? 1 : 0),
-          ),
-    };
-    proxies.addAll(
-      result.generatedProxies.values.map(
-        (node) => {
-          ...node,
-          if (persist) 'x-bettbox-chain-id': chain.id,
-          if (persist && keys.containsKey(node['name']))
-            'x-bettbox-chain-key': keys[node['name']],
-        },
-      ),
-    );
-    groups.add({
-      ...selector.toConfig(),
-      'hidden': chain.hidden,
-      if (persist) 'x-bettbox-chain-id': chain.id,
-      if (persist) 'x-bettbox-chain-name': chain.name,
-    });
-    reserved.addAll(result.generatedProxies.keys);
-    reserved.add(selector.name);
   }
   final generatedNames = proxies
       .skip((source['proxies'] as List? ?? []).length)
@@ -274,6 +325,52 @@ Map<String, dynamic> assembleChains(
   }
   config['proxies'] = proxies;
   config['proxy-groups'] = groups;
+  return config;
+}
+
+/// Quarantine dangling dialers in managed YAML without changing user proxies.
+Map<String, dynamic> isolateBrokenPersistedChains(Map<String, dynamic> source) {
+  final proxies = source['proxies'] as List? ?? [];
+  final groups = source['proxy-groups'] as List? ?? [];
+  final names = {
+    'DIRECT',
+    'REJECT',
+    'REJECT-DROP',
+    'PASS',
+    'COMPATIBLE',
+    'GLOBAL',
+    for (final raw in [...proxies, ...groups]) raw['name'],
+  };
+  final errors = <dynamic, String>{};
+  for (final node in proxies) {
+    final id = node['x-bettbox-chain-id'];
+    final dialer = node['dialer-proxy'];
+    if (id != null && dialer is String && !names.contains(dialer)) {
+      errors[id] =
+          'Missing entry node or group: $dialer. Edit or delete this chain.';
+    }
+  }
+  if (errors.isEmpty) return source;
+  final config = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
+  config['proxies'] = [
+    for (final node in config['proxies'] as List)
+      if (errors.containsKey(node['x-bettbox-chain-id']))
+        {
+          'name': node['name'],
+          'type': 'reject',
+          'x-bettbox-chain-id': node['x-bettbox-chain-id'],
+          if (node['x-bettbox-chain-key'] != null)
+            'x-bettbox-chain-key': node['x-bettbox-chain-key'],
+        }
+      else
+        node,
+  ];
+  for (final group in config['proxy-groups'] as List? ?? []) {
+    final error = errors[group['x-bettbox-chain-id']];
+    if (error == null) continue;
+    group['proxies'] = ['REJECT'];
+    group['x-bettbox-chain-error'] = '${group['name']}: $error';
+  }
   return config;
 }
 

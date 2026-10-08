@@ -39,6 +39,119 @@ String write(String content, List<ProxyChain> chains) => writeChainsToProfile(
 );
 
 void main() {
+  test(
+    'missing entry stays strict on save but can be isolated and deleted',
+    () {
+      final saved = write(source, [chain('1'), chain('2')]);
+      final config =
+          jsonDecode(jsonEncode(loadYaml(saved))) as Map<String, dynamic>;
+      config['proxies'][0]['name'] = 'renamed';
+      config['proxy-groups'][0]['proxies'][0] = 'renamed';
+      var updated = replaceProfileSection(saved, 'proxies', config['proxies']);
+      updated = replaceProfileSection(
+        updated,
+        'proxy-groups',
+        config['proxy-groups'],
+      );
+      expect(() => write(updated, [chain('2')]), throwsFormatException);
+      updated = writeChainsToProfile(
+        updated,
+        [chain('2')],
+        ChainCatalog(chainProfileBase(updated)),
+        allowInvalidChains: true,
+      );
+      final remaining = loadYaml(updated);
+      expect(remaining['proxy-groups'].last['name'], 'route2');
+      expect(remaining['proxy-groups'].last['proxies'], ['REJECT']);
+      expect(
+        remaining['proxy-groups'].last['x-bettbox-chain-error'],
+        contains('entry'),
+      );
+      expect(
+        (remaining['proxy-groups'] as List).any(
+          (group) => group['x-bettbox-chain-id'] == '1',
+        ),
+        false,
+      );
+      expect(write(updated, []), isNot(contains('x-bettbox-chain-id')));
+      expect(loadYaml(write(updated, []))['rules'], loadYaml(source)['rules']);
+      expect(
+        loadYaml(
+          write(updated, [chain('2', enabled: false)]),
+        )['proxy-groups'].length,
+        2,
+      );
+    },
+  );
+
+  test(
+    'isolating a failed chain keeps healthy chains and rolls back imported nodes',
+    () {
+      final broken = ProxyChain.fromJson({
+        ...chain('broken').toJson(),
+        'hops': [
+          {'kind': 'node', 'id': 'missing'},
+          {'kind': 'node', 'id': 'exit'},
+        ],
+        'externalNodes': [
+          {
+            'name': 'unused',
+            'type': 'socks5',
+            'server': 'unused.example',
+            'port': 1080,
+          },
+        ],
+      });
+      final generated = assembleChains(
+        chainProfileBase(source),
+        [broken, chain('healthy')],
+        ChainCatalog(chainProfileBase(source)),
+        persist: true,
+        allowInvalidChains: true,
+      );
+      expect(
+        (generated['proxies'] as List).any((node) => node['name'] == 'unused'),
+        false,
+      );
+      expect(generated['proxy-groups'][2]['proxies'], ['REJECT']);
+      expect(generated['proxy-groups'][3]['proxies'], ['entry → exit']);
+      expect(generated['proxy-groups'][0]['proxies'], [
+        'entry',
+        'exit',
+        'routebroken',
+        'routehealthy',
+      ]);
+      expect(removePersistedChains(generated), chainProfileBase(source));
+    },
+  );
+
+  test(
+    'dangling persisted dialers reject only the affected chain and preserve references',
+    () {
+      final config = loadYaml(write(source, [chain('1')])) as Map;
+      final updated = jsonDecode(jsonEncode(config)) as Map<String, dynamic>;
+      updated['proxies'][0]['name'] = 'renamed';
+      updated['proxy-groups'][0]['proxies'][0] = 'renamed';
+      final repaired = isolateBrokenPersistedChains(updated);
+      expect(updated['proxies'].last['dialer-proxy'], 'entry');
+      expect(repaired['proxies'][0]['name'], 'renamed');
+      expect(repaired['proxies'][0]['type'], 'socks5');
+      expect(repaired['proxies'].last['name'], updated['proxies'].last['name']);
+      expect(repaired['proxies'].last['type'], 'reject');
+      expect(repaired['proxies'].last.containsKey('dialer-proxy'), false);
+      expect(repaired['proxy-groups'].last['proxies'], ['REJECT']);
+      expect(
+        repaired['proxy-groups'][0]['proxies'],
+        updated['proxy-groups'][0]['proxies'],
+      );
+      expect(repaired['rules'], updated['rules']);
+      expect(isolateBrokenPersistedChains(repaired), same(repaired));
+      final unmanaged = chainProfileBase(source);
+      unmanaged['proxies'][0]['dialer-proxy'] = 'user-missing';
+      expect(isolateBrokenPersistedChains(unmanaged), same(unmanaged));
+    },
+  );
+
   test('chain profile resolves YAML provider and node merge anchors', () {
     const input = '''p: &p {type: http, interval: 86400}
 n: &n {type: socks5, server: entry.example, port: 1080}

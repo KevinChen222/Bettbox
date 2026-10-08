@@ -180,6 +180,80 @@ void main() {
   });
 
   test(
+    'subscription rename isolates old chains and restores saved chains after refresh',
+    () async {
+      final store = await getChainStore();
+      const profileId = 'renamed-subscription';
+      final config = <String, dynamic>{
+        'proxies': [
+          {
+            'name': 'renamed',
+            'type': 'socks5',
+            'server': 'entry.example',
+            'port': 1080,
+          },
+          {
+            'name': 'exit',
+            'type': 'socks5',
+            'server': 'exit.example',
+            'port': 1080,
+          },
+        ],
+        'proxy-groups': <dynamic>[],
+        'rules': ['MATCH,DIRECT'],
+      };
+      for (final persisted in [false, true]) {
+        await store.put(
+          ProxyChain(
+            id: '$profileId-$persisted',
+            name: persisted ? 'saved' : 'legacy',
+            profileId: profileId,
+            originalAutoUpdate: persisted ? true : null,
+            hops: const [
+              ChainTarget.node('old-name'),
+              ChainTarget.node('exit'),
+            ],
+          ),
+        );
+      }
+      await store.put(
+        const ProxyChain(
+          id: 'healthy-refreshed',
+          name: 'healthy',
+          profileId: profileId,
+          originalAutoUpdate: true,
+          hops: [ChainTarget.node('renamed'), ChainTarget.node('exit')],
+        ),
+      );
+      final errors = <String>[];
+      final result = await applyProxyChains(
+        profileId,
+        config,
+        onInvalidChain: errors.add,
+      );
+      expect(errors.length, 2);
+      expect(result['proxy-groups'][0]['proxies'], ['REJECT']);
+      expect(result['proxy-groups'][1]['proxies'], ['REJECT']);
+      expect(result['proxy-groups'][2]['proxies'], ['renamed → exit']);
+      expect(result['rules'], config['rules']);
+      expect(config['proxy-groups'], isEmpty);
+      expect(
+        (await store.load())
+            .where((chain) => chain.profileId == profileId)
+            .length,
+        3,
+      );
+      final restored = jsonDecode(jsonEncode(config)) as Map<String, dynamic>;
+      restored['proxies'][0]['name'] = 'old-name';
+      final restoredResult = await applyProxyChains(profileId, restored);
+      expect(restoredResult['proxy-groups'][0]['proxies'], ['old-name → exit']);
+      expect(restoredResult['proxy-groups'][1]['proxies'], [
+        'old-name → exit (2)',
+      ]);
+    },
+  );
+
+  test(
     'saves and copies two-hop chains using anchored HTTP provider caches',
     () async {
       final cache = File(
