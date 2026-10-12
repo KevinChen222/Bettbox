@@ -22,6 +22,7 @@ dependencies:
   - libx11-6
   - libegl1
   - libgl1
+  - openjdk-17-jre-headless
 
 # The upstream client uses the same executable and installation directory.
 conflicts:

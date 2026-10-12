@@ -52,7 +52,9 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config desktop-file-utils libgtk-3-dev libayatana-appindicator3-dev libkeybinder-3.0-dev libcurl4-openssl-dev liblzma-dev libsecret-1-dev libx11-dev libgl1-mesa-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config desktop-file-utils openjdk-17-jdk libgtk-3-dev libayatana-appindicator3-dev libkeybinder-3.0-dev libcurl4-openssl-dev liblzma-dev libsecret-1-dev libx11-dev libgl1-mesa-dev
+          echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> "$GITHUB_ENV"
+          echo "/usr/lib/jvm/java-17-openjdk-amd64/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-java@v5
         if: matrix.platform == 'android'
         with:
@@ -124,6 +126,14 @@ jobs:
           test -f .test/linux-deb/usr/share/Bettbox/data/flutter_assets/assets/data/avalon-chain-LICENSE.txt
           test -f .test/linux-deb/usr/share/Bettbox/data/flutter_assets/assets/data/avalon-chain-NOTICE.txt
           desktop-file-validate .test/linux-deb/usr/share/applications/Bettbox.desktop
+          readelf -d .test/linux-deb/usr/share/Bettbox/lib/libdartjni.so | grep -F '/usr/lib/jvm/java-17-openjdk-amd64/lib/server'
+          for elf in .test/linux-deb/usr/share/Bettbox/Bettbox .test/linux-deb/usr/share/Bettbox/lib/*.so; do
+            dependencies="$(ldd "$elf")"
+            if [[ "$dependencies" == *"not found"* ]]; then
+              printf '%s\n' "$dependencies"
+              exit 1
+            fi
+          done
       - name: Build Android core and APK
         if: matrix.platform == 'android'
         env:
