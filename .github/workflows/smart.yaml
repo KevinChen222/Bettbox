@@ -52,7 +52,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libayatana-appindicator3-dev libkeybinder-3.0-dev libcurl4-openssl-dev liblzma-dev libsecret-1-dev libx11-dev libgl1-mesa-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config desktop-file-utils libgtk-3-dev libayatana-appindicator3-dev libkeybinder-3.0-dev libcurl4-openssl-dev liblzma-dev libsecret-1-dev libx11-dev libgl1-mesa-dev
       - uses: actions/setup-java@v5
         if: matrix.platform == 'android'
         with:
@@ -123,6 +123,7 @@ jobs:
           test -u .test/linux-deb/usr/share/Bettbox/BettboxCore
           test -f .test/linux-deb/usr/share/Bettbox/data/flutter_assets/assets/data/avalon-chain-LICENSE.txt
           test -f .test/linux-deb/usr/share/Bettbox/data/flutter_assets/assets/data/avalon-chain-NOTICE.txt
+          desktop-file-validate .test/linux-deb/usr/share/applications/Bettbox.desktop
       - name: Build Android core and APK
         if: matrix.platform == 'android'
         env:
