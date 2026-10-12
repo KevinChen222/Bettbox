@@ -113,7 +113,7 @@ dart tool/prepare_smart_core.dart --refresh-patch
 
 ### Linux 日常开发
 
-Linux 可维护客户端和 Smart 内核、运行测试及本地构建 Linux/Android。Windows 安装包继续由 `smart.yaml` 的 Windows runner 构建，Windows 原生界面和系统功能需在 Windows 上验证。
+默认在本机 Ubuntu 24.04 x86_64 的 `/home/kevin-chen/project/bettbox_smart` 维护客户端和 Smart 内核。日常本机测试只构建 Linux x64 客户端/DEB 与 Android arm64-v8a APK，先跑变更相关的定向测试，再交付维护者实测。Android 日常构建固定使用 `bash tool/build-android-local.sh --require-signing`，不回退到 debug 签名。Windows x64 安装包由 `smart.yaml` 的 Windows runner 构建，不要求本机构建 Windows 客户端；Windows 原生界面和系统功能需在 Windows 上验证。
 
 本机 SDK 放在 `~/development/bettbox-toolchains/`，Pub、Go 和 Gradle 下载缓存放在 `~/.cache/bettbox/`。终端启动时读取 `~/.config/bettbox/linux-env.sh`；项目中的 `tool/linux-env.sh` 保存相同配置，换机后可在安装 SDK 后执行 `source tool/linux-env.sh`。固定使用 Flutter 3.44.9（Dart 3.12.2）、Go 1.25.x、Rust stable、JDK 17、Android API 36、Build Tools 36.0.0、NDK 28.2.13676358 和 Android CMake 3.22.1。`BETTBOX_TOOLCHAIN_DIR`、`BETTBOX_JAVA_HOME` 可覆盖 SDK/JDK 安装位置。
 
@@ -137,7 +137,7 @@ flutter run -d linux --dart-define=APP_DEV=true
 
 维护者本机为 Ubuntu 24.04.5 LTS（noble）、x86_64、AMD Ryzen 5 5600H。固定维护适用于 Ubuntu 24.04 的 **Linux x64 DEB**，内核使用默认 `GOAMD64=v3`（本机支持 AVX2/FMA/BMI 等要求）；不额外构建 Linux arm64、Compatible、RPM 或 AppImage。换机或升级系统后重新核实环境，不沿用本机记录作为新机器的兼容性证明。
 
-沿用项目的 `flutter_distributor` DEB 打包器和 `linux/packaging/deb/make_config.yaml`。包名为 `bettbox-smart`，桌面显示 Bettbox Smart，运行时依赖采用 Ubuntu 24.04 的库包，不要求用户安装开发头文件。可执行文件和安装目录仍沿用上游 `/usr/share/Bettbox/`，因此声明与上游 `bettbox` 包冲突，不承诺与原版共存；不要更改当前应用数据目录或在更新/卸载时删除配置。沿用上游 root 所有权和内核 setuid 授权方式，核实 DEB 中 `BettboxCore` 的执行位及 setuid 位。App 更新链接保持进入 fork 正式版 Release 页面，不设置上游格式的 `APP_ASSET_SUFFIX`，以免指向错误文件名。
+沿用项目的 `flutter_distributor` DEB 打包器和 `linux/packaging/deb/make_config.yaml`。包名为 `bettbox-smart`，桌面显示 Bettbox Smart，运行时依赖采用 Ubuntu 24.04 的库包，不要求用户安装开发头文件。JNI 使用 `/usr/lib/jvm/java-17-openjdk-amd64/lib/server`，DEB 依赖 `openjdk-17-jre-headless`；CI 也使用 Ubuntu 的 OpenJDK 17，避免把 runner 私有的 Temurin 路径写进产物。可执行文件和安装目录仍沿用上游 `/usr/share/Bettbox/`，因此声明与上游 `bettbox` 包冲突，不承诺与原版共存；不要更改当前应用数据目录或在更新/卸载时删除配置。沿用上游 root 所有权和内核 setuid 授权方式，核实 DEB 中 `BettboxCore` 的执行位及 setuid 位。App 更新链接保持进入 fork 正式版 Release 页面，不设置上游格式的 `APP_ASSET_SUFFIX`，以免指向错误文件名。
 
 在本机加载工具链，准备依赖、生成代码和链路许可后，仅构建 Linux 内核并打包 DEB：
 

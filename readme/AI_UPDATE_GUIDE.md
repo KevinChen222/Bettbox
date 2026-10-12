@@ -8,6 +8,18 @@
 
 只改代码时注明“不发布”。引用文档本身不启动更新或发布；明确要求按本指南更新时，授权修改本 fork、提交/推送指定分支、运行 Actions、下载产物及按指定模式发布和清理 Release。
 
+## 默认维护与测试环境
+
+以后默认在维护者这台 Ubuntu 24.04 x86_64 机器的 `/home/kevin-chen/project/bettbox_smart` 维护。先加载 `tool/linux-env.sh`，保留工作区已有改动；工具版本仍以项目要求及实际环境为准。
+
+本机测试阶段只构建 **Linux x64 客户端/DEB** 和 **Android arm64-v8a APK**。安卓使用 `bash tool/build-android-local.sh --require-signing`，沿用原持久签名；Linux 按维护参考的本机 DEB 步骤构建。先运行与变更有关的定向测试，再构建交给维护者实测。Windows x64 包由 GitHub Actions 的 Windows runner 构建，不要求本机安装 Windows/MSVC 工具链。
+
+维护者说“先本机测试”时，完成上述 Linux/Android 产物后交付路径，等待明确发布指令；不把构建成功当作维护者已完成实测。明确发布时，仍核实同一提交的 Windows、Android、Linux Actions 构建全部成功，再按指定测试版/正式版规则发布。
+
+例如：
+
+> 按 readme/AI_UPDATE_GUIDE.md 更新两个上游，先构建本机 Linux 和 Android APK 供我测试，暂不发布。
+
 ## 必须遵守
 
 - 唯一可写远端：`KevinChen222/Bettbox`，分支 `feat/smart-core`。只读上游为 `appshubcc/Bettbox:main` 和 `vernesong/mihomo:Alpha`；不能用 `main`/`Meta` 替代 Smart，也不向上游推送或发消息。
