@@ -1,8 +1,8 @@
-display_name: Bettbox
-package_name: Bettbox
+display_name: Bettbox Smart
+package_name: bettbox-smart
 maintainer:
-  name: appshub
-  email: appshubcc@gmail.com
+  name: KevinChen222
+  email: KevinChen222@users.noreply.github.com
 
 priority: optional
 section: x11
@@ -11,8 +11,21 @@ essential: false
 icon: ./assets/images/icon.png
 
 dependencies:
-  - libayatana-appindicator3-dev
-  - libkeybinder-3.0-dev
+  - libc6 (>= 2.39)
+  - libstdc++6
+  - libgtk-3-0t64
+  - libayatana-appindicator3-1
+  - libkeybinder-3.0-0
+  - libcurl4t64
+  - liblzma5
+  - libsecret-1-0
+  - libx11-6
+  - libegl1
+  - libgl1
+
+# The upstream client uses the same executable and installation directory.
+conflicts:
+  - bettbox
 
 keywords:
   - Bettbox
@@ -21,7 +34,7 @@ keywords:
   - Mihomo
   - Proxy
 
-generic_name: Bettbox
+generic_name: Bettbox Smart
 
 categories:
   - Network

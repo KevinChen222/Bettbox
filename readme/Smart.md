@@ -1,6 +1,6 @@
 # Bettbox Smart 内核分支
 
-本分支为 Windows 和 Android 集成 [vernesong/mihomo 的 Smart 策略组](https://github.com/vernesong/mihomo/tree/Alpha)。合入 Smart `512b09d055244f77b3d734d70fc3023b49acfa3e` 相对官方基线 `88dcbf7f1614a67c3b36b848ee3592dfa92ada36` 的 Go 代码差异，保留 Bettbox 的平台补丁。Smart 差异保存在 `core/smart.patch`，构建时生成 `core/.smart-mihomo`；原始 `core/Clash.Meta` 与 Bettbox 上游保持一致，不会在构建时自动切换到最新 Alpha。
+本分支为 Windows、Android 和 Linux 集成 [vernesong/mihomo 的 Smart 策略组](https://github.com/vernesong/mihomo/tree/Alpha)。合入 Smart `512b09d055244f77b3d734d70fc3023b49acfa3e` 相对官方基线 `88dcbf7f1614a67c3b36b848ee3592dfa92ada36` 的 Go 代码差异，保留 Bettbox 的平台补丁。Smart 差异保存在 `core/smart.patch`，构建时生成 `core/.smart-mihomo`；原始 `core/Clash.Meta` 与 Bettbox 上游保持一致，不会在构建时自动切换到最新 Alpha。
 
 ## 使用
 
@@ -36,15 +36,15 @@ LightGBM 使用纯 Go 推理，不需要额外的原生 DLL/SO。启用 `useligh
 
 本 fork 还提供独立的 **工具 → 代理链路** 功能，可组合节点、策略组和 HTTP/SOCKS5 端点，预览多跳路径、绑定已有策略组，以及创建本地配置。使用方法与后续上游合并注意事项见 [代理链路说明](Proxy-Chains.md)。
 
-`Build Smart` 工作流在 `feat/smart-core` 推送时运行，也支持 Actions 手动运行。产物在该次运行的 Artifacts 中：Windows x64 便携包（包含界面、内核和 HelperService）和 Android arm64-v8a 单架构 APK。后续 Android 构建只生成 arm64-v8a 内核与 APK，沿用持久签名。Windows 内核使用兼容的 AMD64 v1 指令集；安卓内核保留 16 KB 页对齐。
+`Build Smart` 工作流在 `feat/smart-core` 推送时运行，也支持 Actions 手动运行。产物在该次运行的 Artifacts 中：Windows x64 便携包（包含界面、内核和 HelperService）、Android arm64-v8a 单架构 APK 和适合维护者 Ubuntu 24.04 x86_64 机器的 Linux x64 DEB（`Bettbox-smart-linux-x64.deb`）。Linux 使用本机支持的 AMD64 v3 内核，维护步骤见 [Linux 版本维护](Smart-Maintenance.md#本机-linux-版本维护与-deb-构建)。后续 Android 构建只生成 arm64-v8a 内核与 APK，沿用持久签名。Windows 内核使用兼容的 AMD64 v1 指令集；安卓内核保留 16 KB 页对齐。后续发布要求同一提交的 Windows、Android、Linux 三个任务均成功。
 
 Fork 构建不使用上游 SignPath 证书。安卓通过 fork Secrets 中的持久自用 keystore 签名；缺少 Secrets 时退回构建环境 debug 签名。Android 包名为 `com.kevinchen222.bettbox.smart`，可与原版 Bettbox 共存；从旧包名迁移时通过备份导入数据。更新检查只读取 `KevinChen222/Bettbox` 最新正式版，同时比较应用版本与构建日期/序号。
 
-Release 只保留一个 **test / Pre-release** 和一个正式版。每次由用户指定发布模式：功能更新在新测试版公开后把上一测试版转正；bug 修复替换测试版且保留现有正式版。本次为功能更新并转正上一测试版。转正只修改 Release 元数据，标签和安装包不变；删除被替换的旧 Release 时保留 Git 标签。测试版从 Releases 页面手动下载。
+Release 只保留一个 **test / Pre-release** 和一个正式版。每次由用户指定发布模式：功能更新在新测试版公开后把上一测试版转正；bug 修复替换测试版且保留现有正式版。转正只修改 Release 元数据，标签和安装包不变；删除被替换的旧 Release 时保留 Git 标签。测试版从 Releases 页面手动下载。
 
 本机构建需要 Flutter 3.44.9、Go 1.25+、Rust；Windows 还需 Visual Studio C++ 工具链，Android 需 JDK 17 和 NDK 28.2.13676358。
 
-后续 AI 助手独立更新两个上游、构建和发布的完整操作手册见 [AI 更新与发布说明](AI_UPDATE_GUIDE.md)，本次版本说明见 [更新日志](Smart-Release-Notes.md)。
+后续 AI 助手更新时只需引用 [AI 更新入口](AI_UPDATE_GUIDE.md)，详细步骤见 [维护参考](Smart-Maintenance.md)，本次版本说明见 [更新日志](Smart-Release-Notes.md)。
 
 ```sh
 flutter pub get
