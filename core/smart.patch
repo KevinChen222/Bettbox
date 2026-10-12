@@ -1,5 +1,5 @@
 diff --git a/adapter/adapter.go b/adapter/adapter.go
-index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..c946b9ceecbc411f878d164820c37ab89d77a4f3 100644
+index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..b3b73e9eb6bc1d760810bac797fac91a98b0d182 100644
 --- a/adapter/adapter.go
 +++ b/adapter/adapter.go
 @@ -3,17 +3,23 @@ package adapter
@@ -45,7 +45,7 @@ index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..c946b9ceecbc411f878d164820c37ab8
  const (
  	defaultHistoriesNum = 10
  )
-@@ -312,3 +330,259 @@ func urlToMetadata(rawURL string) (addr C.Metadata, err error) {
+@@ -312,3 +330,268 @@ func urlToMetadata(rawURL string) (addr C.Metadata, err error) {
  	err = addr.SetRemoteAddress(net.JoinHostPort(u.Hostname(), port))
  	return
  }
@@ -139,7 +139,7 @@ index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..c946b9ceecbc411f878d164820c37ab8
 +		if ctx.Err() != nil {
 +			break
 +		}
-+		result, err := p.exitProbe(ctx, rawURL, wantASN)
++		result, err := p.exitProbe(ctx, rawURL, wantASN, false)
 +		if err != nil {
 +			lastErr = fmt.Errorf("%s: %w", rawURL, err)
 +			continue
@@ -152,15 +152,25 @@ index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..c946b9ceecbc411f878d164820c37ab8
 +	return nil, lastErr
 +}
 +
-+func (p *Proxy) exitProbe(ctx context.Context, rawURL string, wantASN bool) (*smart.ExitProbeResult, error) {
++func (p *Proxy) TargetExitProbe(ctx context.Context, host string, wantASN bool) (*smart.ExitProbeResult, error) {
++	if host == "" {
++		return nil, errors.New("empty target host")
++	}
++	return p.exitProbe(ctx, "https://"+host+"/cdn-cgi/trace", wantASN, true)
++}
++
++func (p *Proxy) exitProbe(ctx context.Context, rawURL string, wantASN bool, followOffHost bool) (*smart.ExitProbeResult, error) {
 +	header := http.Header{}
 +	header.Set("Accept-Encoding", "identity")
 +
 +	checkRedirect := func(req *http.Request, via []*http.Request) error {
-+		if !sameHostPort(req.URL, via[0].URL) {
-+			return http.ErrUseLastResponse
++		if sameHostPort(req.URL, via[len(via)-1].URL) {
++			return nil
 +		}
-+		return nil
++		if followOffHost && len(via) == 1 {
++			return nil
++		}
++		return http.ErrUseLastResponse
 +	}
 +
 +	resp, transport, err := p.statusRequest(ctx, rawURL, header, checkRedirect)
@@ -173,7 +183,7 @@ index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..c946b9ceecbc411f878d164820c37ab8
 +	defer func() { _ = resp.Body.Close() }()
 +
 +	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-+		return nil, fmt.Errorf("exit trace answered %d", resp.StatusCode)
++		return nil, &smart.TraceUnanswerableError{Reason: fmt.Sprintf("exit trace answered %d", resp.StatusCode)}
 +	}
 +	body, err := io.ReadAll(io.LimitReader(resp.Body, smart.ExitProbeBodyLimit))
 +	if err != nil {
@@ -181,9 +191,8 @@ index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..c946b9ceecbc411f878d164820c37ab8
 +	}
 +	region, ip := smart.ParseExitAnswer(body)
 +	if region == "" {
-+		return nil, errors.New("exit trace has no region")
++		return nil, &smart.TraceUnanswerableError{Reason: "exit trace has no region"}
 +	}
-+
 +	result := &smart.ExitProbeResult{Region: region}
 +	if ip.IsValid() {
 +		result.Key = smart.ExitKey(ip)
@@ -558,186 +567,62 @@ index eed45e0d610ed46b23edfadb25022b440eeb4f38..5dac4a555a7796c97c090994eb6593bc
 +	gb.failedTestMux.Unlock()
  }
 diff --git a/adapter/outboundgroup/loadbalance_test.go b/adapter/outboundgroup/loadbalance_test.go
-index bcd8ebbee88bd8724ba96b674603f39049ffa43a..d85af56da8576d9fd021fa19f21e7499cdcb6d9a 100644
+index bcd8ebbee88bd8724ba96b674603f39049ffa43a..45eb9635272dc5162f426e97fb2a240331cf994e 100644
 --- a/adapter/outboundgroup/loadbalance_test.go
 +++ b/adapter/outboundgroup/loadbalance_test.go
-@@ -1,11 +1,16 @@
- package outboundgroup
+@@ -45,7 +45,7 @@ func request(user, host string) *C.Metadata {
  
- import (
-+	"fmt"
- 	"net/netip"
- 	"testing"
-+	"time"
+ // One unit of work walking several destinations is the case both address-derived
+ // keys get wrong: the group is meant to hold that work on one egress, and the
+-// default key moves it as soon as the host changes.
++// default key changes as soon as the host changes.
+ func TestLoadBalanceHashKeyInUserSurvivesADestinationChange(t *testing.T) {
+ 	proxies := balancedProxies(8)
+ 	hosts := []string{"a.example.com", "b.example.org", "c.example.net", "d.example.io"}
+@@ -58,26 +58,29 @@ func TestLoadBalanceHashKeyInUserSurvivesADestinationChange(t *testing.T) {
+ 			"hash-key: user must ignore the destination")
+ 	}
  
-+	"github.com/metacubex/bbolt"
-+	"github.com/metacubex/http"
- 	"github.com/metacubex/mihomo/adapter"
- 	"github.com/metacubex/mihomo/adapter/outbound"
-+	"github.com/metacubex/mihomo/component/smart"
- 	C "github.com/metacubex/mihomo/constant"
- 
- 	"github.com/stretchr/testify/require"
-@@ -21,6 +26,159 @@ func balancedProxies(count int) []C.Proxy {
- 	return proxies
+-	byDestination := strategyConsistentHashing(testUrl, getKey)
+-	seen := map[int]bool{}
++	// Distinct destination keys are the deterministic contract of the fallback
++	// key. Distinct keys may still legally land in the same consistent-hash
++	// bucket, so asserting on selected proxy indexes would make this test flaky.
++	seenKeys := map[string]struct{}{}
+ 	for _, host := range hosts {
+-		seen[indexOf(t, proxies, byDestination(proxies, request("job-1", host), false))] = true
++		seenKeys[getKey(request("job-1", host))] = struct{}{}
+ 	}
+-	require.Greater(t, len(seen), 1,
+-		"the default key is expected to move with the destination")
++	require.Len(t, seenKeys, len(hosts),
++		"the default key must change with the destination")
  }
  
-+type filterOrderProxy struct {
-+	C.Proxy
-+	name string
-+}
-+
-+func (p *filterOrderProxy) Name() string                { return p.name }
-+func (p *filterOrderProxy) AliveForTestUrl(string) bool { return true }
-+
-+func TestFilterProxiesPutsSuspectedBehindUnrankedCandidates(t *testing.T) {
-+	db, err := bbolt.Open(t.TempDir()+"/smart.db", 0o600, nil)
-+	if err != nil {
-+		t.Fatal(err)
-+	}
-+	defer db.Close()
-+
-+	store := smart.NewStore(db)
-+	watcher := smart.NewExitWatcher(smart.ExitWatcherOptions{Name: "exit-order-test", Config: "test"})
-+	now := time.Now()
-+	all := make([]C.Proxy, 0, 12)
-+	names := make([]string, 0, 10)
-+	weights := make([]float64, 0, 10)
-+	for i := 0; i < 12; i++ {
-+		name := fmt.Sprintf("node-%02d", i)
-+		proxy := &filterOrderProxy{Proxy: adapter.NewProxy(outbound.NewDirect()), name: name}
-+		all = append(all, proxy)
-+		if i >= 10 {
-+			continue
-+		}
-+		names = append(names, name)
-+		weights = append(weights, 1)
-+		watcher.Store(name, smart.ExitInfo{Region: "hk", Key: name}, now)
-+		watcher.Note("*.example.test", name)
-+		if i == 0 {
-+			watcher.Store("control", smart.ExitInfo{Region: "us", Key: "control-exit"}, now)
-+			watcher.NoteSuccess("*.example.test", "control")
-+		}
-+	}
-+
-+	s := &Smart{
-+		GroupBase:  NewGroupBase(GroupBaseOption{Name: "exit-order-test"}),
-+		store:      store,
-+		exitWatch:  watcher,
-+		testUrl:    testUrl,
-+		configName: "test",
-+	}
-+	selected := s.filterProxies(request("user", "example.test"), "*.example.test", names, weights, all, 10, false)
-+	if len(selected) != 3 {
-+		t.Fatalf("selected %d candidates, want 2 healthy alternatives and 1 half-open fallback", len(selected))
-+	}
-+	if selected[0].Name() != "node-10" || selected[1].Name() != "node-11" {
-+		t.Fatalf("unranked candidates must precede suspected exits, got %q, %q", selected[0].Name(), selected[1].Name())
-+	}
-+	if watcher.Suspected("*.example.test", selected[2].Name()) == false {
-+		t.Fatalf("last candidate %q must be the half-open fallback", selected[2].Name())
-+	}
-+}
-+
-+func TestFilterProxiesDefersCachedSuspectedNodes(t *testing.T) {
-+	db, err := bbolt.Open(t.TempDir()+"/smart.db", 0o600, nil)
-+	if err != nil {
-+		t.Fatal(err)
-+	}
-+	defer db.Close()
-+
-+	store := smart.NewStore(db)
-+	watcher := smart.NewExitWatcher(smart.ExitWatcherOptions{Name: "cached-exit-order-test", Config: "test"})
-+	now := time.Now()
-+	target := "*.onejav.com"
-+	for _, node := range []string{"jp-suspected", "jp-second"} {
-+		watcher.Store(node, smart.ExitInfo{Region: "jp", Key: node}, now)
-+		watcher.Note(target, node)
-+	}
-+	watcher.Store("hk-control", smart.ExitInfo{Region: "hk", Key: "hk-control"}, now)
-+	watcher.NoteSuccess(target, "hk-control")
-+
-+	all := []C.Proxy{
-+		&filterOrderProxy{Proxy: adapter.NewProxy(outbound.NewDirect()), name: "jp-suspected"},
-+		&filterOrderProxy{Proxy: adapter.NewProxy(outbound.NewDirect()), name: "hk-cached"},
-+		&filterOrderProxy{Proxy: adapter.NewProxy(outbound.NewDirect()), name: "hk-fallback-1"},
-+		&filterOrderProxy{Proxy: adapter.NewProxy(outbound.NewDirect()), name: "hk-fallback-2"},
-+	}
-+	group := &Smart{
-+		GroupBase:  NewGroupBase(GroupBaseOption{Name: "cached-exit-order-test"}),
-+		store:      store,
-+		exitWatch:  watcher,
-+		testUrl:    testUrl,
-+		configName: "test",
-+	}
-+	selected := group.filterProxies(request("user", "onejav.com"), target,
-+		[]string{"jp-suspected", "hk-cached"}, nil, all, 3, false)
-+	if len(selected) != 1 || selected[0].Name() != "hk-cached" {
-+		t.Fatalf("cached selection should keep only its healthy entry, got %v", selected)
-+	}
-+	for _, proxy := range selected {
-+		if proxy.Name() == "jp-suspected" {
-+			t.Fatalf("a cached suspected candidate must stay behind available alternatives: %+v", selected)
-+		}
-+	}
-+}
-+
-+func TestFilterProxiesFailsOpenWhenAllCandidatesSuspected(t *testing.T) {
-+	db, err := bbolt.Open(t.TempDir()+"/smart.db", 0o600, nil)
-+	if err != nil {
-+		t.Fatal(err)
-+	}
-+	defer db.Close()
-+
-+	store := smart.NewStore(db)
-+	watcher := smart.NewExitWatcher(smart.ExitWatcherOptions{Name: "exit-fail-open-test", Config: "test"})
-+	now := time.Now()
-+	for _, node := range []string{"jp-01", "jp-02"} {
-+		watcher.Store(node, smart.ExitInfo{Region: "jp", Key: node}, now)
-+		watcher.Note("*.onejav.com", node)
-+	}
-+	watcher.Store("hk-control", smart.ExitInfo{Region: "hk", Key: "hk-control"}, now)
-+	watcher.NoteSuccess("*.onejav.com", "hk-control")
-+	proxies := []C.Proxy{
-+		&filterOrderProxy{Proxy: adapter.NewProxy(outbound.NewDirect()), name: "jp-01"},
-+		&filterOrderProxy{Proxy: adapter.NewProxy(outbound.NewDirect()), name: "jp-02"},
-+	}
-+	group := &Smart{
-+		GroupBase:  NewGroupBase(GroupBaseOption{Name: "exit-fail-open-test"}),
-+		store:      store,
-+		exitWatch:  watcher,
-+		testUrl:    testUrl,
-+		configName: "test",
-+	}
-+	selected := group.filterProxies(request("user", "onejav.com"), "*.onejav.com", []string{"jp-01", "jp-02"}, []float64{1, 1}, proxies, 2, false)
-+	if len(selected) != 1 || selected[0].Name() != "jp-01" {
-+		t.Fatalf("all-suspected target should allow only one half-open node, got %v", selected)
-+	}
-+}
-+
-+func TestPeriodicOriginRefusalsRaiseExitSuspicion(t *testing.T) {
-+	watcher := smart.NewExitWatcher(smart.ExitWatcherOptions{Name: "exit-evidence-test"})
-+	now := time.Now()
-+	watcher.Store("jp-01", smart.ExitInfo{Region: "jp", Key: "exit-jp-01"}, now)
-+	watcher.Store("jp-02", smart.ExitInfo{Region: "jp", Key: "exit-jp-02"}, now)
-+	group := &Smart{exitWatch: watcher}
-+	target := "*.onejav.com"
-+
-+	group.noteExitEvidence(target, "jp-01", smart.ReasonOriginError)
-+	if watcher.Suspected(target, "jp-01") {
-+		t.Fatal("one JP exit must not raise a suspicion")
-+	}
-+	watcher.Store("hk-control", smart.ExitInfo{Region: "hk", Key: "exit-hk"}, now)
-+	group.noteExitSuccess(target, "hk-control", smart.ClassifyResponse(http.StatusOK, nil, nil, now))
-+	group.noteExitEvidence(target, "jp-02", smart.ReasonOriginError)
-+	if !watcher.Suspected(target, "jp-01") {
-+		t.Fatal("independent JP origin refusals must raise a suspicion")
-+	}
-+}
-+
- // The proxies are indistinguishable by name, so identity is the pointer.
- func indexOf(t *testing.T, proxies []C.Proxy, selected C.Proxy) int {
- 	t.Helper()
+-// Pinning must not become a single node: distinct users still spread.
+-func TestLoadBalanceHashKeyInUserSpreadsUsers(t *testing.T) {
+-	proxies := balancedProxies(8)
+-	strategy := strategyConsistentHashing(testUrl, getKeyWithInUser(getKey))
++// Pinning must preserve distinct inbound identities. Consistent hashing may
++// legally put several distinct keys in one bucket, so this test checks the
++// identity key before hashing instead of asserting a random bucket spread.
++func TestLoadBalanceHashKeyInUserKeepsUsersDistinct(t *testing.T) {
++	keyed := getKeyWithInUser(getKey)
++	users := []string{"job-1", "job-2", "job-3", "job-4", "job-5", "job-6"}
+ 
+-	seen := map[int]bool{}
+-	for _, user := range []string{"job-1", "job-2", "job-3", "job-4", "job-5", "job-6"} {
+-		selected := strategy(proxies, request(user, "a.example.com"), false)
+-		seen[indexOf(t, proxies, selected)] = true
++	seenKeys := map[string]struct{}{}
++	for _, user := range users {
++		seenKeys[keyed(request(user, "a.example.com"))] = struct{}{}
+ 	}
+-	require.Greater(t, len(seen), 1)
++	require.Len(t, seenKeys, len(users))
+ }
+ 
+ // Sticky sessions keys on source and destination; a client behind one source
 diff --git a/adapter/outboundgroup/parser.go b/adapter/outboundgroup/parser.go
 index e97f8da04b9f321e0a637837beabc1b3749d3b63..eb6e3d3303eb12fab24846b46a7c4655d17ef316 100644
 --- a/adapter/outboundgroup/parser.go
@@ -758,10 +643,10 @@ index e97f8da04b9f321e0a637837beabc1b3749d3b63..eb6e3d3303eb12fab24846b46a7c4655
  	}
 diff --git a/adapter/outboundgroup/smart.go b/adapter/outboundgroup/smart.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc9ee3c82f
+index 0000000000000000000000000000000000000000..4ef5441ebf624543bd0ee3da152d914e954a4c7e
 --- /dev/null
 +++ b/adapter/outboundgroup/smart.go
-@@ -0,0 +1,2423 @@
+@@ -0,0 +1,2571 @@
 +package outboundgroup
 +
 +import (
@@ -774,6 +659,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	"math/rand"
 +	"net"
 +	"net/netip"
++	"net/url"
 +	"os"
 +	"path/filepath"
 +	"sort"
@@ -826,17 +712,22 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	floodWindow    = 2 * time.Second
 +	floodThreshold = 50
 +
-+	siteKeyCacheLimit = 4096 // sites remembered as site keys, relearned after eviction
++	stalledProbeGrace      = 2 * time.Second
++	stalledConnectionGrace = 4 * time.Second
++	stalledProbeTTL        = 2 * time.Minute
++	udpFailureTTL          = 3 * time.Minute
++
++	asnDiversityCacheLimit = 4096
++	siteKeyCacheLimit      = 4096 // an evicted site is relearned on its next connection
 +)
 +
-+// host failure codes; 1 and 2 do not count toward the block, 4 and 6 need two strikes
 +const (
-+	blockCodeManual      = 1
-+	blockCodeAnswer      = 2
-+	blockCodeError       = 3
-+	blockCodeZeroTraffic = 4
-+	blockCodeLowWeight   = 5
-+	blockCodeLoss        = 6
++	blockCodeManual    = 1
++	blockCodeAnswer    = 2
++	blockCodeError     = 3
++	blockCodeLowWeight = 4
++	blockCodeLoss      = 5
++	blockCodeStalled   = 6
 +)
 +
 +var (
@@ -864,6 +755,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	configName     string
 +	selected       string
 +	testUrl        string
++	testUrlHost    string
 +	expectedStatus string
 +	disableUDP     bool
 +
@@ -880,16 +772,18 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +
 +	freshNodesGroup singleflight.Group[nodeResult]
 +
-+	ruleCountCache xsync.Map[string, int]
-+	asnDiversity   xsync.Map[string, *xsync.Map[string, bool]]
-+	asnRule        xsync.Map[string, string]
-+	siteKeyCache   xsync.Map[string, bool]
++	ruleCountCache    xsync.Map[string, int]
++	geoSiteCountCache xsync.Map[string, int]
++	asnDiversity      xsync.Map[string, *xsync.Map[string, bool]]
++	asnRule           xsync.Map[string, string]
++	siteKeyCache      xsync.Map[string, bool]
 +
 +	suppressStats atomic.Bool
 +	suppressCount atomic.Int64
 +	suppressLast  atomic.Int64
 +
 +	probeThrottle smart.ProbeThrottle
++	lossSampler   *tcpstats.LossSampler
 +
 +	exitWatch *smart.ExitWatcher
 +}
@@ -923,15 +817,17 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +
 +// connQuality is the connection side of the judgement of one finished connection.
 +type connQuality struct {
-+	err         error
-+	address     string // display string of the connection, only used by the debug lines
-+	weight      float64
-+	oldWeight   float64
-+	duration    int64
-+	uploadMB    float64
-+	downloadMB  float64
-+	lossRate    float64
-+	emaLossRate float64
++	err            error
++	address        string // display string for the debug lines only
++	weight         float64
++	oldWeight      float64
++	duration       int64
++	uploadMB       float64
++	downloadMB     float64
++	lossRate       float64 // the socket's lifetime rate as read, for the debug line
++	emaLossRate    float64
++	strikeRate     float64 // rate of the judged window the strike gate acts on
++	strikeEvidence bool
 +}
 +
 +func NewSmart(option GroupCommonOption, smartOption SmartOption, emptyFallback C.Proxy, providers []provider.ProxyProvider) (*Smart, error) {
@@ -966,9 +862,11 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		collectData:    smartOption.CollectData,
 +		preferASN:      smartOption.PreferASN,
 +		tolerance:      smartOption.Tolerance,
++		lossSampler:    tcpstats.NewLossSampler(),
 +	}
 +
 +	s.hostFailLimit.Store(int32(s.maxFailedTimes))
++	s.testUrlHost = testUrlHostOf(s.testUrl)
 +
 +	if smartOption.SampleRate > 0 && smartOption.SampleRate <= 1 {
 +		s.sampleRate = smartOption.SampleRate
@@ -1005,7 +903,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		return batch, timeout
 +	}
 +
-+	tryDial := func(proxies []C.Proxy, pinned bool) (C.Conn, error) {
++	tryDial := func(proxies []C.Proxy, pinned bool, keepPin bool) (C.Conn, error) {
 +		var finalErr error
 +		for i := 0; i < maxRetries; i++ {
 +			batch, timeout := getBatch(proxies, i, pinned)
@@ -1024,28 +922,30 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +				}
 +				finalErr = err
 +			} else {
-+				s.adoptUnwrapWinner(metadata, p)
++				if !keepPin {
++					s.adoptUnwrapWinner(metadata, p)
++				}
 +				s.onDialSuccess()
 +				return s.WrapConnWithMetric(c, p, metadata, connectTime), nil
 +			}
 +		}
 +
-+		s.store.DeleteUnwrapResult(s.Name(), s.configName, metadata.SmartTarget)
++		s.store.DeleteUnwrapResult(s.Name(), s.configName, s.unwrapKey(metadata))
 +
 +		s.groupDialFailed(proxies, finalErr)
 +
 +		return nil, finalErr
 +	}
 +
-+	proxies, pinned := s.selectProxies(metadata, s.GetProxies(true))
++	proxies, pinned, keepPin := s.selectProxies(metadata, s.GetProxies(true))
 +
-+	return tryDial(proxies, pinned)
++	return tryDial(proxies, pinned, keepPin)
 +}
 +
 +func (s *Smart) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (pc C.PacketConn, err error) {
 +	var finalErr error
 +
-+	proxies, _ := s.selectProxies(metadata, s.GetProxies(true))
++	proxies, _, keepPin := s.selectProxies(metadata, s.GetProxies(true))
 +
 +	limit := len(proxies)
 +	if limit > maxSelected {
@@ -1074,11 +974,13 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +					return nil, err
 +				}
 +				finalErr = err
-+				go s.recordConnectionStats(metadata.Clone(), proxy, connectTime, 0, 0, 0, 0, 0, 0, nil, err)
++				go s.recordConnectionStats(metadata.Clone(), proxy, connectTime, 0, 0, 0, 0, 0, 0, nil, nil, err)
 +				continue
 +			}
 +
-+			s.adoptUnwrapWinner(metadata, proxy)
++			if !keepPin {
++				s.adoptUnwrapWinner(metadata, proxy)
++			}
 +			s.onDialSuccess()
 +			return s.WrapPacketConnWithMetric(pc, proxy, metadata, connectTime), nil
 +		}
@@ -1088,7 +990,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		}
 +	}
 +
-+	s.store.DeleteUnwrapResult(s.Name(), s.configName, metadata.SmartTarget)
++	s.store.DeleteUnwrapResult(s.Name(), s.configName, s.unwrapKey(metadata))
 +
 +	s.groupDialFailed(proxies, finalErr)
 +
@@ -1158,13 +1060,13 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	connectTime = time.Since(start).Milliseconds()
 +
 +	if err != nil {
-+		// err if ShouldStopRetry should not record as failed in node stats and stop retry
++		// errors that stop the retry loop are not recorded as node failures
 +		if tunnel.ShouldStopRetry(err) {
 +			return nil, connectTime, err
 +		}
 +		if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
 +			// metadata may be re-written by a later retry's selectProxies.
-+			go s.recordConnectionStats(metadata.Clone(), proxy, connectTime, 0, 0, 0, 0, 0, 0, nil, err)
++			go s.recordConnectionStats(metadata.Clone(), proxy, connectTime, 0, 0, 0, 0, 0, 0, nil, nil, err)
 +		}
 +		return nil, connectTime, err
 +	}
@@ -1232,17 +1134,35 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	return begin, end
 +}
 +
++func (s *Smart) unwrapKey(metadata *C.Metadata) string {
++	return smart.NetScopedTarget(metadata.SmartTarget, metadata.NetWork == C.UDP)
++}
++
++func failLookupTargets(metadata *C.Metadata, isUDP bool) (string, []string) {
++	expected := []string{metadata.SmartTarget}
++	if isUDP {
++		expected = append(expected, smart.NetScopedTarget(metadata.SmartTarget, true))
++	}
++	return smart.NetScopedTarget(metadata.WildcardTarget, isUDP), expected
++}
++
++func (s *Smart) dropUnwrapPins(target string) {
++	s.store.DeleteUnwrapResult(s.Name(), s.configName, target)
++	s.store.DeleteUnwrapResult(s.Name(), s.configName, smart.NetScopedTarget(target, true))
++}
++
 +func (s *Smart) adoptUnwrapWinner(metadata *C.Metadata, p C.Proxy) {
 +	target := metadata.SmartTarget
-+	existing, _ := s.store.GetUnwrapResult(s.Name(), s.configName, target)
++	key := s.unwrapKey(metadata)
++	existing, _ := s.store.GetUnwrapResult(s.Name(), s.configName, key)
 +
 +	switch {
 +	case len(existing) == 0:
-+		s.store.StoreUnwrapResult(s.Name(), s.configName, target, []C.Proxy{p})
++		s.store.StoreUnwrapResult(s.Name(), s.configName, key, []C.Proxy{p})
 +	case existing[0] == p.Name():
 +	default:
-+		s.store.DeleteUnwrapResult(s.Name(), s.configName, target)
-+		s.store.StoreUnwrapResult(s.Name(), s.configName, target, []C.Proxy{p})
++		s.store.DeleteUnwrapResult(s.Name(), s.configName, key)
++		s.store.StoreUnwrapResult(s.Name(), s.configName, key, []C.Proxy{p})
 +	}
 +	s.closeSameConnection(metadata, p.Name(), target, false)
 +}
@@ -1262,7 +1182,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		}
 +	}
 +
-+	proxies, _ = s.selectProxies(metadata, proxies)
++	proxies, _, _ = s.selectProxies(metadata, proxies)
 +
 +	return proxies[0]
 +}
@@ -1277,17 +1197,16 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +
 +func (s *Smart) WrapConnWithMetric(c C.Conn, proxy C.Proxy, metadata *C.Metadata, connectTime int64) C.Conn {
 +	s.exitWatch.EnsureLoaded(proxy.Name())
-+	if info := s.exitWatch.Info(proxy.Name()); info.Region != "" || info.ASN != "" {
-+		metadata.ExitGeoIP = info.Region
++	if region, asn := s.exitWatch.Label(metadata.WildcardTarget, proxy.Name()); region != "" || asn != "" {
++		metadata.ExitGeoIP = region
 +		if s.preferASN {
-+			metadata.ExitIPASN = info.ASN
++			metadata.ExitIPASN = asn
 +		}
 +	}
 +	c.AppendToChains(s)
 +
 +	start := time.Now()
 +
-+	var firstWriteErr atomic.TypedValue[error]
 +	var firstReadErr atomic.TypedValue[error]
 +	var firstReadLatency atomic.Int64
 +	var observedReadErr atomic.TypedValue[error]
@@ -1296,16 +1215,15 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	needHandshake := N.NeedHandshake(c)
 +	// a raw relay must keep its splice fast path: the copy engine peels wrappers
 +	// down to the socket, so the observer would disable it; skip those chains
-+	if _, isRawRelay := N.UnwrapWriter(c).(syscall.Conn); !isRawRelay {
-+		c = callback.NewErrorCallBackConn(c, &observedReadErr, &observedWriteErr)
++	stop := N.UnwrapWriter(c)
++	if _, isRawRelay := stop.(syscall.Conn); !isRawRelay {
++		if u, ok := stop.(interface{ Upstream() any }); !ok || u.Upstream() != nil {
++			c = callback.NewErrorCallBackConn(c, &observedReadErr, &observedWriteErr)
++		}
 +	}
 +
 +	if needHandshake {
-+		c = callback.NewFirstWriteCallBackConn(c, func(err error) {
-+			if err != nil {
-+				firstWriteErr.Store(err)
-+			}
-+		})
++		c = callback.NewFirstWriteCallBackConn(c, nil)
 +	}
 +
 +	c = callback.NewFirstReadCallBackConn(c, func(err error) {
@@ -1317,17 +1235,17 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +
 +	return s.registerClosureMetricsCallback(
 +		c, proxy, metadata, connectTime,
-+		&firstReadLatency, &firstReadErr, &firstWriteErr,
++		&firstReadLatency, &firstReadErr,
 +		&observedReadErr, &observedWriteErr,
 +	)
 +}
 +
 +func (s *Smart) WrapPacketConnWithMetric(pc C.PacketConn, proxy C.Proxy, metadata *C.Metadata, connectTime int64) C.PacketConn {
 +	s.exitWatch.EnsureLoaded(proxy.Name())
-+	if info := s.exitWatch.Info(proxy.Name()); info.Region != "" || info.ASN != "" {
-+		metadata.ExitGeoIP = info.Region
++	if region, asn := s.exitWatch.Label(metadata.WildcardTarget, proxy.Name()); region != "" || asn != "" {
++		metadata.ExitGeoIP = region
 +		if s.preferASN {
-+			metadata.ExitIPASN = info.ASN
++			metadata.ExitIPASN = asn
 +		}
 +	}
 +	pc.AppendToChains(s)
@@ -1421,10 +1339,12 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	return s.GetProxies(false)
 +}
 +
-+func (s *Smart) filterProxies(metadata *C.Metadata, wildcardTarget string, names []string, weights []float64, all []C.Proxy, minCount int, isUDP bool) []C.Proxy {
++func (s *Smart) filterProxies(metadata *C.Metadata, wildcardTarget string, names []string, weights []float64, all []C.Proxy, minCount int, isUDP bool) ([]C.Proxy, bool) {
 +	blockedNodes := s.store.GetBlockedNodes(s.Name(), s.configName)
-+	wtFailNodes, wtBlocked := s.store.GetHostStatus(s.Name(), s.configName, wildcardTarget, int(s.hostFailLimit.Load()), metadata.SmartTarget)
++	lookupTarget, extraTargets := failLookupTargets(metadata, isUDP)
++	wtFailNodes, wtBlocked := s.store.GetHostStatus(s.Name(), s.configName, lookupTarget, int(s.hostFailLimit.Load()), extraTargets...)
 +	now := time.Now()
++	s.exitWatch.Backfill(s.ctx, wildcardTarget, all)
 +
 +	nameIndex := make(map[string]int, len(names))
 +	for i, name := range names {
@@ -1442,6 +1362,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	}
 +
 +	selected := make([]C.Proxy, 0, minCount+1)
++	softSkipped := false
 +
 +	for i, name := range names {
 +		proxy := proxiesByName[i]
@@ -1457,25 +1378,31 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		}
 +		if wtFailNodes[name] != 0 {
 +			if !wtBlocked || wtFailNodes[name] == 1 {
++				if i == 0 {
++					softSkipped = true
++				}
 +				continue
 +			}
 +		}
 +		if s.exitWatch.Defer(wildcardTarget, name, now, smart.ProbeTimeout) {
++			if i == 0 {
++				softSkipped = true
++			}
 +			continue
 +		}
 +		selected = append(selected, proxy)
 +	}
 +	// a pinned candidate list is used as is, it is not padded from the rest
 +	if weights == nil && len(selected) > 0 {
-+		return selected
++		return selected, softSkipped
 +	}
 +
 +	if len(selected) >= len(all) {
-+		return selected
++		return selected, softSkipped
 +	}
 +
 +	if len(selected) >= minCount {
-+		return selected[:minCount]
++		return selected[:minCount], softSkipped
 +	}
 +
 +	hasPriority := len(s.policyPriority) > 0
@@ -1543,10 +1470,10 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		if blockedNodes[name] {
 +			continue
 +		}
-+		if s.exitWatch.Defer(wildcardTarget, name, now, smart.ProbeTimeout) {
++		if !kp.proxy.AliveForTestUrl(s.testUrl) || (isUDP && !kp.proxy.SupportUDP()) {
 +			continue
 +		}
-+		if !kp.proxy.AliveForTestUrl(s.testUrl) || (isUDP && !kp.proxy.SupportUDP()) {
++		if s.exitWatch.Defer(wildcardTarget, name, now, smart.ProbeTimeout) {
 +			continue
 +		}
 +		filtered = append(filtered, kp)
@@ -1573,9 +1500,9 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		sortFallback()
 +		for _, kp := range ranked {
 +			p := kp.proxy
-+			if !s.exitWatch.Defer(wildcardTarget, p.Name(), now, smart.ProbeTimeout) &&
-+				(wtFailNodes[p.Name()] == 0 || (wtBlocked && wtFailNodes[p.Name()] != 1)) &&
-+				p.AliveForTestUrl(s.testUrl) && (!isUDP || p.SupportUDP()) {
++			if (wtFailNodes[p.Name()] == 0 || (wtBlocked && wtFailNodes[p.Name()] != 1)) &&
++				p.AliveForTestUrl(s.testUrl) && (!isUDP || p.SupportUDP()) &&
++				!s.exitWatch.Defer(wildcardTarget, p.Name(), now, smart.ProbeTimeout) {
 +				selected = append(selected, p)
 +			}
 +			if len(selected) >= minCount {
@@ -1586,7 +1513,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		if len(selected) == 0 {
 +			for _, kp := range ranked {
 +				p := kp.proxy
-+				if !s.exitWatch.Defer(wildcardTarget, p.Name(), now, smart.ProbeTimeout) && p.AliveForTestUrl(s.testUrl) {
++				if p.AliveForTestUrl(s.testUrl) && !s.exitWatch.Defer(wildcardTarget, p.Name(), now, smart.ProbeTimeout) {
 +					selected = append(selected, p)
 +				}
 +				if len(selected) >= minCount {
@@ -1598,7 +1525,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		if len(selected) == 0 {
 +			for _, kp := range ranked {
 +				p := kp.proxy
-+				if s.exitWatch.Defer(wildcardTarget, p.Name(), now, smart.ProbeTimeout) || wtFailNodes[p.Name()] == 1 {
++				if wtFailNodes[p.Name()] == 1 || s.exitWatch.Defer(wildcardTarget, p.Name(), now, smart.ProbeTimeout) {
 +					continue
 +				}
 +				selected = append(selected, p)
@@ -1623,13 +1550,13 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +			}
 +		}
 +	}
-+	return selected
++	return selected, softSkipped
 +}
 +
 +// selectProxies returns the nodes to dial and whether the target is already pinned to
 +// one node: a pinned target is dialed node by node, an unpinned one may race on its
 +// first dial, which is the only moment a key can show more than one exit.
-+func (s *Smart) selectProxies(metadata *C.Metadata, proxies []C.Proxy) ([]C.Proxy, bool) {
++func (s *Smart) selectProxies(metadata *C.Metadata, proxies []C.Proxy) ([]C.Proxy, bool, bool) {
 +	asnNumber := s.getASNCode(metadata)
 +	dstIP := ""
 +	if metadata.Host == "" {
@@ -1659,7 +1586,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	if s.selected != "" {
 +		for _, p := range proxies {
 +			if p.Name() == s.selected {
-+				return []C.Proxy{p}, true
++				return []C.Proxy{p}, true, false
 +			}
 +		}
 +	}
@@ -1710,12 +1637,12 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +			}
 +		}
 +		if len(resultProxies) > 0 {
-+			s.store.StoreUnwrapResult(s.Name(), s.configName, metadata.SmartTarget, resultProxies)
++			s.store.StoreUnwrapResult(s.Name(), s.configName, smart.NetScopedTarget(metadata.SmartTarget, isUDP), resultProxies)
 +		}
 +	}
 +
 +	trySelector := func(isUDP bool) ([]string, []float64, bool) {
-+		if proxiesName, expired := s.store.GetUnwrapResult(s.Name(), s.configName, metadata.SmartTarget); len(proxiesName) > 0 {
++		if proxiesName, expired := s.store.GetUnwrapResult(s.Name(), s.configName, smart.NetScopedTarget(metadata.SmartTarget, isUDP)); len(proxiesName) > 0 {
 +			if expired {
 +				go refreshUnwrapCache(isUDP)
 +			}
@@ -1737,7 +1664,8 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		pinned = false
 +	}
 +
-+	return s.filterProxies(metadata, wildcardTarget, resultNames, resultWeights, proxies, maxSelected, isUDP), pinned
++	filtered, softSkipped := s.filterProxies(metadata, wildcardTarget, resultNames, resultWeights, proxies, maxSelected, isUDP)
++	return filtered, pinned, pinned && softSkipped
 +}
 +
 +func (s *Smart) getPriorityFactor(proxyName string) float64 {
@@ -1928,16 +1856,37 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +
 +func (s *Smart) needsASNKey(target, asn string) bool {
 +	ruleCount := 0
-+	if payload, ok := smart.RuleSetPayload(target); ok {
-+		if cached, loaded := s.ruleCountCache.Load(payload); loaded {
-+			ruleCount = cached
-+		} else if rp, ok := tunnel.RuleProviders()[payload]; ok && rp != nil {
-+			if ruleCount = rp.Count(); ruleCount > 0 {
-+				s.ruleCountCache.Store(payload, ruleCount)
++	if ruleType, payload, ok := smart.RulePayload(target); ok {
++		ruleCount = s.ruleEntryCount(ruleType, payload)
++	}
++	return smart.NeedsASNKey(target, ruleCount, s.asnDiversityOf(target, asn))
++}
++
++// ruleEntryCount counts provider rules for RuleSet and matcher domains for geosite.
++func (s *Smart) ruleEntryCount(ruleType, payload string) int {
++	switch ruleType {
++	case "RuleSet":
++		if count, loaded := s.ruleCountCache.Load(payload); loaded {
++			return count
++		}
++		if rp, ok := tunnel.RuleProviders()[payload]; ok && rp != nil {
++			if count := rp.Count(); count > 0 {
++				s.ruleCountCache.Store(payload, count)
++				return count
++			}
++		}
++	case "GeoSite":
++		if count, loaded := s.geoSiteCountCache.Load(payload); loaded {
++			return count
++		}
++		if matcher, err := geodata.LoadGeoSiteMatcher(payload); err == nil {
++			if count := matcher.Count(); count > 0 {
++				s.geoSiteCountCache.Store(payload, count)
++				return count
 +			}
 +		}
 +	}
-+	return smart.NeedsASNKey(target, ruleCount, s.asnDiversityOf(target, asn))
++	return 0
 +}
 +
 +// asnDiversityOf counts the unrelated networks a target was seen on, which is how a
@@ -1946,9 +1895,13 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	if asn == "" || smart.SharedASNs[asn] {
 +		return 0
 +	}
-+	set, _ := s.asnDiversity.LoadOrStoreFn(target, func() *xsync.Map[string, bool] {
-+		return xsync.NewMap[string, bool]()
-+	})
++	set, loaded := s.asnDiversity.Load(target)
++	if !loaded {
++		if s.asnDiversity.Size() >= asnDiversityCacheLimit {
++			return 0
++		}
++		set, _ = s.asnDiversity.LoadOrStore(target, xsync.NewMap[string, bool]())
++	}
 +	if _, loaded := set.Load(asn); !loaded && set.Size() < smart.BroadASNDiversity {
 +		set.Store(asn, true)
 +	}
@@ -2114,15 +2067,25 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	return newValue
 +}
 +
++func testUrlHostOf(raw string) string {
++	if u, err := url.Parse(raw); err == nil {
++		return strings.ToLower(u.Hostname())
++	}
++	return ""
++}
++
 +func (s *Smart) recordConnectionStats(metadata *C.Metadata, proxy C.Proxy,
 +	connectTime, latency, uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate,
-+	connectionDuration int64, tcpStats *tcpstats.Stats, err error,
++	connectionDuration int64, tcpStats, windowStats *tcpstats.Stats, err error,
 +) {
 +	if proxy.Type() == C.Compatible || proxy.Type() == C.Reject || proxy.Type() == C.Pass || proxy.Type() == C.RejectDrop {
 +		return
 +	}
 +
 +	s.exitWatch.MaybeProbe(s.ctx, proxy)
++	if s.testUrlHost != "" && strings.EqualFold(metadata.Host, s.testUrlHost) {
++		return
++	}
 +	// failure flood suppression: short-circuit heavy work when recent failures reach the threshold to avoid a disconnect storm (including Direct nodes)
 +	now := time.Now().Unix()
 +	if err == nil {
@@ -2161,18 +2124,19 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	if asnNumber != "" {
 +		asnDisplay = asnNumber
 +	}
-+	exitDisplay := "unknown"
-+	if metadata.ExitGeoIP != "" {
-+		exitDisplay = metadata.ExitGeoIP
-+		if metadata.ExitIPASN != "" {
-+			exitDisplay += " AS" + metadata.ExitIPASN
-+		}
++	exitGeoIP := metadata.ExitGeoIP
++	exitIPASN := metadata.ExitIPASN
++	if exitGeoIP == "" {
++		exitGeoIP = "unknown"
++	}
++	if exitIPASN == "" {
++		exitIPASN = "unknown"
 +	}
 +	var addressDisplay string
 +	if metadata.Host != "" {
-+		addressDisplay = fmt.Sprintf("Host: [%s] - Target: [%s] - WildcardTarget: [%s] - ASN: [%s] - ExitGeoIP: [%s]", metadata.Host, target, wildcardTarget, asnDisplay, exitDisplay)
++		addressDisplay = fmt.Sprintf("Host: [%s] - Target: [%s] - WildcardTarget: [%s] - ASN: [%s] - ExitGeoIP: [%s] - ExitIPASN: [%s]", metadata.Host, target, wildcardTarget, asnDisplay, exitGeoIP, exitIPASN)
 +	} else {
-+		addressDisplay = fmt.Sprintf("IP: [%s] - Target: [%s] - ASN: [%s] - ExitGeoIP: [%s]", metadata.DstIP.String(), target, asnDisplay, exitDisplay)
++		addressDisplay = fmt.Sprintf("IP: [%s] - Target: [%s] - ASN: [%s] - ExitGeoIP: [%s] - ExitIPASN: [%s]", metadata.DstIP.String(), target, asnDisplay, exitGeoIP, exitIPASN)
 +	}
 +
 +	weightType := smart.WeightTypeTCP
@@ -2217,9 +2181,18 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	}
 +
 +	if tcpStats != nil {
-+		atomicRecord.AddCumulSent(int64(tcpStats.TotalSent()))
-+		atomicRecord.AddCumulRetrans(int64(tcpStats.TotalRetrans()))
 +		lossRate = tcpStats.LossRate()
++	}
++
++	// a judged window feeds the ema, the strike gate and the cumulative counters; the
++	// sampler holds increments below the window floor until they can be judged
++	var windowRate float64
++	var windowEvidence bool
++	if windowStats != nil {
++		windowRate = windowStats.LossRate()
++		windowEvidence = true
++		atomicRecord.AddCumulSent(int64(windowStats.TotalSent()))
++		atomicRecord.AddCumulRetrans(int64(windowStats.TotalRetrans()))
 +	}
 +
 +	if sent := atomicRecord.CumulSent(); sent > 0 {
@@ -2229,8 +2202,11 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		}
 +	}
 +
-+	emaLossRate := updateEMA(atomicRecord.LossRate(), lossRate)
-+	atomicRecord.SetLossRate(emaLossRate)
++	emaLossRate := atomicRecord.LossRate()
++	if windowEvidence {
++		emaLossRate = updateEMA(emaLossRate, windowRate)
++		atomicRecord.SetLossRate(emaLossRate)
++	}
 +
 +	oldWeight := atomicRecord.GetWeight(weightType)
 +	uploadTotalMB := float64(uploadTotal) / (1024.0 * 1024.0)
@@ -2249,10 +2225,12 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		atomicRecord.SetMaxDownloadRate(maxDownloadRateKB)
 +	}
 +
++	// the model and the collected data only see judged windows
++	evidenceLossRate := windowRate
 +	input := lightgbm.CreateModelInputFromStatsRecord(
 +		atomicRecord, metadata,
 +		uploadTotalMB, downloadTotalMB, maxUploadRateKB, maxDownloadRateKB, float64(connectionDuration)/60000.0, wildcardTarget,
-+		lossRate, cumulLossRate,
++		evidenceLossRate, cumulLossRate,
 +	)
 +	input.ConnectionFailed = err != nil
 +
@@ -2269,19 +2247,25 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		state = s.readTargetState(metadata, proxyName)
 +	}
 +	adjWeight, isDegraded, checked, blockCode := s.checkNodeQuality(state, metadata, proxy, connQuality{
-+		err:         err,
-+		address:     addressDisplay,
-+		weight:      calculatedWeight,
-+		oldWeight:   oldWeight,
-+		duration:    connectionDuration,
-+		uploadMB:    uploadTotalMB,
-+		downloadMB:  downloadTotalMB,
-+		lossRate:    lossRate,
-+		emaLossRate: emaLossRate,
++		err:            err,
++		address:        addressDisplay,
++		weight:         calculatedWeight,
++		oldWeight:      oldWeight,
++		duration:       connectionDuration,
++		uploadMB:       uploadTotalMB,
++		downloadMB:     downloadTotalMB,
++		lossRate:       lossRate,
++		emaLossRate:    emaLossRate,
++		strikeRate:     windowRate,
++		strikeEvidence: windowEvidence,
 +	})
 +
 +	// block node for the specific domain/IP (wildcardTarget + SmartTarget two-level records)
-+	failedBlock := s.markNodeFailure(metadata, proxyName, isDegraded, checked, blockCode, 0)
++	var blockTTL time.Duration
++	if blockCode == blockCodeStalled {
++		blockTTL = stalledProbeTTL
++	}
++	failedBlock := s.markNodeFailure(metadata, proxyName, isDegraded, checked, blockCode, blockTTL)
 +
 +	newWeight := updateEMA(oldWeight, adjWeight)
 +	atomicRecord.SetLastUsed(time.Now().Unix())
@@ -2291,15 +2275,18 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	lock.Unlock()
 +	locked = false
 +
-+	// zero-traffic and loss act only on the confirmed strike
-+	needsConfirm := blockCode == blockCodeZeroTraffic || blockCode == blockCodeLoss
++	// loss needs a second strike; a stall is witnessed by the connection itself, and its
++	// record stays host scoped: it neither closes the target's connections nor drops the pin
++	needsConfirm := blockCode == blockCodeLoss || blockCode == blockCodeStalled
 +	if failedBlock || (isDegraded && !needsConfirm) {
-+		if failedBlock && needsConfirm {
++		if failedBlock && blockCode == blockCodeLoss {
 +			log.Debugln("[Smart] Connection Group: [%s] - Node: [%s] - Address: [%s] repeated strike confirmed, node excluded for the target",
 +				s.Name(), proxyName, addressDisplay)
 +		}
-+		s.closeSameConnection(metadata, proxyName, target, true)
-+		s.store.DeleteUnwrapResult(s.Name(), s.configName, target)
++		if !isUDP {
++			s.closeSameConnection(metadata, proxyName, target, true)
++		}
++		s.store.DeleteUnwrapResult(s.Name(), s.configName, s.unwrapKey(metadata))
 +	}
 +
 +	s.saveStatsRecord(target, proxy, statsSnapshot)
@@ -2325,7 +2312,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		connectTime, latency, uploadTotalMB, downloadTotalMB, maxUploadRateKB, maxDownloadRateKB, connectionDuration, ModelPredicted, lossRate, cumulLossRate)
 +}
 +
-+func (s *Smart) registerClosureMetricsCallback(c C.Conn, proxy C.Proxy, metadata *C.Metadata, connectTime int64, firstReadLatency *atomic.Int64, firstReadErr *atomic.TypedValue[error], firstWriteErr *atomic.TypedValue[error], observedReadErr *atomic.TypedValue[error], observedWriteErr *atomic.TypedValue[error]) C.Conn {
++func (s *Smart) registerClosureMetricsCallback(c C.Conn, proxy C.Proxy, metadata *C.Metadata, connectTime int64, firstReadLatency *atomic.Int64, firstReadErr *atomic.TypedValue[error], observedReadErr *atomic.TypedValue[error], observedWriteErr *atomic.TypedValue[error]) C.Conn {
 +	return callback.NewCloseCallbackConn(c, func() {
 +		tracker := statistic.DefaultManager.Get(metadata.UUID)
 +		if tracker != nil {
@@ -2338,18 +2325,17 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +
 +			latency := firstReadLatency.Load()
 +			readErr := firstReadErr.Load()
-+			writeErr := firstWriteErr.Load()
 +			// the observer covers mid-transfer errors the one-shot callbacks miss
 +			if err := observedReadErr.Load(); err != nil {
 +				readErr = err
 +			}
-+			if err := observedWriteErr.Load(); err != nil {
-+				writeErr = err
-+			}
++			writeErr := observedWriteErr.Load()
 +
-+			var tcpStats *tcpstats.Stats
++			var tcpStats, windowStats *tcpstats.Stats
 +			if trackerConn, ok := tracker.(net.Conn); ok {
-+				tcpStats = tcpstats.GetTCPStats(trackerConn)
++				stats, source := tcpstats.GetTCPStatsWithSource(trackerConn)
++				tcpStats = stats
++				windowStats = s.lossSampler.Consume(source, stats)
 +			}
 +
 +			var closeErr error
@@ -2368,7 +2354,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +				closeErr = nil
 +			}
 +
-+			go s.recordConnectionStats(metadata, proxy, connectTime, latency, uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, tcpStats, closeErr)
++			go s.recordConnectionStats(metadata, proxy, connectTime, latency, uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, tcpStats, windowStats, closeErr)
 +			return
 +		}
 +	})
@@ -2395,7 +2381,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +			}
 +
 +			go s.recordConnectionStats(metadata, proxy, connectTime, udpLatency.Load(),
-+				uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, nil, closeErr)
++				uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, nil, nil, closeErr)
 +			return
 +		}
 +	})
@@ -2565,6 +2551,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +
 +		proxyName := p.Name()
 +		var blockCopy *smart.NodeState
++		blockSignals := ""
 +		s.store.UpdateNodeState(s.Name(), s.configName, proxyName, func(state *smart.NodeState) {
 +			prevGrade := state.ThresholdGrade
 +			state.LastChecked = now
@@ -2577,10 +2564,13 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +				state.BlockedUntil = blockedUntil
 +				copied := *state
 +				blockCopy = &copied
++				blockSignals = fmt.Sprintf("anomaly [%t], unstable [%t], grade [%d->%d]", currentAnomaly, unstable, prevGrade, newGrade)
 +			}
 +		})
 +		if blockCopy != nil {
 +			nodesToBlock[proxyName] = blockCopy
++			log.Debugln("[Smart] Node [%s] blocked for [%s] on target [%s] (%s)",
++				proxyName, (checkInterval + 2*time.Minute).String(), s.testUrl, blockSignals)
 +		}
 +	}
 +
@@ -2621,7 +2611,8 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +// readTargetState reads one snapshot for the judgement of a finished connection: the host
 +// failure view of the target and the exit suspicion of the node.
 +func (s *Smart) readTargetState(metadata *C.Metadata, proxyName string) targetState {
-+	failNodes, blocked := s.store.GetHostStatus(s.Name(), s.configName, metadata.WildcardTarget, int(s.hostFailLimit.Load()), metadata.SmartTarget)
++	lookupTarget, extraTargets := failLookupTargets(metadata, metadata.NetWork == C.UDP)
++	failNodes, blocked := s.store.GetHostStatus(s.Name(), s.configName, lookupTarget, int(s.hostFailLimit.Load()), extraTargets...)
 +	return targetState{
 +		failNodes: failNodes,
 +		blocked:   blocked,
@@ -2667,24 +2658,27 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		return q.weight, false, false, 0
 +	}
 +
-+	// zero-traffic connection
-+	if q.duration > 100 && q.downloadMB == 0 && q.uploadMB == 0 && metadata.DstPort == 443 && metadata.NetWork != C.UDP {
-+		log.Debugln("[Smart] Connection Group: [%s] - Node: [%s] - Network: [%s] - Address: [%s] detected zero-traffic...",
++	// probes need a Host, so a silent answer on an IP-only target counts on every port
++	if q.duration > stalledConnectionGrace.Milliseconds() && q.uploadMB > 0 && q.downloadMB == 0 &&
++		metadata.NetWork != C.UDP && (metadata.DstPort == 443 || metadata.Host == "") {
++		log.Debugln("[Smart] Connection Group: [%s] - Node: [%s] - Network: [%s] - Address: [%s] stalled without a response...",
 +			s.Name(), proxyName, metadata.NetWork.String(), q.address)
-+		return q.weight, true, true, blockCodeZeroTraffic
++		return q.weight, true, true, blockCodeStalled
 +	}
 +
 +	// a suspected exit re-checks the suspicion: it carries traffic only when the rest failed;
 +	// a connection that downloaded almost nothing may have been answered by an error page
-+	if state.suspected || smart.ResponseProbeEligible(metadata, q.downloadMB, metadata.NetWork == C.UDP) {
-+		s.probeAfterClose(metadata, proxy)
++	eligible := smart.ResponseProbeEligible(metadata, q.downloadMB, metadata.NetWork == C.UDP)
++	if state.suspected || eligible {
++		s.probeAfterClose(metadata, proxy, eligible)
 +		return q.weight, false, false, 0
 +	}
 +
-+	// a strike needs current loss too, the decaying ema alone must not confirm it
-+	if q.lossRate >= 0.1 || (q.lossRate >= 0.05 && q.emaLossRate >= 0.05) {
-+		log.Debugln("[Smart] Connection Group: [%s] - Node: [%s] - Network: [%s] - Address: [%s] detected high packet loss [current: %.2f%%, history EMA: %.2f%%]...",
-+			s.Name(), proxyName, metadata.NetWork.String(), q.address, q.lossRate*100, q.emaLossRate*100)
++	// a strike acts only on a judged window the sampler released; the decaying ema alone
++	// must not confirm it
++	if q.strikeEvidence && (q.strikeRate >= 0.1 || (q.strikeRate >= 0.05 && q.emaLossRate >= 0.05)) {
++		log.Debugln("[Smart] Connection Group: [%s] - Node: [%s] - Network: [%s] - Address: [%s] detected high packet loss [window: %.2f%%, read: %.2f%%, history EMA: %.2f%%]...",
++			s.Name(), proxyName, metadata.NetWork.String(), q.address, q.strikeRate*100, q.lossRate*100, q.emaLossRate*100)
 +		return q.weight, true, true, blockCodeLoss
 +	}
 +
@@ -2694,12 +2688,17 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +// markNodeFailure records a node failure for the host and for the target, otherwise every
 +// host of a rule set picks its own fallback node.
 +func (s *Smart) markNodeFailure(metadata *C.Metadata, proxyName string, isDegraded bool, checked bool, blockCode int64, ttl time.Duration) bool {
-+	wildcardTarget := metadata.WildcardTarget
-+	target := metadata.SmartTarget
++	isUDP := metadata.NetWork == C.UDP
++	if isUDP && ttl == 0 {
++		ttl = udpFailureTTL
++	}
++	wildcardTarget := smart.NetScopedTarget(metadata.WildcardTarget, isUDP)
++	target := smart.NetScopedTarget(metadata.SmartTarget, isUDP)
 +
 +	failedBlock := s.store.UpdateHostStatus(s.Name(), s.configName, wildcardTarget, metadata, proxyName, s.maxFailedTimes, int(s.hostFailLimit.Load()), isDegraded, checked, blockCode, ttl)
 +
-+	if (isDegraded || failedBlock || ttl > 0) && target != "" && target != wildcardTarget {
++	hostEvidence := blockCode == blockCodeAnswer || blockCode == blockCodeStalled
++	if (failedBlock || (isDegraded && !hostEvidence)) && target != "" && target != wildcardTarget {
 +		// a target level block must also drive the caller's close and pin drop
 +		if s.store.UpdateHostStatus(s.Name(), s.configName, target, metadata, proxyName, s.maxFailedTimes, int(s.hostFailLimit.Load()), isDegraded, checked, blockCode, ttl) {
 +			failedBlock = true
@@ -2707,6 +2706,14 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	}
 +
 +	return failedBlock
++}
++
++func (s *Smart) ruleExcluded(target, node string) bool {
++	if target == "" {
++		return false
++	}
++	failNodes, _ := s.store.GetHostStatus(s.Name(), s.configName, target, int(s.hostFailLimit.Load()))
++	return failNodes[node] != 0
 +}
 +
 +// closeSameConnection closes the other connections of the target so it keeps a single exit:
@@ -2733,19 +2740,22 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	})
 +}
 +
-+// applyNodeAnswer writes the host record of one node's answer and feeds the exit evidence: a
-+// reachable answer clears the host failure and any exit suspicion of that node, a refusal
-+// records the host and pools per region. It reports whether a suspicion was cleared.
-+func (s *Smart) applyNodeAnswer(metadata *C.Metadata, target, node string, verdict smart.Verdict) (cleared bool) {
++// applyNodeAnswer lands one probe answer: reachable clears the host failure and the node's
++// exit suspicion, a refusal is dropped while the host is backed off, else recorded.
++func (s *Smart) applyNodeAnswer(proxy C.Proxy, metadata *C.Metadata, target, node string, verdict smart.Verdict) (cleared bool) {
 +	switch verdict.Action {
 +	case smart.VerdictReachable:
++		smart.NoteHostAnswer(s.configName, s.Name(), metadata.Host)
 +		s.markNodeFailure(metadata, node, false, true, 0, 0)
-+		s.noteExitSuccess(target, node, verdict)
++		s.noteExitSuccess(proxy, metadata.Host, target, node, verdict)
 +		cleared = s.exitWatch.Suspected(target, node)
 +		s.exitWatch.Clear(target, node)
 +	case smart.VerdictRecord:
++		if smart.NoteHostRefusal(s.configName, s.Name(), metadata.Host, node, verdict.Reason) {
++			return false
++		}
 +		s.markNodeFailure(metadata, node, true, true, blockCodeAnswer, verdict.TTL)
-+		s.noteExitEvidence(target, node, verdict.Reason)
++		s.noteExitEvidence(proxy, metadata.Host, target, node, verdict.Reason)
 +	}
 +	return cleared
 +}
@@ -2776,9 +2786,8 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +	}
 +
 +	var toProbe []checkItem
-+	now := time.Now()
 +	for _, it := range items {
-+		if s.probeThrottle.Blind(it.host, now) {
++		if smart.HostBackedOff(s.configName, s.Name(), it.host) {
 +			continue
 +		}
 +		if rand.Float64() < 0.5 {
@@ -2807,7 +2816,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +				}
 +				metadata := &C.Metadata{Host: it.host, WildcardTarget: it.wildcardTarget}
 +				verdict := s.probeVerdict(p, it.host)
-+				cleared := s.applyNodeAnswer(metadata, it.wildcardTarget, it.nodeName, verdict)
++				cleared := s.applyNodeAnswer(p, metadata, it.wildcardTarget, it.nodeName, verdict)
 +				switch verdict.Action {
 +				case smart.VerdictReachable:
 +					if cleared {
@@ -2837,13 +2846,29 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +
 +// The verdict lands after its connection is gone, outside the (target, node) stats lock, so the pin,
 +// the membership and the stop-loss have to be re-checked before anything is written.
-+func (s *Smart) probeAfterClose(metadata *C.Metadata, proxy C.Proxy) {
++func (s *Smart) probeAfterClose(metadata *C.Metadata, proxy C.Proxy, eligible bool) {
 +	now := time.Now()
-+	if !s.probeThrottle.AllowNode(metadata.WildcardTarget, proxy.Name(), now) {
++	if smart.HostBackedOff(s.configName, s.Name(), metadata.Host) {
++		log.Debugln("[Smart] Probe skipped for host [%s] on node [%s], the host is backed off", metadata.Host, proxy.Name())
 +		return
 +	}
-+	// a blind host is not probed until its window passes, then one probe decides its state
-+	if s.probeThrottle.Blind(metadata.Host, now) {
++	if !s.probeThrottle.AllowNode(metadata.WildcardTarget, proxy.Name(), now) {
++		if eligible {
++			reason := ""
++			if s.probeThrottle.PendingFor(metadata.WildcardTarget, proxy.Name(), now) > stalledProbeGrace {
++				reason = "stalled probe"
++			} else if s.probeThrottle.Unproven(metadata.WildcardTarget, proxy.Name()) {
++				reason = "probe unproven"
++			}
++			if reason != "" {
++				s.probeThrottle.ClearUnproven(metadata.WildcardTarget, proxy.Name())
++				s.markNodeFailure(metadata, proxy.Name(), true, true, blockCodeStalled, stalledProbeTTL)
++				if s.ruleExcluded(metadata.SmartTarget, proxy.Name()) {
++					s.dropUnwrapPins(metadata.SmartTarget)
++				}
++				log.Debugln("[Smart] Probe Group: [%s] - Node: [%s] - Host: [%s] avoided for [%s]: [%s]", s.Name(), proxy.Name(), metadata.Host, stalledProbeTTL, reason)
++			}
++		}
 +		return
 +	}
 +	if !smart.AllowGlobalProbe(now) {
@@ -2854,20 +2879,24 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		return
 +	}
 +
++	s.probeThrottle.MarkPending(metadata.WildcardTarget, proxy.Name(), now)
 +	clone := metadata.Clone()
 +	nodeName := proxy.Name()
 +	go func() {
 +		defer done()
++		defer s.probeThrottle.ClearPending(clone.WildcardTarget, nodeName)
 +
 +		verdict := s.probeVerdict(proxy, clone.Host)
 +		if verdict.Action == smart.VerdictIgnore {
++			if verdict.Unproven {
++				at := time.Now()
++				s.probeThrottle.MarkUnproven(clone.WildcardTarget, nodeName, at)
++				s.probeThrottle.NoteFailure(clone.WildcardTarget, nodeName, at)
++			}
 +			log.Debugln("[Smart] Probe Group: [%s] - Node: [%s] - Host: [%s] ignored answer [%s]", s.Name(), nodeName, clone.Host, verdict.Reason)
 +			return
 +		}
-+		if !s.probeThrottle.AllowHostRecord(clone.Host, verdict, time.Now()) {
-+			log.Debugln("[Smart] Probe Group: [%s] - Node: [%s] - Host: [%s] kept, no node reaches the host [%s]", s.Name(), nodeName, clone.Host, verdict.Reason)
-+			return
-+		}
++		s.probeThrottle.ClearUnproven(clone.WildcardTarget, nodeName)
 +		if s.selected != "" || !lo.ContainsBy(s.GetProxies(false), func(p C.Proxy) bool { return p.Name() == nodeName }) {
 +			return
 +		}
@@ -2876,7 +2905,7 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		}
 +
 +		if verdict.Action == smart.VerdictReachable {
-+			if cleared := s.applyNodeAnswer(clone, clone.WildcardTarget, nodeName, verdict); cleared {
++			if cleared := s.applyNodeAnswer(proxy, clone, clone.WildcardTarget, nodeName, verdict); cleared {
 +				log.Debugln("[Smart] Exit suspicion [%s] target [%s] cleared by node [%s]", s.Name(), clone.WildcardTarget, nodeName)
 +			}
 +			log.Debugln("[Smart] Probe Group: [%s] - Node: [%s] - Host: [%s] recovered [%s]", s.Name(), nodeName, clone.Host, verdict.Reason)
@@ -2884,22 +2913,26 @@ index 0000000000000000000000000000000000000000..c0bd770e6db6f003bde73cdb194db6fc
 +		}
 +
 +		s.probeThrottle.NoteFailure(clone.WildcardTarget, nodeName, time.Now())
-+		s.applyNodeAnswer(clone, clone.WildcardTarget, nodeName, verdict)
-+		s.closeSameConnection(clone, nodeName, clone.SmartTarget, true)
-+		s.store.DeleteUnwrapResult(s.Name(), s.configName, clone.SmartTarget)
++		s.applyNodeAnswer(proxy, clone, clone.WildcardTarget, nodeName, verdict)
++		if s.ruleExcluded(clone.SmartTarget, nodeName) {
++			s.closeSameConnection(clone, nodeName, clone.SmartTarget, true)
++			s.dropUnwrapPins(clone.SmartTarget)
++		}
 +		log.Debugln("[Smart] Probe Group: [%s] - Node: [%s] - Host: [%s] avoided for [%s]: [%s]", s.Name(), nodeName, clone.Host, verdict.TTL, verdict.Reason)
 +	}()
 +}
 +
-+func (s *Smart) noteExitEvidence(target, node, reason string) {
++func (s *Smart) noteExitEvidence(proxy C.Proxy, host, target, node, reason string) {
 +	if smart.RegionEvidence(reason) {
 +		s.exitWatch.Note(target, node)
++		s.exitWatch.MaybeProbeTarget(s.ctx, proxy, target, node, host)
 +	}
 +}
 +
-+func (s *Smart) noteExitSuccess(target, node string, verdict smart.Verdict) {
++func (s *Smart) noteExitSuccess(proxy C.Proxy, host, target, node string, verdict smart.Verdict) {
 +	if verdict.ControlSuccess {
 +		s.exitWatch.NoteSuccess(target, node)
++		s.exitWatch.MaybeProbeTarget(s.ctx, proxy, target, node, host)
 +	}
 +}
 +
@@ -3353,7 +3386,7 @@ index 12ae4cffae758e880e81424c51d1e483a180b0c8..f99e1465d39d1f678dbbd65fdec40c70
 +	return fmt.Sprintf("%g", v)
 +}
 diff --git a/common/callback/callback.go b/common/callback/callback.go
-index 9ae0f94a38efa9e6cb38269791c34ae054987fa1..ef39647423ee11c20c7829c6b2f559b25ba74e25 100644
+index 9ae0f94a38efa9e6cb38269791c34ae054987fa1..f0e472cfc0dcfd9d541257d9020c85e2837b1453 100644
 --- a/common/callback/callback.go
 +++ b/common/callback/callback.go
 @@ -1,6 +1,8 @@
@@ -3365,7 +3398,7 @@ index 9ae0f94a38efa9e6cb38269791c34ae054987fa1..ef39647423ee11c20c7829c6b2f559b2
  	"github.com/metacubex/mihomo/common/buf"
  	N "github.com/metacubex/mihomo/common/net"
  	C "github.com/metacubex/mihomo/constant"
-@@ -10,6 +12,9 @@ type firstWriteCallBackConn struct {
+@@ -10,13 +12,18 @@ type firstWriteCallBackConn struct {
  	C.Conn
  	callback func(error)
  	written  bool
@@ -3375,7 +3408,26 @@ index 9ae0f94a38efa9e6cb38269791c34ae054987fa1..ef39647423ee11c20c7829c6b2f559b2
  }
  
  func (c *firstWriteCallBackConn) Write(b []byte) (n int, err error) {
-@@ -32,6 +37,12 @@ func (c *firstWriteCallBackConn) WriteBuffer(buffer *buf.Buffer) (err error) {
+ 	defer func() {
+ 		if !c.written {
+ 			c.written = true
+-			c.callback(err)
++			if c.callback != nil {
++				c.callback(err)
++			}
+ 		}
+ 	}()
+ 	return c.Conn.Write(b)
+@@ -26,12 +33,20 @@ func (c *firstWriteCallBackConn) WriteBuffer(buffer *buf.Buffer) (err error) {
+ 	defer func() {
+ 		if !c.written {
+ 			c.written = true
+-			c.callback(err)
++			if c.callback != nil {
++				c.callback(err)
++			}
+ 		}
+ 	}()
  	return c.Conn.WriteBuffer(buffer)
  }
  
@@ -3388,6 +3440,17 @@ index 9ae0f94a38efa9e6cb38269791c34ae054987fa1..ef39647423ee11c20c7829c6b2f559b2
  func (c *firstWriteCallBackConn) Upstream() any {
  	return c.Conn
  }
+@@ -44,6 +59,10 @@ func (c *firstWriteCallBackConn) ReaderReplaceable() bool {
+ 	return true
+ }
+ 
++func (c *firstWriteCallBackConn) WriterPossiblyReplaceable() bool {
++	return !c.written
++}
++
+ var _ N.ExtendedConn = (*firstWriteCallBackConn)(nil)
+ 
+ func NewFirstWriteCallBackConn(c C.Conn, callback func(error)) C.Conn {
 diff --git a/common/callback/close_callback.go b/common/callback/close_callback.go
 index 630ee5d7f7b1bb69faf6308eaa2ae5fef0745c8a..146aa9488e72665bb2e90b5ba82dea80aad2eb60 100644
 --- a/common/callback/close_callback.go
@@ -3610,10 +3673,10 @@ index 0000000000000000000000000000000000000000..464d1f4223d6137b4460cf8f55f822cc
 +}
 diff --git a/common/callback/read_callback.go b/common/callback/read_callback.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..9924e1886996001df73c1188334416f152a7b72d
+index 0000000000000000000000000000000000000000..4ae58fb4decb729c51b702506bbf04d451415aca
 --- /dev/null
 +++ b/common/callback/read_callback.go
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,130 @@
 +package callback
 +
 +import (
@@ -3666,6 +3729,10 @@ index 0000000000000000000000000000000000000000..9924e1886996001df73c1188334416f1
 +
 +func (c *firstReadCallBackConn) ReaderReplaceable() bool {
 +	return c.read.Load()
++}
++
++func (c *firstReadCallBackConn) ReaderPossiblyReplaceable() bool {
++	return !c.read.Load()
 +}
 +
 +var _ N.ExtendedConn = (*firstReadCallBackConn)(nil)
@@ -4170,6 +4237,67 @@ index ad5860800a0bf2aa5379e49893ad8600bb260644..cce62da8e1fa8600635eed325c6f9167
  // It is safe to use plain stores here because the destination bucket must be
  // either locked or exclusively written to by the helper during resize.
  func appendToBucket[K comparable, V any](h2 uint8, e *entry[K, V], b *bucketPadded) {
+diff --git a/component/fakeip/pool.go b/component/fakeip/pool.go
+index 0417e20c52123e5dabd80fc0de8606d8f5fe7b0b..5392869651b0769bda816120134ee49cd19581ac 100644
+--- a/component/fakeip/pool.go
++++ b/component/fakeip/pool.go
+@@ -88,7 +88,18 @@ func (p *Pool) IPNet() netip.Prefix {
+ 
+ // CloneFrom clone cache from old pool
+ func (p *Pool) CloneFrom(o *Pool) {
++	p.mux.Lock()
++	defer p.mux.Unlock()
++
++	o.mux.Lock()
++	defer o.mux.Unlock()
++
+ 	o.store.CloneTo(p.store)
++
++	// the allocation state only matches the cloned entries if both pools cover the same range
++	if o.first == p.first && o.last == p.last {
++		p.offset, p.cycle = o.offset, o.cycle
++	}
+ }
+ 
+ func (p *Pool) get(host string) netip.Addr {
+diff --git a/component/fakeip/pool_test.go b/component/fakeip/pool_test.go
+index c445807aa5828dd20179b3dcf761a08424add81b..fe478e487b9bc080c91368a083da7fc364faf7ef 100644
+--- a/component/fakeip/pool_test.go
++++ b/component/fakeip/pool_test.go
+@@ -212,6 +212,33 @@ func TestPool_Clone(t *testing.T) {
+ 	assert.True(t, lastExist)
+ }
+ 
++func TestPool_CloneKeepsAllocationState(t *testing.T) {
++	ipnet := netip.MustParsePrefix("192.168.0.1/24")
++	pool, _ := New(Options{
++		IPNet: ipnet,
++		Size:  10,
++	})
++
++	foo := pool.Lookup("foo.com")
++	bar := pool.Lookup("bar.com")
++
++	newPool, _ := New(Options{
++		IPNet: ipnet,
++		Size:  10,
++	})
++	newPool.CloneFrom(pool)
++
++	// a fresh allocation must not overwrite the retained mappings
++	baz := newPool.Lookup("baz.com")
++	assert.NotEqual(t, foo, baz)
++	assert.NotEqual(t, bar, baz)
++	assert.Equal(t, foo, newPool.Lookup("foo.com"))
++	assert.Equal(t, bar, newPool.Lookup("bar.com"))
++	host, ok := newPool.LookBack(foo)
++	assert.True(t, ok)
++	assert.Equal(t, "foo.com", host)
++}
++
+ func TestPool_Error(t *testing.T) {
+ 	ipnet := netip.MustParsePrefix("192.168.0.1/31")
+ 	_, err := New(Options{
 diff --git a/component/geodata/utils.go b/component/geodata/utils.go
 index ee7946a66f778c9d9e151d294e535db5c395c472..64b3ff66528f05388afc5fdf6ba35b3dffa38ee9 100644
 --- a/component/geodata/utils.go
@@ -4267,7 +4395,7 @@ index 89ce19170097af5ea8c031ab7893c873146120d2..a1905c103a7e99c3de2679d174af031f
  
 diff --git a/component/profile/cachefile/smart.go b/component/profile/cachefile/smart.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..d2a9c2897b9501ecd2c6547c18e6e16502bde0a6
+index 0000000000000000000000000000000000000000..24e730f2518926b8de2d8c659e4c861c85fc3a24
 --- /dev/null
 +++ b/component/profile/cachefile/smart.go
 @@ -0,0 +1,38 @@
@@ -4282,8 +4410,8 @@ index 0000000000000000000000000000000000000000..d2a9c2897b9501ecd2c6547c18e6e165
 +)
 +
 +var (
-+	smartInitOnce  sync.Once
-+	smartStore     *smart.Store
++	smartInitOnce sync.Once
++	smartStore    *smart.Store
 +)
 +
 +func GetSmartStore() *smart.Store {
@@ -4309,7 +4437,6 @@ index 0000000000000000000000000000000000000000..d2a9c2897b9501ecd2c6547c18e6e165
 +
 +	return smartStore
 +}
-\ No newline at end of file
 diff --git a/component/smart/cache.go b/component/smart/cache.go
 new file mode 100644
 index 0000000000000000000000000000000000000000..1a9bb63d21f754157ac9df71b2585abf4496054c
@@ -4765,10 +4892,10 @@ index 0000000000000000000000000000000000000000..1a9bb63d21f754157ac9df71b2585abf
 +}
 diff --git a/component/smart/exit.go b/component/smart/exit.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b3951d5f38f
+index 0000000000000000000000000000000000000000..82993fee71cc58b428dc483b49d54b1fcbf71a60
 --- /dev/null
 +++ b/component/smart/exit.go
-@@ -0,0 +1,1086 @@
+@@ -0,0 +1,1383 @@
 +package smart
 +
 +import (
@@ -4798,6 +4925,7 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +	suspectThreshold          = 2
 +	suspectMaxControlExitKeys = 16
 +	suspectMaxTargets         = 4096
++	targetLabelMaxEntries     = 4096
 +
 +	// exit probes keep their own slots; a slow trace cannot hold back the status probes
 +	exitProbeMaxInflight = 2
@@ -4808,16 +4936,24 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +	suspectConfirmWindow = 10 * time.Minute
 +	exitRegionTTL        = 6 * time.Hour
 +	exitProbeRetryGap    = 15 * time.Minute
++	backfillInterval     = 2 * time.Second
++	traceWitnessNodes    = 2
++	noTraceTTL           = 6 * time.Hour
 +)
 +
 +var exitProbeInflight = make(chan struct{}, exitProbeMaxInflight)
 +
-+// ExitTraceURLs are tried in order, so a blocked endpoint costs a fallback instead of the
-+// answer; the first answers with `key=value` lines, the others with JSON.
++// ExitTraceURLs are tried in order, so a blocked endpoint costs a fallback, not the answer.
 +var ExitTraceURLs = []string{
 +	"https://www.cloudflare.com/cdn-cgi/trace",
 +	"https://api.ip.sb/geoip",
 +	"https://ipwho.is/",
++}
++
++// TraceUnanswerableError marks a trace endpoint that answered without an exit answer,
++// which is a property of the asked host rather than of the node that carried the probe.
++type TraceUnanswerableError struct {
++	Reason string
 +}
 +
 +type ExitProbeResult struct {
@@ -4832,6 +4968,10 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +	ExitProbe(ctx context.Context, wantASN bool) (*ExitProbeResult, error)
 +}
 +
++type TargetExitProber interface {
++	TargetExitProbe(ctx context.Context, host string, wantASN bool) (*ExitProbeResult, error)
++}
++
 +type ExitInfo struct {
 +	Region  string `json:"region,omitempty"`
 +	ASN     string `json:"asn,omitempty"`
@@ -4844,6 +4984,16 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +	failed int64
 +}
 +
++type targetNodeKey struct {
++	target string
++	node   string
++}
++
++type targetRecord struct {
++	info   ExitInfo
++	failed int64
++}
++
 +type suspectHalfOpen struct {
 +	owner   string
 +	until   int64
@@ -4851,18 +5001,18 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +}
 +
 +type ExitState struct {
-+	mu       sync.RWMutex
-+	nodes    map[string]*exitRecord
-+	refusals exitHold
-+	controls exitHold
++	mu        sync.RWMutex
++	nodes     map[string]*exitRecord
++	targets   map[targetNodeKey]*targetRecord
++	refusals  exitHold
++	controls  exitHold
++	noTrace   map[string]int64
++	witnesses map[string]map[string]bool
 +}
 +
 +// exitHold keeps one target per node, dropped once the confirm window passes.
 +type exitHold map[string]map[string]int64
 +
-+// SuspectTracker raises a suspicion for one key domain, such as a region or a network:
-+// the other nodes of that key are only moved behind the rest until the suspicion expires.
-+// One exit machine counts once, however many nodes run on it.
 +type SuspectTracker struct {
 +	mu         sync.RWMutex
 +	pending    map[string]map[string]map[string]int64
@@ -4876,14 +5026,20 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +type ExitWatcher struct {
 +	ExitState
 +
-+	name     string
-+	config   string
-+	store    *Store
-+	wantASN  func() bool
-+	inflight xsync.Map[string, struct{}]
-+	seeded   xsync.Map[string, struct{}]
-+	regions  SuspectTracker
-+	asns     SuspectTracker
++	name           string
++	config         string
++	store          *Store
++	wantASN        func() bool
++	inflight       xsync.Map[string, struct{}]
++	targetInflight xsync.Map[targetNodeKey, struct{}]
++	seeded         xsync.Map[string, struct{}]
++	regions        SuspectTracker
++	asns           SuspectTracker
++
++	hostMu sync.Mutex
++	hosts  map[string]string
++
++	backfillAt map[string]int64
 +}
 +
 +type ExitWatcherOptions struct {
@@ -4891,6 +5047,13 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +	Config  string
 +	Store   *Store
 +	WantASN func() bool
++}
++
++func (e *TraceUnanswerableError) Error() string { return e.Reason }
++
++func IsTraceUnanswerable(err error) bool {
++	var target *TraceUnanswerableError
++	return errors.As(err, &target)
 +}
 +
 +func (h *exitHold) add(target, node string, at int64) {
@@ -4977,6 +5140,122 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +		return rec.info
 +	}
 +	return ExitInfo{}
++}
++
++func (s *ExitState) targetDue(target, node string, ttl, retry time.Duration, now time.Time) bool {
++	s.mu.RLock()
++	defer s.mu.RUnlock()
++	if until, marked := s.noTrace[target]; marked && now.Unix() < until {
++		return false
++	}
++	rec, ok := s.targets[targetNodeKey{target, node}]
++	if !ok {
++		return true
++	}
++	if rec.info.Updated != 0 && now.Unix()-rec.info.Updated < int64(ttl.Seconds()) {
++		return false
++	}
++	return rec.failed == 0 || now.Unix()-rec.failed >= int64(retry.Seconds())
++}
++
++func (s *ExitState) TargetInfo(target, node string) ExitInfo {
++	s.mu.RLock()
++	defer s.mu.RUnlock()
++	if rec, ok := s.targets[targetNodeKey{target, node}]; ok {
++		return rec.info
++	}
++	return ExitInfo{}
++}
++
++func (s *ExitState) StoreTarget(target, node string, info ExitInfo, now time.Time) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	delete(s.noTrace, target)
++	delete(s.witnesses, target)
++	key := targetNodeKey{target, node}
++	rec, ok := s.targets[key]
++	if !ok {
++		if len(s.targets) >= targetLabelMaxEntries {
++			s.pruneTargetsLocked(now)
++			if len(s.targets) >= targetLabelMaxEntries {
++				return
++			}
++		}
++		if s.targets == nil {
++			s.targets = make(map[targetNodeKey]*targetRecord)
++		}
++		rec = &targetRecord{}
++		s.targets[key] = rec
++	}
++	info.Updated = now.Unix()
++	rec.info = info
++	rec.failed = 0
++}
++
++func (s *ExitState) pruneTargetsLocked(now time.Time) {
++	for key, rec := range s.targets {
++		if rec.info.Updated != 0 {
++			if now.Unix()-rec.info.Updated > int64(exitRegionTTL.Seconds()) {
++				delete(s.targets, key)
++			}
++			continue
++		}
++		if rec.failed != 0 && now.Unix()-rec.failed > int64(exitProbeRetryGap.Seconds()) {
++			delete(s.targets, key)
++		}
++	}
++	for target, until := range s.noTrace {
++		if now.Unix() >= until {
++			delete(s.noTrace, target)
++			delete(s.witnesses, target)
++		}
++	}
++}
++
++func (s *ExitState) NoteTargetFailure(target, node string, now time.Time) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	key := targetNodeKey{target, node}
++	rec, ok := s.targets[key]
++	if !ok {
++		if len(s.targets) >= targetLabelMaxEntries {
++			s.pruneTargetsLocked(now)
++			if len(s.targets) >= targetLabelMaxEntries {
++				return
++			}
++		}
++		if s.targets == nil {
++			s.targets = make(map[targetNodeKey]*targetRecord)
++		}
++		rec = &targetRecord{}
++		s.targets[key] = rec
++	}
++	rec.failed = now.Unix()
++}
++
++// NoteTargetUnanswerable: enough distinct witnesses drop the target from probing.
++func (s *ExitState) NoteTargetUnanswerable(target, node string, now time.Time) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	if s.witnesses == nil {
++		s.witnesses = make(map[string]map[string]bool)
++	}
++	nodes := s.witnesses[target]
++	if nodes == nil {
++		if len(s.witnesses) >= targetLabelMaxEntries {
++			return
++		}
++		nodes = make(map[string]bool)
++		s.witnesses[target] = nodes
++	}
++	nodes[node] = true
++	if len(nodes) < traceWitnessNodes {
++		return
++	}
++	if s.noTrace == nil {
++		s.noTrace = make(map[string]int64)
++	}
++	s.noTrace[target] = now.Add(noTraceTTL).Unix()
 +}
 +
 +// Withhold holds a refusal until its node's exit answer arrives; Release completes it.
@@ -5446,7 +5725,10 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +	if _, loaded := w.inflight.LoadOrStore(node, struct{}{}); loaded {
 +		return
 +	}
++	w.startProbe(parent, prober, node)
++}
 +
++func (w *ExitWatcher) startProbe(parent context.Context, prober ExitProber, node string) {
 +	go func() {
 +		defer w.inflight.Delete(node)
 +
@@ -5455,9 +5737,6 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +			return
 +		}
 +		defer done()
-+		if !AllowGlobalProbe(time.Now()) {
-+			return
-+		}
 +
 +		if parent == nil {
 +			parent = context.Background()
@@ -5479,26 +5758,167 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +		}
 +
 +		w.Store(node, ExitInfo{Region: result.Region, ASN: result.ASN, Key: result.Key}, time.Now())
-+		if result.ASN != "" {
-+			log.Debugln("[Smart] Exit probe [%s] node [%s] -> region [%s] asn [%s]", w.name, node, result.Region, result.ASN)
-+		} else {
-+			log.Debugln("[Smart] Exit probe [%s] node [%s] -> region [%s]", w.name, node, result.Region)
-+		}
++		log.Debugln("[Smart] Exit probe [%s] node [%s] -> [%s]", w.name, node, describeExit(result.Region, result.ASN))
 +		w.storeExitState(node, w.Info(node))
 +		for _, target := range w.Release(node) {
-+			log.Debugln("[Smart] Exit refusal released [%s] target [%s] node [%s] after its exit answer", w.name, target, node)
++			log.Debugln("[Smart] Exit refusal released [%s] target [%s] node [%s]", w.name, target, node)
 +			w.confirm(target, node)
 +		}
 +		for _, target := range w.ReleaseSuccess(node) {
-+			log.Debugln("[Smart] Exit control released [%s] target [%s] node [%s] after its exit answer", w.name, target, node)
++			log.Debugln("[Smart] Exit control released [%s] target [%s] node [%s]", w.name, target, node)
 +			w.NoteSuccess(target, node)
 +		}
 +	}()
 +}
 +
-+// EnsureLoaded reads the stored answer of a node once per run, so a connection arriving
-+// before any probe already reports what an earlier run learned; a failed probe keeps its
-+// retry gap. A connection racing the first load may still see the node as unknown.
++func (w *ExitWatcher) MaybeProbeTarget(parent context.Context, proxy C.Proxy, target, node, host string) {
++	if target == "" || node == "" || host == "" {
++		return
++	}
++	w.rememberHost(target, host)
++	now := time.Now()
++	if !w.targetDue(target, node, exitRegionTTL, exitProbeRetryGap, now) {
++		return
++	}
++	prober, ok := proxy.(TargetExitProber)
++	if !ok {
++		return
++	}
++	w.startTargetProbe(parent, prober, target, node, host)
++}
++
++func (w *ExitWatcher) startTargetProbe(parent context.Context, prober TargetExitProber, target, node, host string) {
++	key := targetNodeKey{target, node}
++	if _, loaded := w.targetInflight.LoadOrStore(key, struct{}{}); loaded {
++		return
++	}
++	done, ok := TryStartExitProbe()
++	if !ok {
++		w.targetInflight.Delete(key)
++		return
++	}
++
++	go func() {
++		defer w.targetInflight.Delete(key)
++		defer done()
++
++		if parent == nil {
++			parent = context.Background()
++		}
++		ctx, cancel := context.WithTimeout(parent, ProbeTimeout)
++		defer cancel()
++
++		wantASN := w.wantASN != nil && w.wantASN()
++		result, err := prober.TargetExitProbe(ctx, host, wantASN)
++		if err != nil {
++			if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
++				return
++			}
++			w.NoteTargetFailure(target, node, time.Now())
++			if IsTraceUnanswerable(err) {
++				w.NoteTargetUnanswerable(target, node, time.Now())
++			}
++			log.Debugln("[Smart] Target exit probe [%s] target [%s] node [%s] failed: %s", w.name, target, node, err.Error())
++		} else {
++			w.StoreTarget(target, node, ExitInfo{Region: result.Region, ASN: result.ASN, Key: result.Key}, time.Now())
++			log.Debugln("[Smart] Target exit probe [%s] target [%s] node [%s] -> [%s]", w.name, target, node, describeExit(result.Region, result.ASN))
++		}
++		w.replayHeld(node)
++	}()
++}
++
++func (w *ExitWatcher) replayHeld(node string) {
++	for _, t := range w.Release(node) {
++		if region, asn, _ := w.exitLabel(t, node); region == "" && asn == "" {
++			w.Withhold(t, node)
++			continue
++		}
++		log.Debugln("[Smart] Exit refusal released [%s] target [%s] node [%s]", w.name, t, node)
++		w.confirm(t, node)
++	}
++	for _, t := range w.ReleaseSuccess(node) {
++		if region, asn, _ := w.exitLabel(t, node); region == "" && asn == "" {
++			w.WithholdSuccess(t, node)
++			continue
++		}
++		log.Debugln("[Smart] Exit control released [%s] target [%s] node [%s]", w.name, t, node)
++		w.NoteSuccess(t, node)
++	}
++}
++
++func (w *ExitWatcher) Backfill(ctx context.Context, target string, proxies []C.Proxy) {
++	if target == "" || len(proxies) == 0 {
++		return
++	}
++	if !w.regions.Active() && !w.asns.Active() {
++		return
++	}
++	host, ok := w.backfillDue(target)
++	if !ok {
++		return
++	}
++	if HostBackedOff(w.config, w.name, host) {
++		return
++	}
++	for _, p := range proxies {
++		if _, ok := p.(TargetExitProber); !ok {
++			continue
++		}
++		w.MaybeProbeTarget(ctx, p, target, p.Name(), host)
++	}
++}
++
++func (w *ExitWatcher) backfillDue(target string) (string, bool) {
++	now := time.Now().Unix()
++	w.hostMu.Lock()
++	defer w.hostMu.Unlock()
++
++	host, ok := w.hosts[target]
++	if !ok || host == "" {
++		return "", false
++	}
++	if until, ok := w.backfillAt[target]; ok && until > now {
++		return "", false
++	}
++	if w.backfillAt == nil {
++		w.backfillAt = make(map[string]int64)
++	}
++	if _, seen := w.backfillAt[target]; !seen && len(w.backfillAt) >= suspectMaxTargets {
++		return host, true
++	}
++	w.backfillAt[target] = now + int64(backfillInterval.Seconds())
++	return host, true
++}
++
++func (w *ExitWatcher) rememberHost(target, host string) {
++	w.hostMu.Lock()
++	defer w.hostMu.Unlock()
++	if w.hosts == nil {
++		w.hosts = make(map[string]string)
++	}
++	if _, ok := w.hosts[target]; !ok && len(w.hosts) >= suspectMaxTargets {
++		return
++	}
++	w.hosts[target] = host
++}
++
++func (w *ExitWatcher) exitLabel(target, node string) (region, asn, key string) {
++	if info := w.TargetInfo(target, node); info.Region != "" || info.ASN != "" {
++		return info.Region, info.ASN, info.Key
++	}
++	info := w.Info(node)
++	return info.Region, info.ASN, info.Key
++}
++
++// Label is exitLabel for callers that only annotate a connection: a node re-forwards one
++// target to a different landing than the rest of its traffic.
++func (w *ExitWatcher) Label(target, node string) (region, asn string) {
++	region, asn, _ = w.exitLabel(target, node)
++	return
++}
++
++// EnsureLoaded reads a node's stored answer once per run, so a connection arriving before
++// any probe still reports it; a failed probe keeps its retry gap.
 +func (w *ExitWatcher) EnsureLoaded(node string) {
 +	if _, loaded := w.seeded.LoadOrStore(node, struct{}{}); loaded {
 +		return
@@ -5562,41 +5982,42 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +// Note blames a refusal on the node's own answer; while that answer is unknown the
 +// suspicion waits for it instead of being dropped. It reports whether a suspicion was raised.
 +func (w *ExitWatcher) Note(target, node string) bool {
-+	if w.Info(node).Region == "" && w.asnOf(node) == "" {
-+		w.Withhold(target, node)
-+		log.Debugln("[Smart] Exit refusal [%s] target [%s] node [%s] held until its exit answer arrives", w.name, target, node)
-+		return false
++	now := time.Now()
++	if info := w.TargetInfo(target, node); info.Region == "" && info.ASN == "" {
++		if w.targetDue(target, node, exitRegionTTL, exitProbeRetryGap, now) {
++			w.Withhold(target, node)
++			log.Debugln("[Smart] Exit refusal held [%s] target [%s] node [%s]", w.name, target, node)
++			return false
++		}
 +	}
 +	return w.confirm(target, node)
 +}
 +
-+// NoteSuccess records a 2xx control answer of the target and reports whether it raised a
-+// suspicion for another key; an answer that arrives before the node's exit is held and later
-+// replayed by ReleaseSuccess.
++// NoteSuccess records a 2xx control answer and reports whether it raised a suspicion for
++// another key; a control arriving before the node's exit is held and replayed later.
 +func (w *ExitWatcher) NoteSuccess(target, node string) bool {
-+	info := w.Info(node)
-+	asn := w.asnOf(node)
-+	if info.Region == "" && asn == "" {
-+		w.WithholdSuccess(target, node)
-+		log.Debugln("[Smart] Exit control [%s] target [%s] node [%s] held until its exit answer arrives", w.name, target, node)
-+		return false
-+	}
-+	identity := w.identity(node)
 +	now := time.Now()
-+	raised := false
-+	if info.Region != "" {
-+		for _, failedRegion := range w.regions.NoteSuccess(target, info.Region, identity, now) {
-+			raised = true
-+			log.Debugln("[Smart] Exit suspect [%s] target [%s] region [%s] raised after a successful control from [%s]",
-+				w.name, target, failedRegion, node)
++	if info := w.TargetInfo(target, node); info.Region == "" && info.ASN == "" {
++		if w.targetDue(target, node, exitRegionTTL, exitProbeRetryGap, now) {
++			w.WithholdSuccess(target, node)
++			log.Debugln("[Smart] Exit control held [%s] target [%s] node [%s]", w.name, target, node)
++			return false
 +		}
 +	}
-+	if asn != "" {
-+		for _, failedASN := range w.asns.NoteSuccess(target, asn, identity, now) {
++	region, asn, key := w.exitLabel(target, node)
++	identity := w.identity(key, node)
++	raised := false
++	raise := func(kind string, failed []string) {
++		for _, failedKey := range failed {
 +			raised = true
-+			log.Debugln("[Smart] Exit suspect [%s] target [%s] asn [%s] raised after a successful control from [%s]",
-+				w.name, target, failedASN, node)
++			log.Debugln("[Smart] Exit suspect [%s] target [%s] %s [%s] raised by a control from node [%s]", w.name, target, kind, failedKey, node)
 +		}
++	}
++	if region != "" {
++		raise("region", w.regions.NoteSuccess(target, region, identity, now))
++	}
++	if w.wantASN != nil && w.wantASN() && asn != "" {
++		raise("asn", w.asns.NoteSuccess(target, asn, identity, now))
 +	}
 +	if raised {
 +		w.dropUnwrapResult(target)
@@ -5606,21 +6027,21 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +
 +func (w *ExitWatcher) confirm(target, node string) bool {
 +	now := time.Now()
-+	identity := w.identity(node)
++	region, asn, key := w.exitLabel(target, node)
++	identity := w.identity(key, node)
 +	raised := false
-+	if region := w.Info(node).Region; region != "" {
-+		if w.regions.Note(target, region, identity, now) {
-+			raised = true
-+			log.Debugln("[Smart] Exit suspect [%s] target [%s] region [%s] raised by node [%s]",
-+				w.name, target, region, node)
++	raise := func(kind, hitKey string, hit bool) {
++		if !hit {
++			return
 +		}
++		raised = true
++		log.Debugln("[Smart] Exit suspect [%s] target [%s] %s [%s] raised by node [%s]", w.name, target, kind, hitKey, node)
 +	}
-+	if asn := w.asnOf(node); asn != "" {
-+		if w.asns.Note(target, asn, identity, now) {
-+			raised = true
-+			log.Debugln("[Smart] Exit suspect [%s] target [%s] asn [%s] raised by node [%s]",
-+				w.name, target, asn, node)
-+		}
++	if region != "" {
++		raise("region", region, w.regions.Note(target, region, identity, now))
++	}
++	if w.wantASN != nil && w.wantASN() && asn != "" {
++		raise("asn", asn, w.asns.Note(target, asn, identity, now))
 +	}
 +	if raised {
 +		w.dropUnwrapResult(target)
@@ -5635,38 +6056,35 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +		return
 +	}
 +	w.store.DeleteUnwrapResult(w.name, w.config, target)
++	w.store.DeleteUnwrapResult(w.name, w.config, NetScopedTarget(target, true))
 +	log.Debugln("[Smart] Exit suspect [%s] target [%s] unwrap pin cleared", w.name, target)
 +}
 +
 +// identity tells the exit machines of two nodes apart, falling back to the node name.
-+func (w *ExitWatcher) identity(node string) string {
-+	if key := w.Info(node).Key; key != "" {
++func (w *ExitWatcher) identity(key, node string) string {
++	if key != "" {
 +		return key
 +	}
 +	return node
 +}
 +
-+// asnOf reports the network of a node only while the group works with networks.
-+func (w *ExitWatcher) asnOf(node string) string {
-+	if w.wantASN == nil || !w.wantASN() {
-+		return ""
++func describeExit(region, asn string) string {
++	if asn == "" {
++		return "GeoIP [" + region + "]"
 +	}
-+	return w.Info(node).ASN
++	return "GeoIP [" + region + "] -> ASN [" + asn + "]"
 +}
 +
-+// Suspected reports whether the region the node lands in, or the network it runs on, is
-+// under suspicion for the target; a suspicion only reorders candidates, callers must
-+// never drop one.
 +func (w *ExitWatcher) Suspected(target, node string) bool {
 +	if !w.regions.Active() && !w.asns.Active() {
 +		return false
 +	}
 +	now := time.Now()
-+	info := w.Info(node)
-+	if info.Region != "" && w.regions.Suspected(target, info.Region, now) {
++	region, asn, _ := w.exitLabel(target, node)
++	if region != "" && w.regions.Suspected(target, region, now) {
 +		return true
 +	}
-+	if w.wantASN != nil && w.wantASN() && info.ASN != "" && w.asns.Suspected(target, info.ASN, now) {
++	if w.wantASN != nil && w.wantASN() && asn != "" && w.asns.Suspected(target, asn, now) {
 +		return true
 +	}
 +	return false
@@ -5676,45 +6094,53 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +	if !w.regions.Active() && !w.asns.Active() {
 +		return false
 +	}
-+	info := w.Info(node)
-+	if w.wantASN != nil && w.wantASN() && info.ASN != "" && w.asns.Defer(target, info.ASN, node, now, lease) {
++	region, asn, _ := w.exitLabel(target, node)
++	if w.wantASN != nil && w.wantASN() && asn != "" && w.asns.Defer(target, asn, node, now, lease) {
 +		return true
 +	}
-+	if info.Region == "" {
++	if region == "" {
 +		return false
 +	}
-+	return w.regions.Defer(target, info.Region, node, now, lease)
++	return w.regions.Defer(target, region, node, now, lease)
 +}
 +
 +func (w *ExitWatcher) AllowFallback(target, node string, now time.Time, lease time.Duration) bool {
-+	info := w.Info(node)
-+	regionSuspected := info.Region != "" && w.regions.Suspected(target, info.Region, now)
-+	asnSuspected := w.wantASN != nil && w.wantASN() && info.ASN != "" && w.asns.Suspected(target, info.ASN, now)
++	region, asn, _ := w.exitLabel(target, node)
++	regionSuspected := region != "" && w.regions.Suspected(target, region, now)
++	asnSuspected := w.wantASN != nil && w.wantASN() && asn != "" && w.asns.Suspected(target, asn, now)
 +	if !regionSuspected && !asnSuspected {
 +		return true
 +	}
 +	claimedASN := false
 +	if asnSuspected {
-+		if !w.asns.TryHalfOpen(target, info.ASN, node, now, lease) {
++		if !w.asns.TryHalfOpen(target, asn, node, now, lease) {
 +			return false
 +		}
 +		claimedASN = true
 +	}
-+	if regionSuspected && !w.regions.TryHalfOpen(target, info.Region, node, now, lease) {
++	if regionSuspected && !w.regions.TryHalfOpen(target, region, node, now, lease) {
 +		if claimedASN {
-+			w.asns.ReleaseHalfOpen(target, info.ASN, node)
++			w.asns.ReleaseHalfOpen(target, asn, node)
 +		}
 +		return false
 +	}
 +	return true
 +}
 +
-+// Clear drops the suspicions an answered node has disproved.
 +func (w *ExitWatcher) Clear(target, node string) {
-+	if region := w.Info(node).Region; region != "" {
++	info := w.TargetInfo(target, node)
++	region, asn := info.Region, info.ASN
++	if region == "" && asn == "" {
++		if w.targetDue(target, node, exitRegionTTL, exitProbeRetryGap, time.Now()) {
++			return
++		}
++		fallback := w.Info(node)
++		region, asn = fallback.Region, fallback.ASN
++	}
++	if region != "" {
 +		w.regions.Clear(target, region)
 +	}
-+	if asn := w.asnOf(node); asn != "" {
++	if w.wantASN != nil && w.wantASN() && asn != "" {
 +		w.asns.Clear(target, asn)
 +	}
 +}
@@ -5767,9 +6193,7 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +	return region, ip
 +}
 +
-+// IsRegionUnavailableLocation tells a page that blames the region from an ordinary
-+// relocation: only the former may record a block for the whole region. A region word next
-+// to a refusal word counts as one; either word alone is an ordinary page.
++// IsRegionUnavailableLocation tells a region refusal apart from an ordinary relocation.
 +func IsRegionUnavailableLocation(location string) bool {
 +	if location == "" {
 +		return false
@@ -5857,10 +6281,10 @@ index 0000000000000000000000000000000000000000..f213539c31244b1722a0cc0d0e5e1b39
 +}
 diff --git a/component/smart/lightgbm/collector.go b/component/smart/lightgbm/collector.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..c1752b978606211e2c6b87faa6e2163c5cee04d5
+index 0000000000000000000000000000000000000000..c253900d5dbe07e9e61d95976d5da390c6c9a2f3
 --- /dev/null
 +++ b/component/smart/lightgbm/collector.go
-@@ -0,0 +1,329 @@
+@@ -0,0 +1,332 @@
 +package lightgbm
 +
 +import (
@@ -6058,14 +6482,16 @@ index 0000000000000000000000000000000000000000..c1752b978606211e2c6b87faa6e2163c
 +			reader := csv.NewReader(f)
 +			headers, err := reader.Read()
 +			if err == nil {
-+				hasMax := false
++				hasRate, hasExit := false, false
 +				for _, h := range headers {
-+					if h == "cumul_loss_rate" {
-+						hasMax = true
-+						break
++					switch h {
++					case "cumul_loss_rate":
++						hasRate = true
++					case "exit_region":
++						hasExit = true
 +					}
 +				}
-+				if !hasMax {
++				if !hasRate || !hasExit {
 +					needUpgrade = true
 +				}
 +			}
@@ -6075,7 +6501,7 @@ index 0000000000000000000000000000000000000000..c1752b978606211e2c6b87faa6e2163c
 +	if needUpgrade {
 +		backupPath := c.dataPath + ".bak." + time.Now().Format("20060102150405")
 +		os.Rename(c.dataPath, backupPath)
-+		log.Infoln("[Smart] Old CSV file does not contain hash columns, backup to %s and create new file", backupPath)
++		log.Infoln("[Smart] Old CSV file does not match the feature schema, backup to %s and create new file", backupPath)
 +		fileExists = false
 +	}
 +
@@ -6132,6 +6558,7 @@ index 0000000000000000000000000000000000000000..c1752b978606211e2c6b87faa6e2163c
 +			"port_feature",
 +			"traffic_ratio", "traffic_density", "connection_type_feature",
 +			"asn_hash", "host_hash", "ip_hash", "geoip_hash",
++			"exit_region", "exit_asn_hash",
 +			"group_name", "node_name",
 +			"asn_raw", "host_raw", "ip_raw", "port_raw", "geoip_raw",
 +			"weight", "weight_source", "timestamp",
@@ -6192,10 +6619,10 @@ index 0000000000000000000000000000000000000000..c1752b978606211e2c6b87faa6e2163c
 +}
 diff --git a/component/smart/lightgbm/lightgbm.go b/component/smart/lightgbm/lightgbm.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb4415063101e
+index 0000000000000000000000000000000000000000..f45e0de9933ae812d9edf298638fa55d13083e88
 --- /dev/null
 +++ b/component/smart/lightgbm/lightgbm.go
-@@ -0,0 +1,1012 @@
+@@ -0,0 +1,1158 @@
 +package lightgbm
 +
 +import (
@@ -6222,10 +6649,13 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +)
 +
 +const (
-+	MaxFeatureSize = 30
++	MaxFeatureSize = 32
++
++	// a corrupt max_feature_idx must not drive an unbounded allocation in the tail fill
++	maxModelFeatureSlots = 4096
 +)
 +
-+type domainKeywordEntry struct {
++type keywordEntry struct {
 +	keyword  string
 +	category int
 +}
@@ -6245,173 +6675,266 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +
 +	domainRegex = regexp.MustCompile(`([a-zA-Z0-9-]+)(\.[a-zA-Z0-9-]+)+$`)
 +
-+	// common ASN provider categories
-+	asnCategories = map[string]int{
++	// provider keywords; enums start at 100, the 1-99 block is reserved for computed codes
++	asnCategories = []keywordEntry{
 +		// global tech
-+		"google":     1,
-+		"amazon":     2,
-+		"microsoft":  3,
-+		"facebook":   4,
-+		"apple":      5,
-+		"cloudflare": 6,
-+		"akamai":     7,
-+		"fastly":     8,
-+		"netflix":    9,
-+		"alibaba":    10,
-+		"tencent":    11,
-+		"baidu":      12,
++		{"google", 100},
++		{"amazon", 101},
++		{"microsoft", 102},
++		{"facebook", 103},
++		{"apple", 104},
++		{"cloudflare", 105},
++		{"akamai", 106},
++		{"fastly", 107},
++		{"netflix", 108},
++		{"alibaba", 109},
++		{"tencent", 110},
++		{"baidu", 111},
++		{"huawei", 112},
++		{"bytedance", 113},
++		{"tiktok", 113},
++		{"xiaomi", 114},
++		{"salesforce", 115},
++		{"adobe", 116},
++		{"nvidia", 117},
 +		// china carriers
-+		"chinatelecom": 13,
-+		"chinaunicom":  14,
-+		"chinamobile":  15,
-+		"chinaedu":     16,
-+		"cstnet":       17,
-+		// global CDN and cloud
-+		"cdn77":        20,
-+		"limelight":    21,
-+		"edgecast":     22,
-+		"stackpath":    23,
-+		"imperva":      24,
-+		"oracle":       25,
-+		"ibm":          26,
-+		"digitalocean": 27,
-+		"linode":       28,
-+		"ovh":          29,
-+		"hetzner":      30,
-+		"vultr":        31,
-+		"cogent":       32,
-+		"leaseweb":     33,
-+		"upyun":        34,
-+		"qingcloud":    35,
-+		"ucloud":       36,
++		{"chinatelecom", 120},
++		{"china telecom", 120},
++		{"chinanet", 120},
++		{"chinaunicom", 121},
++		{"china unicom", 121},
++		{"chinamobile", 122},
++		{"china mobile", 122},
++		{"cmnet", 122},
++		{"chinaedu", 123},
++		{"china education", 123},
++		{"cernet", 123},
++		{"cstnet", 124},
 +		// international carriers
-+		"verizon":  40,
-+		"comcast":  41,
-+		"att":      42,
-+		"sprint":   43,
-+		"tmobile":  44,
-+		"level3":   45,
-+		"ntt":      46,
-+		"kddi":     47,
-+		"softbank": 48,
-+		"telstra":  49,
-+		"singtel":  50,
-+		"starhub":  51,
-+		"m1":       52,
-+		"pccw":     53,
-+		"hkbn":     54,
-+		"smartone": 55,
-+		"hgc":      56,
-+		"cht":      57,
-+		"fetnet":   58,
-+		"twm":      59,
++		{"verizon", 140},
++		{"comcast", 141},
++		{"at&t", 142},
++		{"sprint", 143},
++		{"t-mobile", 144},
++		{"tmobile", 144},
++		{"level3", 145},
++		{"level 3", 145},
++		{"lumen", 145},
++		{"centurylink", 145},
++		{"ntt", 146},
++		{"kddi", 147},
++		{"softbank", 148},
++		{"telstra", 149},
++		{"singtel", 150},
++		{"starhub", 151},
++		{"m1", 152},
++		{"pccw", 153},
++		{"hkbn", 154},
++		{"smartone", 155},
++		{"hgc", 156},
++		{"cht", 157},
++		{"chunghwa", 157},
++		{"hinet", 157},
++		{"fetnet", 158},
++		{"far eastone", 158},
++		{"twm", 159},
++		{"taiwan mobile", 159},
++		{"hkt", 160},
++		{"deutsche telekom", 161},
++		{"vodafone", 162},
++		{"telefonica", 163},
++		{"optus", 164},
++		{"bell canada", 165},
++		{"rogers communications", 166},
++		{"telus", 167},
++		{"rakuten", 168},
++		{"korea telecom", 169},
++		{"viettel", 170},
++		{"pldt", 171},
++		{"sk broadband", 172},
++		{"charter communications", 173},
++		// global CDN and cloud
++		{"cdn77", 180},
++		{"limelight", 181},
++		{"edgecast", 182},
++		{"edgio", 182},
++		{"stackpath", 183},
++		{"imperva", 184},
++		{"oracle", 185},
++		{"ibm", 186},
++		{"digitalocean", 187},
++		{"linode", 188},
++		{"ovh", 189},
++		{"hetzner", 190},
++		{"vultr", 191},
++		{"cogent", 192},
++		{"leaseweb", 193},
++		{"upyun", 194},
++		{"qingcloud", 195},
++		{"ucloud", 196},
++		{"contabo", 197},
++		{"rackspace", 198},
++		{"bunnyway", 199},
++		{"bunnycdn", 199},
++		{"netactuate", 200},
++		{"wangsu", 201},
++		{"kingsoft", 202},
++		{"scaleway", 203},
++		{"ionos", 204},
 +		// content providers
-+		"twitter":    70,
-+		"twitch":     71,
-+		"discord":    72,
-+		"spotify":    73,
-+		"github":     74,
-+		"steam":      75,
-+		"blizzard":   76,
-+		"riotgames":  77,
-+		"epicgames":  78,
-+		"ea":         79,
-+		"bytedance":  80,
-+		"bilibili":   81,
-+		"netactuate": 82,
-+		// internet exchanges
-+		"hkix":    90,
-+		"linx":    91,
-+		"jpix":    92,
-+		"equinix": 93,
-+		"sgix":    94,
-+		"de-cix":  95,
-+		"ams-ix":  96,
++		{"twitter", 220},
++		{"twitch", 221},
++		{"discord", 222},
++		{"spotify", 223},
++		{"github", 224},
++		{"steam", 225},
++		{"blizzard", 226},
++		{"riotgames", 227},
++		{"riot games", 227},
++		{"epicgames", 228},
++		{"electronic arts", 229},
++		{"valve", 230},
++		{"mozilla", 231},
++		{"reddit", 232},
++		{"openai", 233},
++		{"bilibili", 234},
 +		// education and research
-+		"cern":     100,
-+		"mit":      101,
-+		"stanford": 102,
-+		"tsinghua": 103,
-+		"pku":      104,
++		{"cern", 240},
++		{"stanford", 241},
++		{"tsinghua", 242},
++		{"pku", 243},
 +		// finance
-+		"visa":       110,
-+		"mastercard": 111,
-+		"paypal":     112,
-+		"stripe":     113,
-+		"alipay":     114,
-+		"wechatpay":  115,
++		{"visa", 250},
++		{"mastercard", 251},
++		{"paypal", 252},
++		{"stripe", 253},
++		{"alipay", 254},
++		{"wechatpay", 255},
++		{"unionpay", 256},
++		// internet exchanges
++		{"hkix", 260},
++		{"linx", 261},
++		{"jpix", 262},
++		{"equinix", 263},
++		{"sgix", 264},
++		{"de-cix", 265},
++		{"ams-ix", 266},
 +	}
 +
++	// region enums start at 100, the 1-99 block is reserved for the computed hash fallback
 +	geoCategories = map[string]int{
-+		"CN": 1,
-+		"HK": 2,
-+		"TW": 3,
-+		"JP": 4,
-+		"KR": 5,
-+		"SG": 6,
-+		"US": 7,
-+		"CA": 8,
-+		"GB": 9,
-+		"DE": 10,
-+		"FR": 11,
-+		"RU": 12,
-+		"AU": 13,
-+		"IN": 14,
-+		"BR": 15,
-+		"IT": 16,
-+		"ES": 17,
-+		"NL": 18,
-+		"SE": 19,
-+		"CH": 20,
-+		"PL": 21,
-+		"TR": 22,
-+		"MX": 23,
-+		"ZA": 24,
-+		"AR": 25,
-+		"ID": 26,
-+		"TH": 27,
-+		"VN": 28,
-+		"PH": 29,
-+		"MY": 30,
-+		"MO": 31,
++		"CN": 100,
++		"HK": 101,
++		"TW": 102,
++		"JP": 103,
++		"KR": 104,
++		"SG": 105,
++		"US": 106,
++		"CA": 107,
++		"GB": 108,
++		"DE": 109,
++		"FR": 110,
++		"RU": 111,
++		"AU": 112,
++		"IN": 113,
++		"BR": 114,
++		"IT": 115,
++		"ES": 116,
++		"NL": 117,
++		"SE": 118,
++		"CH": 119,
++		"PL": 120,
++		"TR": 121,
++		"MX": 122,
++		"ZA": 123,
++		"AR": 124,
++		"ID": 125,
++		"TH": 126,
++		"VN": 127,
++		"PH": 128,
++		"MY": 129,
++		"MO": 130,
++		"AE": 131,
++		"AT": 132,
++		"BD": 133,
++		"BE": 134,
++		"CL": 135,
++		"CO": 136,
++		"CZ": 137,
++		"DK": 138,
++		"EG": 139,
++		"FI": 140,
++		"GR": 141,
++		"IE": 142,
++		"IL": 143,
++		"IS": 144,
++		"KE": 145,
++		"KH": 146,
++		"KZ": 147,
++		"LK": 148,
++		"LU": 149,
++		"MA": 150,
++		"MM": 151,
++		"NG": 152,
++		"NO": 153,
++		"NZ": 154,
++		"PE": 155,
++		"PK": 156,
++		"PT": 157,
++		"RO": 158,
++		"SA": 159,
++		"UA": 160,
 +	}
 +
 +	// well known ports
 +	wellKnownPorts = map[uint16]int{
-+		22:    1,  // SSH
-+		25:    2,  // SMTP
-+		53:    3,  // DNS
-+		80:    4,  // HTTP
-+		110:   5,  // POP3
-+		143:   6,  // IMAP
-+		443:   7,  // HTTPS
-+		465:   8,  // SMTPS
-+		784:   3,  // DNS over QUIC (DoQ)
-+		853:   3,  // DNS over TLS (DoT)
-+		993:   9,  // IMAPS
-+		995:   10, // POP3S
-+		1194:  11, // OpenVPN
-+		1812:  12, // RADIUS
-+		3306:  13, // MySQL
-+		5053:  3,  // DNS backup port
-+		5353:  3,  // mDNS
-+		5355:  3,  // LLMNR
-+		5432:  14, // PostgreSQL
-+		6379:  15, // Redis
-+		8853:  3,  // DoT backup port
-+		9953:  3,  // DNS management port
-+		27017: 16, // MongoDB
-+		6660:  17, // IRC
-+		6665:  17, // IRC
-+		6666:  17, // IRC
-+		6667:  17, // IRC
-+		6668:  17, // IRC
-+		6669:  17, // IRC
-+		8000:  18, // common alternative HTTP port
-+		8008:  18, // common alternative HTTP port
-+		8080:  18, // common alternative HTTP port
-+		8443:  19, // common alternative HTTPS port
-+		8883:  20, // MQTT over TLS
++		22:    100, // SSH
++		25:    101, // SMTP
++		53:    102, // DNS
++		80:    103, // HTTP
++		110:   104, // POP3
++		123:   120, // NTP
++		143:   105, // IMAP
++		389:   130, // LDAP
++		443:   106, // HTTPS
++		445:   122, // SMB
++		465:   107, // SMTPS
++		587:   121, // SMTP submission
++		636:   131, // LDAPS
++		784:   102, // DNS over QUIC (early draft port, final is 853)
++		853:   102, // DNS over TLS / QUIC
++		993:   108, // IMAPS
++		995:   109, // POP3S
++		1194:  110, // OpenVPN
++		1433:  124, // MSSQL
++		1521:  125, // Oracle DB
++		1812:  111, // RADIUS
++		2049:  126, // NFS
++		3306:  112, // MySQL
++		3389:  123, // RDP
++		5053:  102, // DNS backup port
++		5353:  102, // mDNS
++		5355:  102, // LLMNR
++		5432:  113, // PostgreSQL
++		5672:  128, // AMQP
++		5900:  127, // VNC
++		6379:  114, // Redis
++		6660:  116, // IRC
++		6665:  116, // IRC
++		6666:  116, // IRC
++		6667:  116, // IRC
++		6668:  116, // IRC
++		6669:  116, // IRC
++		8000:  117, // common alternative HTTP port
++		8008:  117, // common alternative HTTP port
++		8080:  117, // common alternative HTTP port
++		8443:  118, // common alternative HTTPS port
++		8853:  102, // DoT backup port
++		8883:  119, // MQTT over TLS
++		9200:  129, // Elasticsearch
++		9953:  102, // DNS management port
++		11211: 132, // memcached
++		27017: 115, // MongoDB
 +	}
 +
 +	// port ranges
@@ -6419,9 +6942,9 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +		min, max uint16
 +		category int
 +	}{
-+		{0, 1023, 20},      // system ports
-+		{1024, 49151, 21},  // registered ports
-+		{49152, 65535, 22}, // dynamic ports
++		{0, 1023, 8},       // system ports
++		{1024, 49151, 9},   // registered ports
++		{49152, 65535, 10}, // dynamic ports
 +	}
 +
 +	apiServicePorts = map[uint16]bool{
@@ -6433,8 +6956,8 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +
 +	dnsServicePorts = map[uint16]bool{
 +		53:   true, // classic DNS (UDP/TCP)
-+		853:  true, // DNS over TLS (DoT)
-+		784:  true, // DNS over QUIC (DoQ), the IANA assigned port
++		853:  true, // DNS over TLS (DoT) / QUIC (DoQ)
++		784:  true, // DNS over QUIC (early draft port)
 +		5053: true, // backup port of some DNS services
 +		5353: true, // mDNS (Multicast DNS)
 +		5355: true, // LLMNR (Link-Local Multicast Name Resolution)
@@ -6518,11 +7041,12 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +		"bilibili", "twitch", "hbo", "disney", "vimeo", "vod", "stream", "video",
 +		"media", "movie", "tv", "music", "audio", "cdm", "cdn", "content",
 +		"live", "livestream", "replay", "shorts", "kuaishou", "huya", "douyu",
++		"googlevideo", "ytimg", "primevideo", "hotstar", "wetv", "kugou", "acfun",
 +	}
 +
 +	gameKeywords = []string{
-+		"game", "play", "steam", "xbox", "playstation", "nintendo", "ea.com", "riot",
-+		"blizzard", "ubisoft", "epic", "cod", "minecraft", "roblox", "pubg", "fortnite",
++		"game", "play.google", "steam", "xbox", "playstation", "nintendo", "ea.com", "riotcdn",
++		"blizzard", "ubisoft", "epic", "cod.", "callofduty", "minecraft", "roblox", "pubg", "fortnite",
 +		"valorant", "riotgames", "leagueoflegends", "warzone",
 +		"apex", "apexlegends", "overwatch", "dota", "csgo",
 +		"counterstrike", "hearthstone", "battlenet", "battle.net",
@@ -6534,14 +7058,14 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +		"discord", "slack", "telegram", "signal", "whatsapp", "skype", "wechat",
 +		"voicechat", "videocall", "rtc", "webrtc", "jitsi",
 +		"mumble", "ventrilo", "teamspeak", "discord.gg",
-+		"meeting", "conference", "huddle", "gather",
-+		"qq", "msn", "icq", "line", "kakao", "viber", "imo", "element",
++		"meeting", "huddle", "gather",
++		"qq", "msn", "icq", "line.me", "linecorp", "line-apps", "line-scdn", "kakao", "viber", "imo.im", "element.io",
 +	}
 +
 +	apiServiceKeywords = []string{
 +		"api.cloudflare.com", "api.amazonaws.com", "api.azure.com", "googleapis.com",
 +		"api.fastly.com", "api.maxcdn.com", "api.keycdn.com", "api.bunnycdn.com",
-+		"api.digitalocean.com", "api.vultr.com", "api.linode.com", "api.hetzner.com",
++		"api.digitalocean.com", "api.vultr.com", "api.linode.com", "api.hetzner.com", "amazonaws.com",
 +
 +		"api.vercel.com", "api.netlify.com", "api.heroku.com", "api.railway.app",
 +		"api.render.com", "api.fly.io", "registry.npmjs.org", "pypi.org",
@@ -6568,7 +7092,7 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +		"one.one.one.one", "family.cloudflare-dns.com", "security.cloudflare-dns.com",
 +		"dns.quad9.net", "dns9.quad9.net", "dns10.quad9.net", "dns11.quad9.net",
 +		"doh.opendns.com", "doh.familyshield.opendns.com", "doh.sandbox.opendns.com",
-+		"mozilla.cloudflare-dns.com", "firefox.dns.nextdns.io",
++		"mozilla.cloudflare-dns.com", "firefox.dns.nextdns.io", "nextdns.io",
 +		"dns.adguard.com", "dns-family.adguard.com", "dns-unfiltered.adguard.com",
 +		"doh.cleanbrowsing.org", "family-filter-dns.cleanbrowsing.org",
 +
@@ -6590,40 +7114,50 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +		category int
 +	}{
 +		// IPv4 private ranges
-+		{netip.MustParsePrefix("10.0.0.0/8"), 1},
-+		{netip.MustParsePrefix("172.16.0.0/12"), 1},
-+		{netip.MustParsePrefix("192.168.0.0/16"), 1},
-+		{netip.MustParsePrefix("127.0.0.0/8"), 2},
-+		{netip.MustParsePrefix("169.254.0.0/16"), 3},
++		{netip.MustParsePrefix("10.0.0.0/8"), 10},
++		{netip.MustParsePrefix("172.16.0.0/12"), 10},
++		{netip.MustParsePrefix("192.168.0.0/16"), 10},
++		{netip.MustParsePrefix("127.0.0.0/8"), 11},
++		{netip.MustParsePrefix("169.254.0.0/16"), 12},
++
++		// IPv4 special ranges
++		{netip.MustParsePrefix("100.64.0.0/10"), 13},
++		{netip.MustParsePrefix("192.0.2.0/24"), 13},
++		{netip.MustParsePrefix("198.51.100.0/24"), 13},
++		{netip.MustParsePrefix("203.0.113.0/24"), 13},
++		{netip.MustParsePrefix("240.0.0.0/4"), 13},
 +
 +		// IPv6 private ranges
-+		{netip.MustParsePrefix("::1/128"), 2},
-+		{netip.MustParsePrefix("fe80::/10"), 3},
-+		{netip.MustParsePrefix("fc00::/7"), 1},
-+		{netip.MustParsePrefix("2001:db8::/32"), 4},
++		{netip.MustParsePrefix("::1/128"), 11},
++		{netip.MustParsePrefix("fe80::/10"), 12},
++		{netip.MustParsePrefix("fc00::/7"), 10},
++		{netip.MustParsePrefix("2001:db8::/32"), 13},
++
++		// IPv6 special ranges
++		{netip.MustParsePrefix("ff00::/8"), 13},
 +	}
 +)
 +
-+var allDomainKeywords []domainKeywordEntry
++var allDomainKeywords []keywordEntry
 +
 +func init() {
 +	total := len(dnsServiceKeywords) + len(apiServiceKeywords) + len(gameKeywords) +
 +		len(communicationKeywords) + len(streamingKeywords)
-+	allDomainKeywords = make([]domainKeywordEntry, 0, total)
++	allDomainKeywords = make([]keywordEntry, 0, total)
 +	for _, kw := range dnsServiceKeywords {
-+		allDomainKeywords = append(allDomainKeywords, domainKeywordEntry{kw, 6})
++		allDomainKeywords = append(allDomainKeywords, keywordEntry{kw, 104})
 +	}
 +	for _, kw := range apiServiceKeywords {
-+		allDomainKeywords = append(allDomainKeywords, domainKeywordEntry{kw, 5})
++		allDomainKeywords = append(allDomainKeywords, keywordEntry{kw, 103})
 +	}
 +	for _, kw := range gameKeywords {
-+		allDomainKeywords = append(allDomainKeywords, domainKeywordEntry{kw, 3})
++		allDomainKeywords = append(allDomainKeywords, keywordEntry{kw, 101})
 +	}
 +	for _, kw := range communicationKeywords {
-+		allDomainKeywords = append(allDomainKeywords, domainKeywordEntry{kw, 4})
++		allDomainKeywords = append(allDomainKeywords, keywordEntry{kw, 102})
 +	}
 +	for _, kw := range streamingKeywords {
-+		allDomainKeywords = append(allDomainKeywords, domainKeywordEntry{kw, 2})
++		allDomainKeywords = append(allDomainKeywords, keywordEntry{kw, 100})
 +	}
 +}
 +
@@ -6682,6 +7216,11 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +	model, err := leaves.LGEnsembleFromFile(path, false)
 +	if err != nil {
 +		return fmt.Errorf("failed to load binary model: %v", err)
++	}
++
++	// a model with more slots still predicts, the missing tail is filled with zeros
++	if n := model.NFeatures(); n > MaxFeatureSize {
++		log.Warnln("[Smart] Model needs [%d] features, this build computes [%d], the missing slots are filled with zeros", n, MaxFeatureSize)
 +	}
 +
 +	transforms, err := LoadTransformsFromModel(path)
@@ -6790,6 +7329,11 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +	features := prepareFeatures(input)
 +	if len(features) == 0 {
 +		return smart.CalculateWeight(input, priorityFactor)
++	}
++
++	// a newer model may use uncomputed slots, the tail is filled up to the capped size
++	if n := model.NFeatures(); n > len(features) && n <= maxModelFeatureSlots {
++		features = append(features, make([]float64, n-len(features))...)
 +	}
 +
 +	if transforms != nil && !transforms.IsCompatible() {
@@ -6918,6 +7462,10 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +	}
 +	features = append(features, geoHash)
 +
++	// the trailing slots are ignored by a model trained before they existed
++	features = append(features, float64(extractExitRegionFeature(input.ExitRegion)))
++	features = append(features, hashStringToFloat(input.ExitASN, 500))
++
 +	// the model was trained with MaxFeatureSize slots
 +	if len(features) > MaxFeatureSize {
 +		features = features[:MaxFeatureSize]
@@ -6933,9 +7481,10 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +
 +	asnInfo = strings.ToLower(asnInfo)
 +
-+	for keyword, category := range asnCategories {
-+		if strings.Contains(asnInfo, keyword) {
-+			return category
++	// the entry order decides the priority, list a longer keyword before its substrings
++	for _, entry := range asnCategories {
++		if strings.Contains(asnInfo, entry.keyword) {
++			return entry.category
 +		}
 +	}
 +
@@ -6948,18 +7497,19 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +		j++
 +	}
 +	if j > 0 {
-+		if asnNum, err := strconv.Atoi(s[:j]); err == nil {
++		// ParseUint keeps 32 bit builds from erroring on the upper ASN range
++		if asnNum, err := strconv.ParseUint(s[:j], 10, 64); err == nil {
 +			switch {
 +			case asnNum < 1000:
-+				return 50 // early allocation era
++				return 1 // early allocation era
 +			case asnNum < 10000:
-+				return 51 // older allocation era
++				return 2 // older allocation era
 +			case asnNum < 50000:
-+				return 52 // mid allocation era
++				return 3 // mid allocation era
 +			case asnNum < 150000:
-+				return 53 // newer allocation era
++				return 4 // newer allocation era
 +			default:
-+				return 54 // latest allocation era
++				return 5 // latest allocation era
 +			}
 +		}
 +	}
@@ -6986,12 +7536,32 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +		for _, r := range countryCode {
 +			hashValue = hashValue*31 + int(r)
 +		}
-+		return 30 + (hashValue % 20)
++		// unlisted regions hash into the reserved 1-99 block
++		return 1 + (hashValue % 20)
 +	}
 +
 +	return 0
 +}
 +
++// extractExitRegionFeature maps the landing region, an empty answer stays 0 (unknown).
++func extractExitRegionFeature(region string) int {
++	if region == "" {
++		return 0
++	}
++	region = strings.ToUpper(region)
++	if category, exists := geoCategories[region]; exists {
++		return category
++	}
++	hashValue := 0
++	for _, r := range region {
++		hashValue = hashValue*31 + int(r)
++	}
++	// unlisted regions hash into the reserved 1-99 block
++	return 1 + (hashValue % 20)
++}
++
++// extractDomainTypeFeature returns the domain feature code of the model: 1 IP literal,
++// 2-3 generic domains, 100-104 service kinds, 110-115 TLD kinds.
 +func extractDomainTypeFeature(host string) int {
 +	if host == "" {
 +		return 0
@@ -7014,24 +7584,24 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +	}
 +
 +	if strings.HasSuffix(host, ".gov") {
-+		return 14
++		return 114
 +	} else if strings.HasSuffix(host, ".edu") {
-+		return 15
++		return 115
 +	} else if strings.HasSuffix(host, ".cn") {
-+		return 10
++		return 110
 +	} else if strings.HasSuffix(host, ".com") {
-+		return 11
++		return 111
 +	} else if strings.HasSuffix(host, ".net") {
-+		return 12
++		return 112
 +	} else if strings.HasSuffix(host, ".org") {
-+		return 13
++		return 113
 +	}
 +
 +	if domainRegex.MatchString(host) {
 +		if strings.Count(host, ".") >= 2 {
-+			return 30
++			return 2
 +		}
-+		return 31
++		return 3
 +	}
 +
 +	return 0
@@ -7049,34 +7619,35 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +
 +	for _, network := range privateIPNetworks {
 +		if network.prefix.Contains(addr) {
-+			return network.category + 100 // 101-104 are the private IP kinds
++			return network.category
 +		}
 +	}
 +
 +	if addr.Is4() {
-+		return 110 // public IPv4
++		return 14 // public IPv4
 +	} else {
-+		return 111 // public IPv6
++		return 15 // public IPv6
 +	}
 +}
 +
-+// extractPortFeature returns the port feature code of the model: 30 game, 31 communication,
-+// 32-34 game or communication ranges, 35 API, 36 DNS, otherwise the well known port category.
++// extractPortFeature returns the port feature code of the model: 1 game, 2 communication,
++// 3-5 game or communication ranges, 6 API, 7 DNS, 8-10 port ranges, otherwise 100+ enum;
++// the special tables win over the enum in the order DNS, API, game, communication.
 +func extractPortFeature(port uint16) int {
 +	if _, isDNS := dnsServicePorts[port]; isDNS {
-+		return 36
++		return 7
 +	}
 +
 +	if _, isAPI := apiServicePorts[port]; isAPI {
-+		return 35
++		return 6
 +	}
 +
 +	if _, isGame := gameSpecificPorts[port]; isGame {
-+		return 30
++		return 1
 +	}
 +
 +	if _, isComm := communicationPorts[port]; isComm {
-+		return 31
++		return 2
 +	}
 +
 +	if category, exists := wellKnownPorts[port]; exists {
@@ -7087,11 +7658,11 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +		if port >= r.min && port <= r.max {
 +			switch r.category {
 +			case 1:
-+				return 32
++				return 3
 +			case 2:
-+				return 33
++				return 4
 +			case 3:
-+				return 34
++				return 5
 +			}
 +		}
 +	}
@@ -7108,21 +7679,21 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +// deriveConnectionType returns the connection type code of the model: 1 web, 2 streaming,
 +// 3 realtime, 4 database, 5 file transfer, 6 API, 7 DNS.
 +func deriveConnectionType(port uint16, addressFeature, portFeature int) int {
-+	if addressFeature == 6 || portFeature == 36 {
++	if addressFeature == 104 || portFeature == 7 {
 +		return 7
 +	}
 +	if _, isDNS := dnsServicePorts[port]; isDNS {
 +		return 7
 +	}
 +
-+	if addressFeature == 5 || portFeature == 35 {
++	if addressFeature == 103 || portFeature == 6 {
 +		return 6
 +	}
 +	if _, isAPI := apiServicePorts[port]; isAPI {
 +		return 6
 +	}
 +
-+	if addressFeature == 3 || addressFeature == 4 {
++	if addressFeature == 101 || addressFeature == 102 {
 +		return 3
 +	}
 +	if _, isGamePort := gameSpecificPorts[port]; isGamePort {
@@ -7132,15 +7703,15 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +		return 3
 +	}
 +
-+	if addressFeature == 2 {
++	if addressFeature == 100 {
 +		return 2
 +	}
 +
-+	if port == 80 || port == 443 || portFeature == 4 || portFeature == 7 {
++	if port == 80 || port == 443 || portFeature == 103 || portFeature == 106 {
 +		return 1
 +	}
 +
-+	if portFeature == 13 || portFeature == 14 || portFeature == 15 || portFeature == 16 {
++	if portFeature == 112 || portFeature == 113 || portFeature == 114 || portFeature == 115 {
 +		return 4
 +	}
 +
@@ -7205,15 +7776,17 @@ index 0000000000000000000000000000000000000000..bc296c33827c655a921ea35206deb441
 +
 +	input.DestPort = metadata.DstPort
 +	input.DestGeoIP = metadata.DstGeoIP
++	input.ExitRegion = metadata.ExitGeoIP
++	input.ExitASN = metadata.ExitIPASN
 +
 +	return input
 +}
 diff --git a/component/smart/lightgbm/transform.go b/component/smart/lightgbm/transform.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..413b5398b5145540f0d22cfb5f701031a15441a2
+index 0000000000000000000000000000000000000000..8be7c566f6412ede3d4e1f5c4124a8a22fca3c13
 --- /dev/null
 +++ b/component/smart/lightgbm/transform.go
-@@ -0,0 +1,605 @@
+@@ -0,0 +1,550 @@
 +package lightgbm
 +
 +import (
@@ -7225,67 +7798,10 @@ index 0000000000000000000000000000000000000000..413b5398b5145540f0d22cfb5f701031
 +	"github.com/metacubex/mihomo/log"
 +)
 +
-+// parseTransformsContent parses the [transforms] section from the model file.
-+// The expected format is as follows:
-+//
-+// [transforms]
-+// [order]
-+// 0=success
-+// 1=failure
-+// 2=connect_time
-+// 3=latency
-+// 4=upload_mb
-+// 5=history_upload_mb
-+// 6=maxuploadrate_kb
-+// 7=history_maxuploadrate_kb
-+// 8=download_mb
-+// 9=history_download_mb
-+// 10=maxdownloadrate_kb
-+// 11=history_maxdownloadrate_kb
-+// 12=duration_minutes
-+// 13=history_duration_minutes
-+// 14=last_used_seconds
-+// 15=is_udp
-+// 16=is_tcp
-+// 17=loss_rate
-+// 18=cumul_loss_rate
-+// 19=asn_feature
-+// 20=country_feature
-+// 21=address_feature
-+// 22=port_feature
-+// 23=traffic_ratio
-+// 24=traffic_density
-+// 25=connection_type_feature
-+// 26=asn_hash
-+// 27=host_hash
-+// 28=ip_hash
-+// 29=geoip_hash
-+// ... (index=feature_name, one per line, up to MaxFeatureSize)
-+// [/order]
-+//
-+// [definitions]
-+// std_type=StandardScaler
-+// std_features=2,3,4,5,6,7,8,9,10,11,12,13,23,24
-+// std_mean=...comma separated float values...
-+// std_scale=...comma separated float values...
-+//
-+// robust_type=RobustScaler
-+// robust_features=0,1
-+// robust_center=...comma separated float values...
-+// robust_scale=...comma separated float values...
-+// [/definitions]
-+//
-+// untransformed_features=14:last_used_seconds,15:is_udp,16:is_tcp,17:loss_rate,18:cumul_loss_rate,19:asn_feature,20:country_feature,21:address_feature,22:port_feature,25:connection_type_feature,26:asn_hash,27:host_hash,28:ip_hash,29:geoip_hash
-+// transform=true
-+// [/transforms]
-+//
-+// - Each transform block (e.g. std_*, robust_*) must include:
-+//   - *_type: the transform type, e.g. "StandardScaler" or "RobustScaler"
-+//   - *_features: comma-separated feature indices (int, based on order)
-+//   - other parameters: comma-separated float values, length must match features
-+// - All indices and parameter arrays must match the feature order and count.
-+// - Only features listed in *_features are transformed; others remain unchanged.
-+// - The Go parser expects strict adherence to this structure for correct parsing.
++// parseTransformsContent parses the [transforms] section: [order] maps index=feature_name,
++// [definitions] holds scalers keyed "id_param" (std_type, std_features, std_mean, ...);
++// the top level carries untransformed_features and transform. Indices and parameter
++// arrays must match the feature order and count.
 +
 +// defaultFeatureOrder is the slot order the shipped models are trained with; every caller
 +// only reads it, a new slot must be appended at the end.
@@ -7320,6 +7836,8 @@ index 0000000000000000000000000000000000000000..413b5398b5145540f0d22cfb5f701031
 +	27: "host_hash",
 +	28: "ip_hash",
 +	29: "geoip_hash",
++	30: "exit_region",
++	31: "exit_asn_hash",
 +}
 +
 +type TransformType string
@@ -7821,10 +8339,10 @@ index 0000000000000000000000000000000000000000..413b5398b5145540f0d22cfb5f701031
 +}
 diff --git a/component/smart/response.go b/component/smart/response.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f82698cf8
+index 0000000000000000000000000000000000000000..80bdc2ae35cf875d0ded5ea3aa4790930fb25b4a
 --- /dev/null
 +++ b/component/smart/response.go
-@@ -0,0 +1,461 @@
+@@ -0,0 +1,606 @@
 +package smart
 +
 +import (
@@ -7839,6 +8357,7 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +	"time"
 +
 +	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/log"
 +
 +	"github.com/metacubex/http"
 +)
@@ -7854,8 +8373,6 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +	probeGlobalBurst     = 10
 +	probeMaxInflight     = 4
 +
-+	probeHostBlindThreshold = 6
-+
 +	probeMaxEntries = 4096
 +	probePath       = "/robots.txt"
 +
@@ -7866,9 +8383,18 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +
 +	probeMaxBlockTTL = 30 * time.Minute
 +
-+	ReasonForbidden   = "forbidden"
-+	ReasonOriginError = "origin error"
-+	ReasonEdgeError   = "edge error"
++	ReasonForbidden     = "forbidden"
++	ReasonOriginError   = "origin error"
++	ReasonEdgeError     = "edge error"
++	ReasonCertAuthority = "unknown certificate authority"
++	ReasonCertHostname  = "certificate hostname mismatch"
++)
++
++// A host that several independent nodes refuse, and that no node has answered since its
++// last success, is held until the ttl; one probation refusal then arms the next hold.
++const (
++	hostBackoffMinNodes   = 3
++	hostBackoffMaxEntries = 4096
 +)
 +
 +// The intervals are variables so a test can shrink them instead of waiting them out.
@@ -7881,7 +8407,10 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +	probeMinIntervalPerNode      = 120 * time.Second
 +	probeMinIntervalAfterFailure = 30 * time.Second
 +	probeRecentFailureWindow     = 10 * time.Minute
-+	probeHostBlindWindow         = 30 * time.Minute
++	probeTrimInterval            = time.Minute
++
++	hostBackoffWindow = time.Hour
++	hostBackoffTTL    = 30 * time.Minute
 +)
 +
 +var (
@@ -7892,6 +8421,8 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +	}
 +
 +	probeInflight = make(chan struct{}, probeMaxInflight)
++
++	hostBackoffTable hostBackoff
 +)
 +
 +type VerdictAction uint8
@@ -7908,6 +8439,7 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +		TTL            time.Duration
 +		Reason         string
 +		ControlSuccess bool
++		Unproven       bool
 +	}
 +
 +	ProbeResult struct {
@@ -7921,8 +8453,10 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +	}
 +
 +	probeNodeState struct {
-+		lastProbe   time.Time
-+		lastFailure time.Time
++		lastProbe     time.Time
++		lastFailure   time.Time
++		pendingSince  time.Time
++		unprovenSince time.Time
 +	}
 +
 +	probeNodeKey struct {
@@ -7935,18 +8469,29 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +		count int
 +	}
 +
-+	probeHostState struct {
-+		windowStart time.Time
-+		answers     int
-+		refusals    int
-+		blindUntil  time.Time
++	ProbeThrottle struct {
++		mu       sync.Mutex
++		nodes    map[probeNodeKey]*probeNodeState
++		targets  map[string]*probeWindow
++		lastTrim time.Time
 +	}
 +
-+	ProbeThrottle struct {
-+		mu      sync.Mutex
-+		nodes   map[probeNodeKey]*probeNodeState
-+		targets map[string]*probeWindow
-+		hosts   map[string]*probeHostState
++	hostBackoffKey struct {
++		config string
++		group  string
++		host   string
++	}
++
++	hostBackoffState struct {
++		nodes     map[string]int64
++		updated   int64
++		until     int64
++		probation bool
++	}
++
++	hostBackoff struct {
++		mu      sync.RWMutex
++		entries map[hostBackoffKey]hostBackoffState
 +	}
 +)
 +
@@ -8008,16 +8553,16 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +	}
 +	var hostnameErr x509.HostnameError
 +	if errors.As(err, &hostnameErr) {
-+		return record(probeDefaultBlockTTL, "certificate hostname mismatch")
++		return record(probeDefaultBlockTTL, ReasonCertHostname)
 +	}
 +	var authorityErr x509.UnknownAuthorityError
 +	if errors.As(err, &authorityErr) {
-+		return record(probeDefaultBlockTTL, "unknown certificate authority")
++		return record(probeDefaultBlockTTL, ReasonCertAuthority)
 +	}
 +	if isTimeout(err) {
 +		return record(probeTransientBlockTTL, "probe timed out")
 +	}
-+	return ignore("probe failed")
++	return unproven("probe failed")
 +}
 +
 +// A cancelled probe means the group is shutting down, not that the node timed out.
@@ -8094,6 +8639,10 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +	return Verdict{Action: VerdictIgnore, Reason: reason}
 +}
 +
++func unproven(reason string) Verdict {
++	return Verdict{Action: VerdictIgnore, Reason: reason, Unproven: true}
++}
++
 +func reachable(reason string, controlSuccess bool) Verdict {
 +	return Verdict{Action: VerdictReachable, Reason: reason, ControlSuccess: controlSuccess}
 +}
@@ -8112,8 +8661,21 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +	if t.nodes == nil {
 +		t.nodes = make(map[probeNodeKey]*probeNodeState)
 +		t.targets = make(map[string]*probeWindow)
-+		t.hosts = make(map[string]*probeHostState)
 +	}
++}
++
++func (t *ProbeThrottle) nodeState(target, node string) *probeNodeState {
++	return t.nodes[probeNodeKey{target: target, node: node}]
++}
++
++func (t *ProbeThrottle) ensureNodeState(target, node string, now time.Time) *probeNodeState {
++	key := probeNodeKey{target: target, node: node}
++	state := t.nodes[key]
++	if state == nil {
++		state = &probeNodeState{lastProbe: now}
++		t.nodes[key] = state
++	}
++	return state
 +}
 +
 +func (t *ProbeThrottle) AllowNode(target, node string, now time.Time) bool {
@@ -8121,7 +8683,11 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +	defer t.mu.Unlock()
 +
 +	t.ensureMaps()
-+	t.trim(now)
++	if (len(t.nodes) > probeMaxEntries || len(t.targets) > probeMaxEntries) &&
++		(t.lastTrim.IsZero() || now.Sub(t.lastTrim) >= probeTrimInterval) {
++		t.trim(now)
++		t.lastTrim = now
++	}
 +
 +	key := probeNodeKey{target: target, node: node}
 +	state := t.nodes[key]
@@ -8153,54 +8719,101 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +	return true
 +}
 +
-+// A host that refuses every node without ever answering says nothing about a single node, so its
-+// records are dropped while it stays blind; this keeps probe hostile hosts from draining the pool.
-+func (t *ProbeThrottle) AllowHostRecord(host string, verdict Verdict, now time.Time) bool {
-+	t.mu.Lock()
-+	defer t.mu.Unlock()
-+
-+	t.ensureMaps()
-+	state := t.hosts[host]
-+	if state == nil {
-+		state = &probeHostState{windowStart: now}
-+		t.hosts[host] = state
-+	}
-+	if now.Sub(state.windowStart) >= probeHostBlindWindow {
-+		state.windowStart = now
-+		state.answers = 0
-+		state.refusals = 0
-+	}
-+
-+	if verdict.Action == VerdictReachable {
-+		state.answers++
-+		state.refusals = 0
-+		state.blindUntil = time.Time{}
++// hostRefusalEvidence: refusals that blame the host itself, not a per node quota.
++func hostRefusalEvidence(reason string) bool {
++	switch reason {
++	case ReasonRegionUnavailable, ReasonForbidden, ReasonOriginError, ReasonCertAuthority, ReasonCertHostname:
 +		return true
 +	}
-+	if now.Before(state.blindUntil) {
++	return false
++}
++
++// NoteHostRefusal records a refusal, true while the host is held back.
++func NoteHostRefusal(config, group, host, node, reason string) bool {
++	if host == "" || node == "" || !hostRefusalEvidence(reason) {
 +		return false
 +	}
-+	if state.answers > 0 {
++	now := time.Now()
++	nowNano := now.UnixNano()
++
++	hostBackoffTable.mu.Lock()
++	defer hostBackoffTable.mu.Unlock()
++
++	if hostBackoffTable.entries == nil {
++		hostBackoffTable.entries = make(map[hostBackoffKey]hostBackoffState)
++	}
++	key := hostBackoffKey{config: config, group: group, host: host}
++	state, exists := hostBackoffTable.entries[key]
++	if state.until > nowNano {
++		log.Debugln("[Smart] Host backoff [%s] node [%s] dropped (%s)", host, node, reason)
 +		return true
 +	}
-+	state.refusals++
-+	if state.refusals >= probeHostBlindThreshold {
-+		state.blindUntil = now.Add(probeHostBlindWindow)
++	if state.probation {
++		state.probation = false
++		state.nodes = nil
++		state.updated = nowNano
++		state.until = now.Add(hostBackoffTTL).UnixNano()
++		hostBackoffTable.entries[key] = state
++		log.Debugln("[Smart] Host backoff [%s] node [%s] re-armed (%s)", host, node, reason)
++		return true
++	}
++	if !exists && len(hostBackoffTable.entries) >= hostBackoffMaxEntries {
++		hostBackoffTable.pruneLocked(nowNano)
++		if len(hostBackoffTable.entries) >= hostBackoffMaxEntries {
++			return false
++		}
++	}
++	if state.nodes == nil {
++		state.nodes = make(map[string]int64)
++	}
++	state.nodes[node] = nowNano
++	for seen, at := range state.nodes {
++		if nowNano-at > int64(hostBackoffWindow) {
++			delete(state.nodes, seen)
++		}
++	}
++	state.updated = nowNano
++	if len(state.nodes) < hostBackoffMinNodes {
++		hostBackoffTable.entries[key] = state
 +		return false
 +	}
++	state.nodes = nil
++	state.probation = true
++	state.until = now.Add(hostBackoffTTL).UnixNano()
++	hostBackoffTable.entries[key] = state
++	log.Debugln("[Smart] Host backoff [%s] node [%s] raised (%s)", host, node, reason)
 +	return true
 +}
 +
-+// Blind reports a host that refuses every node without ever answering: probing it further
-+// only spends the probe budget, so the caller may wait for the blind window to pass.
-+func (t *ProbeThrottle) Blind(host string, now time.Time) bool {
++// HostBackedOff reports a held host; an answer drops its evidence and the ttl expires it.
++func HostBackedOff(config, group, host string) bool {
 +	if host == "" {
 +		return false
 +	}
-+	t.mu.Lock()
-+	defer t.mu.Unlock()
-+	state := t.hosts[host]
-+	return state != nil && now.Before(state.blindUntil)
++	nowNano := time.Now().UnixNano()
++	hostBackoffTable.mu.RLock()
++	defer hostBackoffTable.mu.RUnlock()
++	return hostBackoffTable.entries[hostBackoffKey{config: config, group: group, host: host}].until > nowNano
++}
++
++// NoteHostAnswer drops the evidence once a node serves the host, failures start fresh.
++func NoteHostAnswer(config, group, host string) {
++	if host == "" {
++		return
++	}
++	hostBackoffTable.mu.Lock()
++	defer hostBackoffTable.mu.Unlock()
++	if hostBackoffTable.entries != nil {
++		delete(hostBackoffTable.entries, hostBackoffKey{config: config, group: group, host: host})
++	}
++}
++
++func (t *hostBackoff) pruneLocked(nowNano int64) {
++	for key, state := range t.entries {
++		if nowNano-state.updated > int64(hostBackoffWindow) {
++			delete(t.entries, key)
++		}
++	}
 +}
 +
 +func (t *ProbeThrottle) NoteFailure(target, node string, now time.Time) {
@@ -8218,6 +8831,63 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +	state.lastFailure = now
 +}
 +
++func (t *ProbeThrottle) MarkPending(target, node string, now time.Time) {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++
++	t.ensureMaps()
++
++	state := t.ensureNodeState(target, node, now)
++	state.pendingSince = now
++	state.unprovenSince = time.Time{}
++}
++
++func (t *ProbeThrottle) ClearPending(target, node string) {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++
++	if state := t.nodeState(target, node); state != nil {
++		state.pendingSince = time.Time{}
++	}
++}
++
++func (t *ProbeThrottle) PendingFor(target, node string, now time.Time) time.Duration {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++
++	state := t.nodeState(target, node)
++	if state == nil || state.pendingSince.IsZero() {
++		return 0
++	}
++	return now.Sub(state.pendingSince)
++}
++
++func (t *ProbeThrottle) MarkUnproven(target, node string, now time.Time) {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++
++	t.ensureMaps()
++
++	t.ensureNodeState(target, node, now).unprovenSince = now
++}
++
++func (t *ProbeThrottle) ClearUnproven(target, node string) {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++
++	if state := t.nodeState(target, node); state != nil {
++		state.unprovenSince = time.Time{}
++	}
++}
++
++func (t *ProbeThrottle) Unproven(target, node string) bool {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++
++	state := t.nodeState(target, node)
++	return state != nil && !state.unprovenSince.IsZero()
++}
++
 +func (t *ProbeThrottle) trim(now time.Time) {
 +	if len(t.nodes) > probeMaxEntries {
 +		for key, state := range t.nodes {
@@ -8230,13 +8900,6 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +		for target, window := range t.targets {
 +			if now.Sub(window.start) >= time.Minute {
 +				delete(t.targets, target)
-+			}
-+		}
-+	}
-+	if len(t.hosts) > probeMaxEntries {
-+		for host, state := range t.hosts {
-+			if now.Sub(state.windowStart) >= probeHostBlindWindow {
-+				delete(t.hosts, host)
 +			}
 +		}
 +	}
@@ -8288,10 +8951,10 @@ index 0000000000000000000000000000000000000000..65f1cdd77e3f23d9d5098d722fa5ad6f
 +}
 diff --git a/component/smart/stats.go b/component/smart/stats.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303f3ba4a40
+index 0000000000000000000000000000000000000000..fad4dc83072d48a641f23e98edbd5ee694348744
 --- /dev/null
 +++ b/component/smart/stats.go
-@@ -0,0 +1,1985 @@
+@@ -0,0 +1,2032 @@
 +package smart
 +
 +import (
@@ -8323,7 +8986,7 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +	hostStatusRetryAfter     = 4 * time.Hour
 +	hostStatusViewTTLSeconds = 30
 +
-+	// zero-traffic and loss need this many strikes within the window
++	// packet loss needs this many strikes within the window
 +	hostStrikeWindow = 5 * time.Minute
 +	hostStrikeLimit  = 2
 +
@@ -8394,9 +9057,10 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +}
 +
 +type CodeNodeSet struct {
-+	Nodes      map[string]int64  `json:"nodes"`
-+	FailCounts map[string]int    `json:"fail_counts,omitempty"`
-+	NodeHosts  map[string]string `json:"node_hosts,omitempty"`
++	Nodes         map[string]int64  `json:"nodes"`
++	FailCounts    map[string]int    `json:"fail_counts,omitempty"`
++	Confirmations map[string]int    `json:"confirmations,omitempty"` // code 5 ladder memory
++	NodeHosts     map[string]string `json:"node_hosts,omitempty"`
 +}
 +
 +type HostStatus struct {
@@ -8598,7 +9262,7 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +	return r.uploadTotal.Load()
 +}
 +
-+// AddUploadTotal caps the counter at 1PB (1024^5 bytes), a wrapped value would poison the model input.
++// AddUploadTotal caps the counter; a wrapped value would poison the model input.
 +func (r *AtomicStatsRecord) AddUploadTotal(v float64) {
 +	current := r.uploadTotal.Load()
 +	const maxUpload = 1125899906842624.0
@@ -8613,7 +9277,7 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +	return r.downloadTotal.Load()
 +}
 +
-+// AddDownloadTotal caps the counter at 1PB (1024^5 bytes).
++// AddDownloadTotal caps the counter like AddUploadTotal.
 +func (r *AtomicStatsRecord) AddDownloadTotal(v float64) {
 +	current := r.downloadTotal.Load()
 +	const maxDownload = 1125899906842624.0
@@ -9109,7 +9773,7 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +				}
 +			}
 +
-+			// Clean up prefetch results if node stats expired, otherwise they may stay in prefetch results even if they are recovered.
++			// drop prefetch entries without stats, otherwise stale names stay listed.
 +			nodeExistsMap, ok := targetNodeExistsCache[item.target]
 +			if !ok {
 +				nodeExistsMap = make(map[string]bool)
@@ -9407,10 +10071,8 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +	return result, nil
 +}
 +
-+// Manual blocks (code 1) and the short lived answers of a site (code 2) must not block a target,
-+// otherwise a site that limits traffic would flip the target in and out of Blocked every few minutes.
 +func countsTowardBlock(code int) bool {
-+	return code != 1 && code != 2
++	return code != 1 && code != 2 && code != 6
 +}
 +
 +func buildHostStatusView(codes map[int]*CodeNodeSet, now int64, hostFailLimit int) (map[string]int, bool) {
@@ -9584,7 +10246,11 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +				}
 +			}
 +		}
-+		if len(codeSet.Nodes) == 0 && len(codeSet.FailCounts) == 0 {
++		// the ladder memory drops once the record stays quiet for the retry window
++		if code == 5 && now-hs.LastFailure > int64(hostStatusRetryAfter.Seconds()) {
++			codeSet.Confirmations = nil
++		}
++		if len(codeSet.Nodes) == 0 && len(codeSet.FailCounts) == 0 && len(codeSet.Confirmations) == 0 {
 +			delete(hs.Codes, code)
 +		}
 +	}
@@ -9604,7 +10270,7 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +		if codeSet.FailCounts != nil {
 +			if _, ok := codeSet.FailCounts[name]; ok {
 +				// a pending strike must not shadow the other codes
-+				if code != 4 && code != 6 {
++				if code != 5 {
 +					if currentCode == -1 || code < currentCode {
 +						currentCode = code
 +					}
@@ -9622,6 +10288,9 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +			if codeSet.FailCounts != nil {
 +				delete(codeSet.FailCounts, name)
 +			}
++			if codeSet.Confirmations != nil {
++				delete(codeSet.Confirmations, name)
++			}
 +			if codeSet.NodeHosts != nil {
 +				delete(codeSet.NodeHosts, name)
 +			}
@@ -9630,7 +10299,7 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +	}
 +
 +	// the first strike only counts, the second excludes the node
-+	if failure && (newCode == 4 || newCode == 6) {
++	if failure && newCode == 5 {
 +		count := 1
 +		if oldLastFailure != 0 && now-oldLastFailure <= int64(hostStrikeWindow.Seconds()) {
 +			if codeSet := hs.Codes[newCode]; codeSet != nil && codeSet.FailCounts != nil {
@@ -9682,9 +10351,11 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +			codeSet.Nodes = make(map[string]int64)
 +		}
 +
++		excluded := ""
 +		switch newCode {
 +		case 1:
 +			codeSet.Nodes[name] = 0 // TTL=0 means permanent
++			excluded = "permanent"
 +		case 2:
 +			if ttl > 0 {
 +				if codeSet.FailCounts == nil {
@@ -9709,6 +10380,7 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +				}
 +			}
 +			codeSet.Nodes[name] = time.Now().Add(blockTTL).Unix()
++			excluded = blockTTL.String()
 +			if codeSet.NodeHosts == nil {
 +				codeSet.NodeHosts = make(map[string]string)
 +			}
@@ -9724,21 +10396,49 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +				count++
 +			}
 +			if count >= maxFailedTimes {
-+				codeSet.Nodes[name] = time.Now().Add(HostFailureNodeTTL).Unix()
++				codeSet.Nodes[name] = time.Now().Add(blockTTL).Unix()
++				excluded = blockTTL.String()
 +				delete(codeSet.FailCounts, name)
 +				failedBlock = true
 +			} else {
 +				codeSet.FailCounts[name] = count
 +			}
-+		case 4, 6:
-+			// the repeated strike is confirmed
++		case 5:
 +			if codeSet.FailCounts != nil {
 +				delete(codeSet.FailCounts, name)
 +			}
++			// a repeated confirmation while the node is still excluded is a no-op
++			if entry, exists := codeSet.Nodes[name]; exists && entry > now {
++				break
++			}
++			// each confirmed pair climbs the exclusion ladder, the tier survives the block
++			if codeSet.Confirmations == nil {
++				codeSet.Confirmations = make(map[string]int)
++			}
++			confirmations := codeSet.Confirmations[name] + 1
++			codeSet.Confirmations[name] = confirmations
++			// an explicit ttl (the UDP fallback) keeps its fixed block
++			if ttl <= 0 {
++				switch {
++				case confirmations == 1:
++					blockTTL = 15 * time.Minute
++				case confirmations == 2:
++					blockTTL = time.Hour
++				case confirmations == 3:
++					blockTTL = 4 * time.Hour
++				default:
++					blockTTL = HostFailureNodeTTL
++				}
++			}
 +			codeSet.Nodes[name] = time.Now().Add(blockTTL).Unix()
++			excluded = blockTTL.String()
 +			failedBlock = true
 +		default:
 +			codeSet.Nodes[name] = time.Now().Add(blockTTL).Unix()
++			excluded = blockTTL.String()
++		}
++		if excluded != "" {
++			log.Debugln("[Smart] Node [%s] excluded for [%s] by code [%d] on target [%s]", name, excluded, newCode, wildcardTarget)
 +		}
 +	}
 +
@@ -9759,7 +10459,7 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +	}
 +
 +	for code, codeSet := range hs.Codes {
-+		if codeSet == nil || (len(codeSet.Nodes) == 0 && len(codeSet.FailCounts) == 0) {
++		if codeSet == nil || (len(codeSet.Nodes) == 0 && len(codeSet.FailCounts) == 0 && len(codeSet.Confirmations) == 0) {
 +			delete(hs.Codes, code)
 +		}
 +	}
@@ -9790,8 +10490,7 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +	return failedBlock
 +}
 +
-+// A code 2 entry that still runs longer than probeMaxBlockTTL was written by the version that
-+// blocked the answer of a site for a whole day, and is dropped here.
++// a code 2 entry beyond probeMaxBlockTTL is stale and dropped.
 +func (s *Store) CheckHostStatus(group, config string, hostFailLimit int) (map[string]map[string]string, error) {
 +	pathPrefix := FormatDBKey(KeyTypeHostFailures, config, group)
 +	dataMap, err := s.GetSubBytesByPath(pathPrefix)
@@ -9814,6 +10513,9 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +			continue
 +		}
 +		wildcardTarget := fullPath[lastSlash+1:]
++		if isNetScopedTarget(wildcardTarget) {
++			continue
++		}
 +
 +		cachePath := FormatDBKey(KeyTypeHostFailures, config, group, wildcardTarget)
 +		cacheHS, _ := hostStatusCache.GetOrStore(cachePath, func() *HostStatus { return &HostStatus{} })
@@ -10087,7 +10789,15 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +						}
 +					}
 +				}
-+				if len(codeSet.Nodes) == 0 && len(codeSet.FailCounts) == 0 {
++				if codeSet.Confirmations != nil {
++					for nodeName := range codeSet.Confirmations {
++						if _, toRemove := nodeSet[nodeName]; toRemove {
++							delete(codeSet.Confirmations, nodeName)
++							changed = true
++						}
++					}
++				}
++				if len(codeSet.Nodes) == 0 && len(codeSet.FailCounts) == 0 && len(codeSet.Confirmations) == 0 {
 +					delete(hs.Codes, code)
 +				}
 +			}
@@ -10279,10 +10989,10 @@ index 0000000000000000000000000000000000000000..1c3d574ee4c885cbb0c2e461206a2303
 +}
 diff --git a/component/smart/store.go b/component/smart/store.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..b3558065731462c4d1ff62c8056e72035cadd824
+index 0000000000000000000000000000000000000000..1e44e095a3d03e22d3c8552b614120c4fa59bb96
 --- /dev/null
 +++ b/component/smart/store.go
-@@ -0,0 +1,966 @@
+@@ -0,0 +1,980 @@
 +package smart
 +
 +import (
@@ -10318,6 +11028,9 @@ index 0000000000000000000000000000000000000000..b3558065731462c4d1ff62c8056e7203
 +
 +	WeightTypeTCP = "tcp"
 +	WeightTypeUDP = "udp"
++
++	// netScopePrefix marks a target key that stores a network scoped record.
++	netScopePrefix = "udp|"
 +)
 +
 +const (
@@ -10388,6 +11101,17 @@ index 0000000000000000000000000000000000000000..b3558065731462c4d1ff62c8056e7203
 +		}
 +	}
 +	return b.String()
++}
++
++func NetScopedTarget(target string, udp bool) string {
++	if !udp || target == "" {
++		return target
++	}
++	return netScopePrefix + target
++}
++
++func isNetScopedTarget(target string) bool {
++	return strings.HasPrefix(target, netScopePrefix)
 +}
 +
 +func formatOperationKey(op *StoreOperation) string {
@@ -11251,10 +11975,10 @@ index 0000000000000000000000000000000000000000..b3558065731462c4d1ff62c8056e7203
 +}
 diff --git a/component/smart/target.go b/component/smart/target.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..ab681aea00b68d45893b29b976e9a7658b4c202e
+index 0000000000000000000000000000000000000000..2b2c155420c13bda853623228f0d63fe2b9fd7fe
 --- /dev/null
 +++ b/component/smart/target.go
-@@ -0,0 +1,413 @@
+@@ -0,0 +1,414 @@
 +package smart
 +
 +import (
@@ -11264,7 +11988,7 @@ index 0000000000000000000000000000000000000000..ab681aea00b68d45893b29b976e9a765
 +)
 +
 +const (
-+	BroadRuleCount    = 10000
++	BroadRuleCount    = 10000 // entries a rule set or geosite needs to count as a collection
 +	BroadASNDiversity = 6
 +
 +	ASNClaimMinKinds  = 2   // networks a service must span to claim without repeats
@@ -11373,6 +12097,8 @@ index 0000000000000000000000000000000000000000..ab681aea00b68d45893b29b976e9a765
 +	}
 +
 +	name, _, _ := strings.Cut(strings.ToLower(payload), "@")
++	// a negated list is a collection whenever the list it negates is one
++	name = strings.TrimPrefix(name, "!")
 +
 +	switch kind {
 +	case "GeoIP", "SrcGeoIP":
@@ -11414,18 +12140,17 @@ index 0000000000000000000000000000000000000000..ab681aea00b68d45893b29b976e9a765
 +	return asnDiversity >= BroadASNDiversity
 +}
 +
-+// RuleSetPayload returns the provider payload of a rule set target, the name its
-+// entry count is looked up with.
-+func RuleSetPayload(target string) (string, bool) {
-+	kind, payload, ok := splitTarget(target)
++// RulePayload returns the rule type and payload whose entry count is looked up.
++func RulePayload(target string) (ruleType, payload string, ok bool) {
++	ruleType, payload, ok = splitTarget(target)
 +	if !ok {
-+		return "", false
++		return "", "", false
 +	}
-+	switch kind {
++	switch ruleType {
 +	case "RuleSet", "GeoSite":
-+		return payload, true
++		return ruleType, payload, true
 +	}
-+	return "", false
++	return "", "", false
 +}
 +
 +func splitTarget(target string) (kind, payload string, ok bool) {
@@ -11670,17 +12395,51 @@ index 0000000000000000000000000000000000000000..ab681aea00b68d45893b29b976e9a765
 +}
 diff --git a/component/smart/tcpstats/tcpstats.go b/component/smart/tcpstats/tcpstats.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..eafc42decf266605a946b9bf6eea74b718f96381
+index 0000000000000000000000000000000000000000..cb713d4f02c6bc33e7900852f95362bc1691fb07
 --- /dev/null
 +++ b/component/smart/tcpstats/tcpstats.go
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,162 @@
 +package tcpstats
++
++import (
++	"sync"
++	"time"
++)
++
++// The sampler holds increments until the window clears this floor.
++const (
++	lossWindowMinSegs   = 64
++	lossWindowMinBytes  = 64 << 10
++	lossSamplerCapacity = 4096
++)
++
++// The interval is a variable so a test can shrink it instead of waiting it out.
++var lossSamplerTTL = 30 * time.Minute
 +
 +type Stats struct {
 +	BytesSent    uint64
 +	BytesRetrans uint64
 +	SegsOut      uint64
 +	RetransSegs  uint64
++}
++
++type lossSamplerEntry struct {
++	segs         uint64 // counters at the last judged window
++	retransSegs  uint64
++	bytesSent    uint64
++	bytesRetrans uint64
++	updated      time.Time // the last read, so an idle socket expires
++}
++
++// LossSampler judges one socket's counters in windows: increments below the window floor
++// are held and accumulate, and a judged window is consumed exactly once.
++type LossSampler struct {
++	mu      sync.Mutex
++	entries map[uint64]lossSamplerEntry
++}
++
++func NewLossSampler() *LossSampler {
++	return &LossSampler{entries: make(map[uint64]lossSamplerEntry)}
 +}
 +
 +func (s *Stats) LossRate() float64 {
@@ -11719,6 +12478,88 @@ index 0000000000000000000000000000000000000000..eafc42decf266605a946b9bf6eea74b7
 +		return s.RetransSegs
 +	}
 +	return s.BytesRetrans
++}
++
++func (s *Stats) meetsLossWindowFloor() bool {
++	if s == nil {
++		return false
++	}
++	if s.SegsOut > 0 {
++		return s.SegsOut >= lossWindowMinSegs
++	}
++	return s.BytesSent >= lossWindowMinBytes
++}
++
++// Consume returns the judged window this read completes: the counters accumulated since
++// the last judged window, or nil while they are still below the floor or unchanged.
++func (s *LossSampler) Consume(source uint64, stats *Stats) *Stats {
++	if stats == nil {
++		return nil
++	}
++	if s == nil || source == 0 {
++		// no identity to accumulate on, judge the read itself once it clears the floor
++		if stats.meetsLossWindowFloor() {
++			return stats
++		}
++		return nil
++	}
++
++	now := time.Now()
++	s.mu.Lock()
++	defer s.mu.Unlock()
++
++	entry, known := s.entries[source]
++	if known && (stats.SegsOut < entry.segs ||
++		stats.RetransSegs < entry.retransSegs ||
++		stats.BytesSent < entry.bytesSent ||
++		stats.BytesRetrans < entry.bytesRetrans) {
++		known = false // counters going backwards mean the pointer now holds a fresh socket
++	}
++	if known && now.Sub(entry.updated) > lossSamplerTTL {
++		known = false // a long gap rereads the lifetime counters of a possibly new socket
++	}
++	if !known {
++		if len(s.entries) >= lossSamplerCapacity {
++			s.evictLocked(now)
++		}
++		entry = lossSamplerEntry{}
++	}
++	entry.updated = now
++
++	window := Stats{
++		SegsOut:      stats.SegsOut - entry.segs,
++		RetransSegs:  stats.RetransSegs - entry.retransSegs,
++		BytesSent:    stats.BytesSent - entry.bytesSent,
++		BytesRetrans: stats.BytesRetrans - entry.bytesRetrans,
++	}
++	if !window.meetsLossWindowFloor() {
++		s.entries[source] = entry // keep the anchor, the window keeps accumulating
++		return nil
++	}
++
++	s.entries[source] = lossSamplerEntry{
++		segs:         stats.SegsOut,
++		retransSegs:  stats.RetransSegs,
++		bytesSent:    stats.BytesSent,
++		bytesRetrans: stats.BytesRetrans,
++		updated:      now,
++	}
++	return &window
++}
++
++func (s *LossSampler) evictLocked(now time.Time) {
++	for key, entry := range s.entries {
++		if now.Sub(entry.updated) > lossSamplerTTL {
++			delete(s.entries, key)
++		}
++	}
++	// the map order is random; a dropped entry just restarts its window
++	for key := range s.entries {
++		if len(s.entries) < lossSamplerCapacity {
++			break
++		}
++		delete(s.entries, key)
++	}
 +}
 diff --git a/component/smart/tcpstats/tcpstats_darwin.go b/component/smart/tcpstats/tcpstats_darwin.go
 new file mode 100644
@@ -12070,10 +12911,10 @@ index 0000000000000000000000000000000000000000..3bff278938414265f4fc9ed391457f37
 +}
 diff --git a/component/smart/tcpstats/tcpstats_unwrap.go b/component/smart/tcpstats/tcpstats_unwrap.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..37090fa48ba7bd6d1367522d02fdc36f9f8ce953
+index 0000000000000000000000000000000000000000..83f811ab59b4d6342ceb4d5e2e315e38db12c613
 --- /dev/null
 +++ b/component/smart/tcpstats/tcpstats_unwrap.go
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,80 @@
 +package tcpstats
 +
 +import (
@@ -12088,15 +12929,24 @@ index 0000000000000000000000000000000000000000..37090fa48ba7bd6d1367522d02fdc36f
 +// GetTCPStats unwraps the connection wrappers until a socket is found; nil means the
 +// counters are not available for this connection.
 +func GetTCPStats(conn net.Conn) *Stats {
++	stats, _ := GetTCPStatsWithSource(conn)
++	return stats
++}
++
++// GetTCPStatsWithSource also reports the identity of the socket the counters came from,
++// so a sampler can tell repeated reads of the same socket apart; zero means unknown.
++func GetTCPStatsWithSource(conn net.Conn) (*Stats, uint64) {
 +	var seenBuf [16]uintptr
 +	seen := seenBuf[:0]
 +outer:
 +	for depth := 0; depth < maxUnwrapSteps; depth++ {
++		var id uint64
 +		if rv := reflect.ValueOf(conn); rv.Kind() == reflect.Ptr {
 +			ptr := rv.Pointer()
++			id = uint64(ptr)
 +			for _, prev := range seen {
 +				if prev == ptr {
-+					return nil
++					return nil, 0
 +				}
 +			}
 +			seen = append(seen, ptr)
@@ -12107,9 +12957,9 @@ index 0000000000000000000000000000000000000000..37090fa48ba7bd6d1367522d02fdc36f
 +		}); ok {
 +			rawConn, err := sc.SyscallConn()
 +			if err != nil {
-+				return nil
++				return nil, 0
 +			}
-+			return readTCPStats(rawConn)
++			return readTCPStats(rawConn), id
 +		}
 +		if u, ok := conn.(interface{ Upstream() any }); ok {
 +			if next, ok2 := u.Upstream().(net.Conn); ok2 {
@@ -12141,9 +12991,9 @@ index 0000000000000000000000000000000000000000..37090fa48ba7bd6d1367522d02fdc36f
 +				}
 +			}
 +		}
-+		return nil
++		return nil, 0
 +	}
-+	return nil
++	return nil, 0
 +}
 diff --git a/component/smart/tcpstats/tcpstats_unwrap_test.go b/component/smart/tcpstats/tcpstats_unwrap_test.go
 new file mode 100644
@@ -12332,10 +13182,10 @@ index 0000000000000000000000000000000000000000..5b1789ad641d0a7b1f0ebfdeff866fa5
 +}
 diff --git a/component/smart/weight.go b/component/smart/weight.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..7aa75ee20116f26f71444512983e0dd95691b064
+index 0000000000000000000000000000000000000000..d16f17f1fbdd360f3145d5c5f0b28c931a2cdb66
 --- /dev/null
 +++ b/component/smart/weight.go
-@@ -0,0 +1,421 @@
+@@ -0,0 +1,424 @@
 +package smart
 +
 +import (
@@ -12398,7 +13248,7 @@ index 0000000000000000000000000000000000000000..7aa75ee20116f26f71444512983e0dd9
 +	IsUDP            bool    // UDP connection
 +	IsTCP            bool    // TCP connection
 +	ConnectionFailed bool    // this connection failed, a reuse counts as success
-+	LossRate         float64 // this connection loss rate 0.0-1.0, 0=no loss / unsupported / UDP
++	LossRate         float64 // judged window loss 0.0-1.0, 0 = no window / unsupported / UDP
 +	CumulLossRate    float64 // cumulative loss rate cumulRetrans/cumulSent
 +	EmaLossRate      float64 // EMA loss rate, decays and reflects the recent trend
 +
@@ -12407,6 +13257,9 @@ index 0000000000000000000000000000000000000000..7aa75ee20116f26f71444512983e0dd9
 +	DestIP    string   // target IP
 +	DestPort  uint16   // target port
 +	DestGeoIP []string // geolocation of the target IP
++
++	ExitRegion string // region the node really lands in for this target
++	ExitASN    string // network the node runs on for this target
 +
 +	GroupName string // group name
 +	NodeName  string // node name
@@ -12534,7 +13387,7 @@ index 0000000000000000000000000000000000000000..7aa75ee20116f26f71444512983e0dd9
 +
 +	qualityBonus = math.Min(0.3, qualityBonus)
 +
-+	// currentPenalty: this connection loss, sensitive but noisy
++	// currentPenalty: judged window loss, sensitive but floor gated
 +	// cumulPenalty:   cumulative loss, stable but never decays
 +	// emaPenalty:     EMA loss, decays and reflects the recent trend
 +	// improvementFactor: EMA < cumulative means the quality is recovering
@@ -12826,10 +13679,10 @@ index 63e6d1501266ee90be4698c9c2d096320186af61..3a61e04f52e0a1b54f1635bde23001f3
  	defer geodata.ClearGeoSiteCache()
 diff --git a/component/updater/update_lgbm.go b/component/updater/update_lgbm.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..17a6329f7045b749a38bdbf91820bdfbf940e636
+index 0000000000000000000000000000000000000000..0bd68a895677e79e76fd4d7877a2ce19dede4ebc
 --- /dev/null
 +++ b/component/updater/update_lgbm.go
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,160 @@
 +package updater
 +
 +import (
@@ -12865,7 +13718,6 @@ index 0000000000000000000000000000000000000000..17a6329f7045b749a38bdbf91820bdfb
 +	return lgbmUpdateInterval
 +}
 +
-+
 +func SetLgbmAutoUpdate(newAutoUpdate bool) {
 +	lgbmAutoUpdate = newAutoUpdate
 +}
@@ -12873,7 +13725,6 @@ index 0000000000000000000000000000000000000000..17a6329f7045b749a38bdbf91820bdfb
 +func SetLgbmUpdateInterval(newUpdateInterval int) {
 +	lgbmUpdateInterval = newUpdateInterval
 +}
-+
 +
 +func UpdateLgbmModel() (err error) {
 +	modelUrl := lightgbm.LgbmUrl()
@@ -13366,10 +14217,43 @@ index 05ea8ebd32f444ca49f94f7e794aedc93e114bfd..2f58ad56d67ab24e899bbfbad5508c82
  func (rt RuleType) String() string {
  	switch rt {
  	case Domain:
+diff --git a/dns/doh.go b/dns/doh.go
+index 690973f37956611c9f7aa759dafc66a4c09e42a8..b56d8ffd45a70648fc0adb49904491da506f067c 100644
+--- a/dns/doh.go
++++ b/dns/doh.go
+@@ -383,10 +383,17 @@ func (doh *dnsOverHTTPS) createClient(ctx context.Context) (*http.Client, error)
+ // HTTP3 is enabled in the upstream options).  If this attempt is successful,
+ // it returns an HTTP3 transport, otherwise it returns the H1/H2 transport.
+ func (doh *dnsOverHTTPS) createTransport(ctx context.Context) (t http.RoundTripper, err error) {
++	// http.Transport dials in a context detached from the request, so a dial
++	// that the query has given up on must still end on its own.
+ 	transport := &http.Transport{
+ 		DisableCompression: true,
+-		DialContext:        doh.dialer.DialContext,
+-		IdleConnTimeout:    transportDefaultIdleConnTimeout,
++		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
++			ctx, cancel := context.WithTimeout(ctx, dialTimeout)
++			defer cancel()
++			return doh.dialer.DialContext(ctx, network, addr)
++		},
++		IdleConnTimeout:     transportDefaultIdleConnTimeout,
++		TLSHandshakeTimeout: dialTimeout,
+ 	}
+ 
+ 	if doh.url.Scheme == "http" {
 diff --git a/go.mod b/go.mod
-index 13e840336772b0443596e8b0807d3362d8a61427..da7caa9c3809a26ebbca421fd756a4b42b3fd5ef 100644
+index 13e840336772b0443596e8b0807d3362d8a61427..ca4c8424d58d654c40bbbb75dd44b2f2af74298d 100644
 --- a/go.mod
 +++ b/go.mod
+@@ -7,7 +7,7 @@ require (
+ 	github.com/coreos/go-iptables v0.8.0
+ 	github.com/dlclark/regexp2 v1.12.0
+ 	github.com/easytier/easytier/easytier-go v0.0.0-20260910071355-3d0c9c3ca5e2
+-	github.com/enfein/mieru/v3 v3.38.0
++	github.com/enfein/mieru/v3 v3.38.1
+ 	github.com/gobwas/ws v1.4.0
+ 	github.com/gofrs/uuid/v5 v5.4.0
+ 	github.com/golang/snappy v1.0.0
 @@ -41,7 +41,7 @@ require (
  	github.com/metacubex/sing-shadowsocks2 v0.2.8
  	github.com/metacubex/sing-tun v0.4.27
@@ -13388,9 +14272,20 @@ index 13e840336772b0443596e8b0807d3362d8a61427..da7caa9c3809a26ebbca421fd756a4b4
  	github.com/yosida95/uritemplate/v3 v3.0.2
  	gitlab.com/go-extension/aes-ccm v0.0.0-20230221065045-e58665ef23c7
 diff --git a/go.sum b/go.sum
-index 9852404cac53b4a55773df2148a467c81eea4f08..f4b58da58eded944a4b9a7af5b8acffabc71c604 100644
+index 9852404cac53b4a55773df2148a467c81eea4f08..3abb1cd46051e455d3326a64553d191dd114b9ac 100644
 --- a/go.sum
 +++ b/go.sum
+@@ -29,8 +29,8 @@ github.com/dunglas/httpsfv v1.0.2 h1:iERDp/YAfnojSDJ7PW3dj1AReJz4MrwbECSSE59JWL0
+ github.com/dunglas/httpsfv v1.0.2/go.mod h1:zID2mqw9mFsnt7YC3vYQ9/cjq30q41W+1AnDwH8TiMg=
+ github.com/easytier/easytier/easytier-go v0.0.0-20260910071355-3d0c9c3ca5e2 h1:2/9iRUcMR3QPrT2XFf/i7QV5YoSHPFjkgBM5tP8xbcc=
+ github.com/easytier/easytier/easytier-go v0.0.0-20260910071355-3d0c9c3ca5e2/go.mod h1:fCEi5+K2yt+sPDONSWO1uNpOifrwPgFGvm3J0YrFRvk=
+-github.com/enfein/mieru/v3 v3.38.0 h1:+DuixHFoCGEYEopoEg8fHmDJ5Ak30PuXuf1GIh2Xpu0=
+-github.com/enfein/mieru/v3 v3.38.0/go.mod h1:zJBUCsi5rxyvHM8fjFf+GLaEl4OEjjBXr1s5F6Qd3hM=
++github.com/enfein/mieru/v3 v3.38.1 h1:UZ5zAJi0caSmaOniVy33pyY7ANxyf4PmPeLSuYZpDro=
++github.com/enfein/mieru/v3 v3.38.1/go.mod h1:zJBUCsi5rxyvHM8fjFf+GLaEl4OEjjBXr1s5F6Qd3hM=
+ github.com/ericlagergren/aegis v0.0.0-20250325060835-cd0defd64358 h1:kXYqH/sL8dS/FdoFjr12ePjnLPorPo2FsnrHNuXSDyo=
+ github.com/ericlagergren/aegis v0.0.0-20250325060835-cd0defd64358/go.mod h1:hkIFzoiIPZYxdFOOLyDho59b7SrDfo+w3h+yWdlg45I=
+ github.com/ericlagergren/polyval v0.0.0-20220411101811-e25bc10ba391 h1:8j2RH289RJplhA6WfdaPqzg1MjH2K8wX5e0uhAxrw2g=
 @@ -167,8 +167,8 @@ github.com/metacubex/sing-tun v0.4.27 h1:dWCpFDlWelQrhH3y5KkMrJXEXYeJ0V2LROP8Cxv
  github.com/metacubex/sing-tun v0.4.27/go.mod h1:5nlmrOy+FG0yhiLm+O/pzmirZVrpLuDQZuA+qI9x5kg=
  github.com/metacubex/sing-vmess v0.2.5 h1:m9Zt5I27lB9fmLMZfism9sH2LcnAfShZfwSkf6/KJoE=
