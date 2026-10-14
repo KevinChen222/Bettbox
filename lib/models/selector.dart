@@ -1,7 +1,7 @@
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 part 'generated/selector.freezed.dart';
@@ -106,9 +106,7 @@ abstract class ProxiesListState with _$ProxiesListState {
   const factory ProxiesListState({
     required List<Group> groups,
     required Set<String> currentUnfoldSet,
-    required ProxiesSortType proxiesSortType,
     required ProxyCardType proxyCardType,
-    required num sortNum,
     required int columns,
   }) = _ProxiesListState;
 }
@@ -172,16 +170,20 @@ extension PackageListSelectorStateExt on PackageListSelectorState {
     final existingPackageNames = packages.map((e) => e.packageName).toSet();
     final packageNameRegex = RegExp(r'^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$');
     final manualPackages = accessControl.manualList
-        .where((pkg) =>
-            !existingPackageNames.contains(pkg) &&
-            packageNameRegex.hasMatch(pkg))
-        .map((pkg) => Package(
-              packageName: pkg,
-              label: '[Manual]',
-              system: false,
-              internet: true,
-              lastUpdateTime: 0,
-            ));
+        .where(
+          (pkg) =>
+              !existingPackageNames.contains(pkg) &&
+              packageNameRegex.hasMatch(pkg),
+        )
+        .map(
+          (pkg) => Package(
+            packageName: pkg,
+            label: '[Manual]',
+            system: false,
+            internet: true,
+            lastUpdateTime: 0,
+          ),
+        );
 
     final combined = [...filtered, ...manualPackages];
     final selectedSet = selectedList.toSet();
@@ -196,10 +198,12 @@ extension PackageListSelectorStateExt on PackageListSelectorState {
           utils.getPinyin(a.label),
           utils.getPinyin(b.label),
         ),
-        AccessSortType.installTime =>
-          b.firstInstallTime.compareTo(a.firstInstallTime),
-        AccessSortType.updateTime =>
-          b.lastUpdateTime.compareTo(a.lastUpdateTime),
+        AccessSortType.installTime => b.firstInstallTime.compareTo(
+          a.firstInstallTime,
+        ),
+        AccessSortType.updateTime => b.lastUpdateTime.compareTo(
+          a.lastUpdateTime,
+        ),
       };
       if (bySort != 0) {
         return bySort;
@@ -209,14 +213,6 @@ extension PackageListSelectorStateExt on PackageListSelectorState {
 
     return combined..sort(comparePackages);
   }
-}
-
-@freezed
-abstract class ProxiesListHeaderSelectorState with _$ProxiesListHeaderSelectorState {
-  const factory ProxiesListHeaderSelectorState({
-    required double offset,
-    required int currentIndex,
-  }) = _ProxiesListHeaderSelectorState;
 }
 
 @freezed

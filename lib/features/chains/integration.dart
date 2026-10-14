@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:bett_box/clash/core.dart';
+import 'package:bett_box/clash/lib.dart';
 import 'package:bett_box/common/common.dart';
+import 'package:bett_box/enum/enum.dart';
+import 'package:bett_box/models/models.dart';
 import 'package:path/path.dart';
 
 import 'assembler.dart';
@@ -14,6 +17,30 @@ Future<ChainStore> getChainStore() => _store ??= _createStore();
 
 Future<ChainStore> _createStore() async =>
     ChainStore(File(join(await appPath.homeDirPath, chainLibraryFileName)));
+
+Future<List<Map<String, dynamic>>> _parseProviderNodes(
+  List<int> content,
+  Map<String, dynamic> provider,
+) async {
+  final handler = clashLibHandler;
+  if (handler == null) return clashCore.parseProviderNodes(content, provider);
+  // The Android service isolate must use its native handler directly.
+  final action = Action(
+    id: '${ActionMethod.parseProviderNodes.name}#${utils.id}',
+    method: ActionMethod.parseProviderNodes,
+    data: jsonEncode({'content': base64Encode(content), 'provider': provider}),
+  );
+  final result = ActionResult.fromJson(
+    jsonDecode(await handler.invokeAction(jsonEncode(action))),
+  ).toResult;
+  if (!result.isSuccess || result.data == null) {
+    throw FormatException(result.message);
+  }
+  return [
+    for (final node in jsonDecode(result.data!) as List)
+      Map<String, dynamic>.from(node as Map),
+  ];
+}
 
 /// A local YAML snapshot still points to its source profile's managed caches.
 /// Seed the new profile's paths before the normal path rewrite and core load.
@@ -84,11 +111,11 @@ Future<ChainCatalog> loadChainCatalog(
       content = utf8.encode(jsonEncode({'proxies': provider['payload']}));
     }
     if (content == null) continue;
-    providers[entry.key.toString()] =
-        await (parseProviderNodes ?? clashCore.parseProviderNodes)(
-          content,
-          Map<String, dynamic>.from(provider),
-        );
+    providers[entry.key
+        .toString()] = await (parseProviderNodes ?? _parseProviderNodes)(
+      content,
+      Map<String, dynamic>.from(provider),
+    );
   }
   return ChainCatalog(config, providers: providers);
 }

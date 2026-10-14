@@ -65,6 +65,10 @@ class TrayManager {
 
   bool get isMenuOpen => _menuOpenState.isOpen;
 
+  bool _isOptionPressed = false;
+
+  bool get isOptionPressed => _isOptionPressed;
+
   Map<String, dynamic> _menuToJson(Menu menu) {
     return {
       'items': menu.items?.map(_menuItemToJson).toList(),
@@ -92,7 +96,16 @@ class TrayManager {
       return;
     } else if (call.method == 'onMenuClose') {
       _menuOpenState.close();
+      for (final TrayListener listener in _listeners) {
+        listener.onTrayMenuClose();
+      }
       return;
+    }
+
+    if (call.method == kEventOnTrayIconMouseDown ||
+        call.method == kEventOnTrayIconRightMouseDown) {
+      final arguments = call.arguments;
+      _isOptionPressed = arguments is Map && arguments['option'] == true;
     }
 
     for (final TrayListener listener in _listeners) {

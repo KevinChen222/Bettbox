@@ -11,6 +11,7 @@ import 'package:bett_box/helper/helper.dart';
 import 'package:bett_box/plugins/app.dart';
 import 'package:bett_box/state.dart';
 import 'package:bett_box/widgets/input.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart';
 import 'package:synchronized/synchronized.dart';
@@ -52,6 +53,7 @@ class System {
   Future<bool> checkIsAdmin() async {
     final corePath = appPath.corePath;
     if (system.isWindows) {
+      if (kDebugMode) return windows?.isUserAnAdmin ?? false;
       final result = await windows?.checkService();
       return result == WindowsHelperServiceStatus.running;
     }
@@ -65,6 +67,20 @@ class System {
     }
 
     if (Platform.isLinux) {
+      if (appPath.isAppImage) {
+        await appPath.ensureAppImageCoreSynced();
+      }
+
+      for (final cmd in ['getcap', '/sbin/getcap', '/usr/sbin/getcap']) {
+        try {
+          final res = await Process.run(cmd, [corePath]);
+          if (res.exitCode == 0 &&
+              res.stdout.toString().contains('cap_net_admin')) {
+            return true;
+          }
+        } catch (_) {}
+      }
+
       final result = await Process.run('stat', ['-c', '%U:%G %A', corePath]);
       final output = result.stdout.trim();
       final parts = output.split(' ');
@@ -81,6 +97,7 @@ class System {
     if (await checkIsAdmin()) return AuthorizeCode.none;
 
     if (system.isWindows) {
+      if (kDebugMode) return AuthorizeCode.error;
       if (await windows?.isHelperHealthy() ?? false) return AuthorizeCode.none;
       final result = await windows?.registerService();
       return result == true ? AuthorizeCode.success : AuthorizeCode.error;
@@ -105,7 +122,7 @@ class System {
           commonPrint.log('Cleared quarantine attribute from BettboxCore');
         } else {
           quarantineCleared = false;
-          commonPrint.log(
+          commonPrint.warn(
             'Failed to clear quarantine attribute: ${removeResult.stderr}',
           );
         }
@@ -132,14 +149,52 @@ class System {
     }
 
     if (Platform.isLinux) {
+      if (appPath.isAppImage) {
+        await appPath.ensureAppImageCoreSynced();
+      }
       final escapedCorePath = _shellEscape(appPath.corePath);
+      final homeDir = await appPath.homeDirPath;
+      final escapedHomeDir = _shellEscape(homeDir);
+
+      var chownLegacy = '';
+      try {
+        final uidRes = await Process.run('id', ['-u']);
+        final gidRes = await Process.run('id', ['-g']);
+        if (uidRes.exitCode == 0 && gidRes.exitCode == 0) {
+          final uid = int.tryParse(uidRes.stdout.toString().trim());
+          final gid = int.tryParse(gidRes.stdout.toString().trim());
+          if (uid != null && gid != null) {
+            chownLegacy =
+                'if [ -d $escapedHomeDir ]; then chown -R $uid:$gid $escapedHomeDir 2>/dev/null || true; fi';
+          }
+        }
+      } catch (_) {}
+
+      final script = [
+        'SETCAP_CMD=""',
+        'for cmd in setcap /sbin/setcap /usr/sbin/setcap; do',
+        '  if command -v "\$cmd" >/dev/null 2>&1; then',
+        '    SETCAP_CMD="\$cmd"',
+        '    break',
+        '  fi',
+        'done',
+        'if [ -n "\$SETCAP_CMD" ] && "\$SETCAP_CMD" \'cap_net_admin,cap_net_bind_service,cap_net_raw=+ep\' $escapedCorePath 2>/dev/null; then',
+        '  sync',
+        'else',
+        '  chown root:root $escapedCorePath && chmod u+s $escapedCorePath && sync',
+        'fi',
+        'for pdir in /etc/polkit-1/rules.d /usr/share/polkit-1/rules.d; do',
+        '  if [ -d "\$pdir" ]; then',
+        '    echo \'polkit.addRule(function(action, subject) { if (action.id.indexOf("org.freedesktop.resolve1.") === 0 && subject.local && subject.active) { return polkit.Result.YES; } });\' > "\$pdir/99-bettbox.rules"',
+        '    chmod 0644 "\$pdir/99-bettbox.rules" 2>/dev/null || true',
+        '    break',
+        '  fi',
+        'done',
+        if (chownLegacy.isNotEmpty) chownLegacy,
+      ].join('\n');
 
       try {
-        final pkexecResult = await Process.run('pkexec', [
-          'sh',
-          '-c',
-          'chown root:root $escapedCorePath && chmod u+s $escapedCorePath && sync',
-        ]);
+        final pkexecResult = await Process.run('pkexec', ['sh', '-c', script]);
         if (pkexecResult.exitCode == 0) {
           return AuthorizeCode.success;
         }
@@ -148,7 +203,7 @@ class System {
           return AuthorizeCode.error;
         }
       } catch (e) {
-        commonPrint.log('pkexec failed: $e');
+        commonPrint.warn('pkexec failed: $e');
       }
 
       window?.show();
@@ -165,9 +220,10 @@ class System {
         return AuthorizeCode.error;
       }
       final escapedPassword = _shellEscape(password);
+      final escapedScript = _shellEscape(script);
       final result = await Process.run(shell, [
         '-c',
-        'echo $escapedPassword | sudo -S chown root:root $escapedCorePath && echo $escapedPassword | sudo -S chmod u+s $escapedCorePath && sync',
+        'echo $escapedPassword | sudo -S sh -c $escapedScript',
       ]);
       if (result.exitCode != 0) {
         globalState.showNotifier(appLocalizations.tunEnableRequireAdmin);
@@ -196,7 +252,7 @@ class System {
         windows?.setCurrentProcessPriority(enable);
         return;
       } catch (e) {
-        commonPrint.log('Failed to set current process priority: $e');
+        commonPrint.warn('Failed to set current process priority: $e');
       }
     }
 
@@ -282,7 +338,7 @@ class Windows {
           sizeOf<Uint32>(),
         );
         if (memoryResult == 0) {
-          commonPrint.log('Set current process memory priority failed');
+          commonPrint.warn('Set current process memory priority failed');
         } else {
           commonPrint.log('Set current process memory priority to normal');
         }
@@ -290,6 +346,12 @@ class Windows {
         calloc.free(memoryPriorityInfo);
       }
     }
+  }
+
+  bool get isUserAnAdmin {
+    final isUserAnAdmin = _shell32
+        .lookupFunction<Int32 Function(), int Function()>('IsUserAnAdmin');
+    return isUserAnAdmin() != 0;
   }
 
   bool runas(String command, String arguments, {bool showWindow = false}) {
@@ -436,7 +498,7 @@ class Windows {
         final check = await Process.run('sc', ['query', appHelperService]);
         final output = check.stdout.toString();
         if (output.contains('STOPPED')) {
-          commonPrint.log('Helper service stopped/failed, skipping wait');
+          commonPrint.warn('Helper service stopped/failed, skipping wait');
           break;
         }
       }
@@ -585,7 +647,7 @@ class MacOS {
       serviceName,
     ]);
     if (result.exitCode != 0) {
-      commonPrint.log(
+      commonPrint.warn(
         'Failed to get macOS system DNS: ${result.stderr.toString().trim()}',
       );
       return null;
@@ -628,7 +690,7 @@ class MacOS {
       await temporaryFile.writeAsString(backup, flush: true);
       await temporaryFile.rename(backupFile.path);
     } catch (e) {
-      commonPrint.log('Failed to persist the original macOS system DNS: $e');
+      commonPrint.warn('Failed to persist the original macOS system DNS: $e');
       return;
     }
 
@@ -639,7 +701,7 @@ class MacOS {
       _hijackDns,
     ]);
     if (result.exitCode != 0) {
-      commonPrint.log(
+      commonPrint.warn(
         'Failed to set macOS system DNS: ${result.stderr.toString().trim()}',
       );
     }
@@ -671,7 +733,7 @@ class MacOS {
         if (servers.isEmpty) 'Empty',
       ]);
       if (result.exitCode != 0) {
-        commonPrint.log(
+        commonPrint.warn(
           'Failed to restore macOS system DNS: '
           '${result.stderr.toString().trim()}',
         );
@@ -680,7 +742,7 @@ class MacOS {
       await backupFile.delete();
       return true;
     } catch (e) {
-      commonPrint.log('Failed to read macOS system DNS backup: $e');
+      commonPrint.warn('Failed to read macOS system DNS backup: $e');
       return false;
     }
   }

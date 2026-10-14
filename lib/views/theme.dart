@@ -11,7 +11,7 @@ import 'package:bett_box/providers/config.dart';
 import 'package:bett_box/providers/state.dart';
 import 'package:bett_box/state.dart';
 import 'package:bett_box/widgets/widgets.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -325,8 +325,7 @@ class _PrimaryColorItemState extends ConsumerState<_PrimaryColorItem> {
                           ref
                               .read(themeSettingProvider.notifier)
                               .updateState(
-                                (state) =>
-                                    state.copyWith(primaryColor: color),
+                                (state) => state.copyWith(primaryColor: color),
                               );
                         },
                       ),
@@ -339,10 +338,7 @@ class _PrimaryColorItemState extends ConsumerState<_PrimaryColorItem> {
                   child: IconButton.filledTonal(
                     onPressed: _handleAdd,
                     iconSize: 32,
-                    icon: Icon(
-                      color: context.colorScheme.primary,
-                      Icons.add,
-                    ),
+                    icon: Icon(color: context.colorScheme.primary, Icons.add),
                   ),
                 ),
               ],
@@ -417,7 +413,6 @@ class _HarmonyFontItem extends ConsumerWidget {
     );
   }
 }
-
 
 class _DarkIconItem extends ConsumerWidget {
   const _DarkIconItem();

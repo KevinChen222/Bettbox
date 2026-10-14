@@ -53,10 +53,6 @@ jobs:
           - platform: macos
             os: macos-15
             arch: amd64
-          - platform: macos
-            os: macos-15
-            arch: amd64
-            compatible: true
           - platform: linux
             os: ubuntu-22.04
             arch: amd64
@@ -150,8 +146,12 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v6
         with:
-          go-version: ${{ matrix.compatible == true && '1.20.x' || '1.25.x' }}
+          go-version: ${{ matrix.compatible == true && '1.24.x' || '1.26.x' }}
           cache-dependency-path: core/go.sum
+
+      - name: Select Xcode (macOS)
+        if: matrix.platform == 'macos'
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -159,7 +159,7 @@ jobs:
           channel: ${{ contains(matrix.os, 'arm') && 'master' || 'stable' }}
           cache: true
           cache-key: flutter-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('**/pubspec.lock') }}
-          flutter-version: ${{ contains(matrix.os, 'arm') && '' || '3.44.9' }}
+          flutter-version: ${{ contains(matrix.os, 'arm') && '' || '3.47.7' }}
 
       - name: Clear Pub Cache Credentials
         shell: bash
@@ -195,7 +195,7 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
           flutter pub get
-          dart run build_runner build -d
+          dart run build_runner build
           dart setup.dart ${{ matrix.platform }} --arch ${{ matrix.arch }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }} ${{ matrix.compatible == true && '--compatible' || '' }}
 
       - name: Install SignPath (Windows)
@@ -239,7 +239,7 @@ jobs:
         shell: bash
         run: |
           flutter pub get
-          dart run build_runner build -d
+          dart run build_runner build
           dart setup.dart windows --arch ${{ matrix.arch }} --out core-only ${{ matrix.compatible == true && '--compatible' || '' }}
 
       - name: Upload Unsigned Core
@@ -251,6 +251,13 @@ jobs:
           path: libclash/windows/BettboxCore.exe
           if-no-files-found: error
           retention-days: 1
+
+      - name: Wait for Unsigned Core
+        if: matrix.platform == 'windows' && env.SIGNPATH_API_TOKEN != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/wait-artifact.sh '${{ steps.upload-core.outputs.artifact-id }}'
 
       - name: Sign Core (Windows)
         if: matrix.platform == 'windows' && env.SIGNPATH_API_TOKEN != ''
@@ -283,6 +290,13 @@ jobs:
           path: libclash/windows/BettboxHelperService.exe
           if-no-files-found: error
           retention-days: 1
+
+      - name: Wait for Unsigned HelperService
+        if: matrix.platform == 'windows' && env.SIGNPATH_API_TOKEN != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/wait-artifact.sh '${{ steps.upload-helper.outputs.artifact-id }}'
 
       - name: Sign HelperService (Windows)
         if: matrix.platform == 'windows' && env.SIGNPATH_API_TOKEN != ''
@@ -335,6 +349,13 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Wait for Unsigned Bettbox
+        if: matrix.platform == 'windows' && env.SIGNPATH_API_TOKEN != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/wait-artifact.sh '${{ steps.upload-bettbox.outputs.artifact-id }}'
+
       - name: Sign Bettbox (Windows)
         if: matrix.platform == 'windows' && env.SIGNPATH_API_TOKEN != ''
         uses: signpath/github-action-submit-signing-request@v2
@@ -374,6 +395,13 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Wait for Unsigned Installer
+        if: matrix.platform == 'windows' && env.SIGNPATH_API_TOKEN != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/wait-artifact.sh '${{ steps.upload-installer.outputs.artifact-id }}'
+
       - name: Sign Installer (Windows)
         if: matrix.platform == 'windows' && env.SIGNPATH_API_TOKEN != ''
         uses: signpath/github-action-submit-signing-request@v2
@@ -404,28 +432,38 @@ jobs:
         if: matrix.platform == 'linux' && matrix.compatible != true
         shell: bash
         run: |
-          echo "=== Verifying BettboxCore setuid in DEB package ==="
+          echo "=== Verifying BettboxCore permissions in DEB package ==="
           if ls dist/Bettbox-*.deb 1>/dev/null 2>&1; then
-            DEB_PERMS=$(dpkg-deb -c dist/Bettbox-*.deb | grep BettboxCore || true)
+            DEB_FILE=$(ls dist/Bettbox-*.deb | head -n 1)
+            DEB_PERMS=$(dpkg-deb -c "$DEB_FILE" | grep BettboxCore || true)
             echo "$DEB_PERMS"
             if echo "$DEB_PERMS" | grep -q 'rws'; then
               echo "OK: BettboxCore in DEB has setuid bit"
             else
-              echo "WARNING: BettboxCore in DEB is missing setuid bit (will be set by postinst on install)"
-              POSTINST=$(dpkg-deb -e dist/Bettbox-*.deb /tmp/bettbox-deb-control && cat /tmp/bettbox-deb-control/postinst || true)
+              echo "OK: BettboxCore in DEB has standard permissions (permissions will be configured by postinst on install)"
+              rm -rf /tmp/bettbox-deb-control
+              dpkg-deb -e "$DEB_FILE" /tmp/bettbox-deb-control
+              POSTINST=$(cat /tmp/bettbox-deb-control/postinst 2>/dev/null || true)
               if ! echo "$POSTINST" | grep -q '/usr/share/Bettbox/BettboxCore'; then
                 echo "ERROR: postinst script does not set permissions on /usr/share/Bettbox/BettboxCore"
                 exit 1
               fi
             fi
           fi
-          echo "=== Verifying BettboxCore setuid in RPM package ==="
+          echo "=== Verifying BettboxCore permissions in RPM package ==="
           if ls dist/Bettbox-*.rpm 1>/dev/null 2>&1; then
-            RPM_PERMS=$(rpm -qplv dist/Bettbox-*.rpm | grep BettboxCore || true)
+            RPM_FILE=$(ls dist/Bettbox-*.rpm | head -n 1)
+            RPM_PERMS=$(rpm -qplv "$RPM_FILE" | grep BettboxCore || true)
             echo "$RPM_PERMS"
-            if ! echo "$RPM_PERMS" | grep -q 'rws'; then
-              echo "ERROR: BettboxCore in RPM is missing setuid bit"
-              exit 1
+            if echo "$RPM_PERMS" | grep -q 'rws'; then
+              echo "OK: BettboxCore in RPM has setuid bit"
+            else
+              echo "OK: BettboxCore in RPM has standard permissions (permissions will be configured by %post on install)"
+              RPM_POST=$(rpm -qp --scripts "$RPM_FILE" 2>/dev/null || true)
+              if ! echo "$RPM_POST" | grep -q 'BettboxCore'; then
+                echo "ERROR: %post script does not set permissions on BettboxCore"
+                exit 1
+              fi
             fi
           fi
 

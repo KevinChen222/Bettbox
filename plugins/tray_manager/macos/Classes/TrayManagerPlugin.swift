@@ -158,13 +158,15 @@ public class TrayManagerPlugin: NSObject, FlutterPlugin, NSMenuDelegate {
         if (trayIcon == nil) {
             trayIcon = TrayIcon()
             trayIcon?.onTrayIconMouseDown = { () in
-                self.channel.invokeMethod(kEventOnTrayIconMouseDown, arguments: nil, result: nil)
+                let args: NSDictionary = ["option": self.trayIcon?.isOptionPressed ?? false]
+                self.channel.invokeMethod(kEventOnTrayIconMouseDown, arguments: args, result: nil)
             }
             trayIcon?.onTrayIconMouseUp = { () in
                 self.channel.invokeMethod(kEventOnTrayIconMouseUp, arguments: nil, result: nil)
             }
             trayIcon?.onTrayIconRightMouseDown = { () in
-                self.channel.invokeMethod(kEventOnTrayIconRightMouseDown, arguments: nil, result: nil)
+                let args: NSDictionary = ["option": self.trayIcon?.isOptionPressed ?? false]
+                self.channel.invokeMethod(kEventOnTrayIconRightMouseDown, arguments: args, result: nil)
             }
             trayIcon?.onTrayIconRightMouseUp = { () in
                 self.channel.invokeMethod(kEventOnTrayIconRightMouseUp, arguments: nil, result: nil)

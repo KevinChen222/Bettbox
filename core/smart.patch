@@ -1,5 +1,5 @@
 diff --git a/adapter/adapter.go b/adapter/adapter.go
-index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..b3b73e9eb6bc1d760810bac797fac91a98b0d182 100644
+index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..6fce80ff8ed615abdb7ce63661b6c5c80a3037f2 100644
 --- a/adapter/adapter.go
 +++ b/adapter/adapter.go
 @@ -3,17 +3,23 @@ package adapter
@@ -45,7 +45,19 @@ index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..b3b73e9eb6bc1d760810bac797fac91a
  const (
  	defaultHistoriesNum = 10
  )
-@@ -312,3 +330,268 @@ func urlToMetadata(rawURL string) (addr C.Metadata, err error) {
+@@ -279,6 +297,11 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
+ 
+ 	satisfied = resp != nil && (expectedStatus == nil || expectedStatus.Check(uint16(resp.StatusCode)))
+ 	t = uint16(time.Since(start) / time.Millisecond)
++	if t == 0 {
++		// a zero delay means a failed test to callers, so report a test
++		// that completed in under a millisecond as 1 ms
++		t = 1
++	}
+ 	return
+ }
+ 
+@@ -312,3 +335,268 @@ func urlToMetadata(rawURL string) (addr C.Metadata, err error) {
  	err = addr.SetRemoteAddress(net.JoinHostPort(u.Hostname(), port))
  	return
  }
@@ -326,175 +338,6 @@ index 2d487da5f6193d5ffbb4ade0af49714a78f47b69..b4232df88652541f0007459ade65d83b
  
  	backendInitOnce sync.Once
  	backendInitCh   chan struct{}
-diff --git a/adapter/outbound/wireguard.go b/adapter/outbound/wireguard.go
-index 86e7b74a1b8ed6300bd05c070dab8035b469311f..54a671e8a1dca7c458ded0070de0d538ab21e2c4 100644
---- a/adapter/outbound/wireguard.go
-+++ b/adapter/outbound/wireguard.go
-@@ -54,6 +54,9 @@ type WireGuard struct {
- 	tunDevice wireguardDevice
- 	resolver  resolver.Resolver
- 
-+	runCtx        context.Context
-+	runCancel     context.CancelFunc
-+	deviceMutex   sync.Mutex
- 	initOk        atomic.Bool
- 	initMutex     sync.Mutex
- 	initErr       error
-@@ -380,7 +383,8 @@ func NewWireGuard(option WireGuardOption) (*WireGuard, error) {
- 			outbound.connectAddr = option.Addr()
- 		}
- 	}
--	outbound.bind = wireguard.NewClientBind(context.Background(), wgSingErrorHandler{outbound.Name()}, singDialer, isConnect, outbound.connectAddr.AddrPort(), reserved)
-+	outbound.runCtx, outbound.runCancel = context.WithCancel(context.Background())
-+	outbound.bind = wireguard.NewClientBind(outbound.runCtx, wgSingErrorHandler{outbound.Name()}, singDialer, isConnect, outbound.connectAddr.AddrPort(), reserved)
- 
- 	if outbound.bind == nil {
- 		return nil, E.New("failed to create wireguard client bind")
-@@ -450,11 +454,8 @@ func NewWireGuard(option WireGuardOption) (*WireGuard, error) {
- 		}
- 		option.AmneziaWGOption.HeaderProtectionKey = hex.EncodeToString(bytes)
- 	}
--	outbound.option = option
--
--	mtu := option.MTU
--	if mtu == 0 {
--		mtu = 1408
-+	if option.MTU == 0 {
-+		option.MTU = 1408
- 	}
- 	option.IPStack.normalize()
- 	if err = option.IPStack.validate(); err != nil {
-@@ -464,33 +465,9 @@ func NewWireGuard(option WireGuardOption) (*WireGuard, error) {
- 		return nil, E.New("missing local address")
- 	}
- 
--	stack, err := newIPStack(option.IPStack, outbound.localPrefixes, uint32(mtu))
--	if err != nil {
--		return nil, E.Cause(err, "create WireGuard stack")
--	}
--	outbound.tunDevice, err = newWireguardDevice(stack)
--	if err != nil {
--		_ = stack.Close()
--		return nil, E.Cause(err, "create WireGuard device")
--	}
--
--	logger := &device.Logger{
--		Verbosef: func(format string, args ...interface{}) {
--			log.SingLogger.Debug(fmt.Sprintf("[WG](%s) %s", option.Name, fmt.Sprintf(format, args...)))
--		},
--		Errorf: func(format string, args ...interface{}) {
--			log.SingLogger.Error(fmt.Sprintf("[WG](%s) %s", option.Name, fmt.Sprintf(format, args...)))
--		},
--	}
-+	outbound.option = option
- 	if option.AmneziaWGOption != nil {
- 		outbound.bind.SetParseReserved(false) // AmneziaWG don't need parse reserved
--		if option.AmneziaWGOption.Version == 3 {
--			outbound.device = amneziav3.NewDevice(outbound.tunDevice, outbound.bind, logger, option.Workers)
--		} else {
--			outbound.device = amnezia.NewDevice(outbound.tunDevice, outbound.bind, logger, option.Workers)
--		}
--	} else {
--		outbound.device = device.NewDevice(outbound.tunDevice, outbound.bind, logger, option.Workers)
- 	}
- 
- 	var has6 bool
-@@ -540,7 +517,7 @@ func (w *WireGuard) init(ctx context.Context) error {
- 	return nil
- }
- 
--func (w *WireGuard) init0(ctx context.Context) error {
-+func (w *WireGuard) init0(ctx context.Context) (err error) {
- 	if w.initOk.Load() {
- 		return nil
- 	}
-@@ -562,23 +539,69 @@ func (w *WireGuard) init0(ctx context.Context) error {
- 		// let us can retry domain resolve in next time
- 		return err
- 	}
-+	if err = ctx.Err(); err != nil {
-+		return err
-+	}
-+
-+	stack, err := newIPStack(w.option.IPStack, w.localPrefixes, uint32(w.option.MTU))
-+	if err != nil {
-+		w.initErr = E.Cause(err, "create WireGuard stack")
-+		return w.initErr
-+	}
-+	tunDevice, err := newWireguardDevice(stack)
-+	if err != nil {
-+		_ = stack.Close()
-+		w.initErr = E.Cause(err, "create WireGuard device")
-+		return w.initErr
-+	}
-+
-+	logger := &device.Logger{
-+		Verbosef: func(format string, args ...interface{}) {
-+			log.SingLogger.Debug(fmt.Sprintf("[WG](%s) %s", w.option.Name, fmt.Sprintf(format, args...)))
-+		},
-+		Errorf: func(format string, args ...interface{}) {
-+			log.SingLogger.Error(fmt.Sprintf("[WG](%s) %s", w.option.Name, fmt.Sprintf(format, args...)))
-+		},
-+	}
-+	var wgDevice wireguardGoDevice
-+	if w.option.AmneziaWGOption != nil {
-+		if w.option.AmneziaWGOption.Version == 3 {
-+			wgDevice = amneziav3.NewDevice(tunDevice, w.bind, logger, w.option.Workers)
-+		} else {
-+			wgDevice = amnezia.NewDevice(tunDevice, w.bind, logger, w.option.Workers)
-+		}
-+	} else {
-+		wgDevice = device.NewDevice(tunDevice, w.bind, logger, w.option.Workers)
-+	}
-+	defer func() {
-+		if err != nil {
-+			wgDevice.Close()
-+		}
-+	}()
- 
- 	if debug.Enabled {
- 		log.SingLogger.Trace(fmt.Sprintf("[WG](%s) created wireguard ipc conf: \n %s", w.option.Name, ipcConf))
- 	}
--	err = w.device.IpcSet(ipcConf)
-+	err = wgDevice.IpcSet(ipcConf)
- 	if err != nil {
- 		w.initErr = E.Cause(err, "setup wireguard")
- 		return w.initErr
- 	}
- 	w.serverAddrTime.Store(time.Now())
- 
--	err = w.tunDevice.Start()
-+	err = tunDevice.Start()
- 	if err != nil {
- 		w.initErr = err
- 		return w.initErr
- 	}
- 
-+	w.deviceMutex.Lock()
-+	defer w.deviceMutex.Unlock()
-+	err = w.runCtx.Err()
-+	if err != nil {
-+		return err
-+	}
-+	w.device, w.tunDevice = wgDevice, tunDevice
- 	w.initOk.Store(true)
- 	return nil
- }
-@@ -781,8 +804,12 @@ func (w *WireGuard) genIpcConf(ctx context.Context, updateOnly bool) (string, er
- 
- // Close implements C.ProxyAdapter
- func (w *WireGuard) Close() error {
--	if w.device != nil {
--		w.device.Close()
-+	w.runCancel()
-+	w.deviceMutex.Lock()
-+	wgDevice := w.device
-+	w.deviceMutex.Unlock()
-+	if wgDevice != nil {
-+		wgDevice.Close()
- 	}
- 	return nil
- }
 diff --git a/adapter/outboundgroup/groupbase.go b/adapter/outboundgroup/groupbase.go
 index eed45e0d610ed46b23edfadb25022b440eeb4f38..5dac4a555a7796c97c090994eb6593bccbcc0808 100644
 --- a/adapter/outboundgroup/groupbase.go
@@ -566,63 +409,6 @@ index eed45e0d610ed46b23edfadb25022b440eeb4f38..5dac4a555a7796c97c090994eb6593bc
 +	gb.failedTimes = 0
 +	gb.failedTestMux.Unlock()
  }
-diff --git a/adapter/outboundgroup/loadbalance_test.go b/adapter/outboundgroup/loadbalance_test.go
-index bcd8ebbee88bd8724ba96b674603f39049ffa43a..45eb9635272dc5162f426e97fb2a240331cf994e 100644
---- a/adapter/outboundgroup/loadbalance_test.go
-+++ b/adapter/outboundgroup/loadbalance_test.go
-@@ -45,7 +45,7 @@ func request(user, host string) *C.Metadata {
- 
- // One unit of work walking several destinations is the case both address-derived
- // keys get wrong: the group is meant to hold that work on one egress, and the
--// default key moves it as soon as the host changes.
-+// default key changes as soon as the host changes.
- func TestLoadBalanceHashKeyInUserSurvivesADestinationChange(t *testing.T) {
- 	proxies := balancedProxies(8)
- 	hosts := []string{"a.example.com", "b.example.org", "c.example.net", "d.example.io"}
-@@ -58,26 +58,29 @@ func TestLoadBalanceHashKeyInUserSurvivesADestinationChange(t *testing.T) {
- 			"hash-key: user must ignore the destination")
- 	}
- 
--	byDestination := strategyConsistentHashing(testUrl, getKey)
--	seen := map[int]bool{}
-+	// Distinct destination keys are the deterministic contract of the fallback
-+	// key. Distinct keys may still legally land in the same consistent-hash
-+	// bucket, so asserting on selected proxy indexes would make this test flaky.
-+	seenKeys := map[string]struct{}{}
- 	for _, host := range hosts {
--		seen[indexOf(t, proxies, byDestination(proxies, request("job-1", host), false))] = true
-+		seenKeys[getKey(request("job-1", host))] = struct{}{}
- 	}
--	require.Greater(t, len(seen), 1,
--		"the default key is expected to move with the destination")
-+	require.Len(t, seenKeys, len(hosts),
-+		"the default key must change with the destination")
- }
- 
--// Pinning must not become a single node: distinct users still spread.
--func TestLoadBalanceHashKeyInUserSpreadsUsers(t *testing.T) {
--	proxies := balancedProxies(8)
--	strategy := strategyConsistentHashing(testUrl, getKeyWithInUser(getKey))
-+// Pinning must preserve distinct inbound identities. Consistent hashing may
-+// legally put several distinct keys in one bucket, so this test checks the
-+// identity key before hashing instead of asserting a random bucket spread.
-+func TestLoadBalanceHashKeyInUserKeepsUsersDistinct(t *testing.T) {
-+	keyed := getKeyWithInUser(getKey)
-+	users := []string{"job-1", "job-2", "job-3", "job-4", "job-5", "job-6"}
- 
--	seen := map[int]bool{}
--	for _, user := range []string{"job-1", "job-2", "job-3", "job-4", "job-5", "job-6"} {
--		selected := strategy(proxies, request(user, "a.example.com"), false)
--		seen[indexOf(t, proxies, selected)] = true
-+	seenKeys := map[string]struct{}{}
-+	for _, user := range users {
-+		seenKeys[keyed(request(user, "a.example.com"))] = struct{}{}
- 	}
--	require.Greater(t, len(seen), 1)
-+	require.Len(t, seenKeys, len(users))
- }
- 
- // Sticky sessions keys on source and destination; a client behind one source
 diff --git a/adapter/outboundgroup/parser.go b/adapter/outboundgroup/parser.go
 index e97f8da04b9f321e0a637837beabc1b3749d3b63..eb6e3d3303eb12fab24846b46a7c4655d17ef316 100644
 --- a/adapter/outboundgroup/parser.go
@@ -4237,67 +4023,6 @@ index ad5860800a0bf2aa5379e49893ad8600bb260644..cce62da8e1fa8600635eed325c6f9167
  // It is safe to use plain stores here because the destination bucket must be
  // either locked or exclusively written to by the helper during resize.
  func appendToBucket[K comparable, V any](h2 uint8, e *entry[K, V], b *bucketPadded) {
-diff --git a/component/fakeip/pool.go b/component/fakeip/pool.go
-index 0417e20c52123e5dabd80fc0de8606d8f5fe7b0b..5392869651b0769bda816120134ee49cd19581ac 100644
---- a/component/fakeip/pool.go
-+++ b/component/fakeip/pool.go
-@@ -88,7 +88,18 @@ func (p *Pool) IPNet() netip.Prefix {
- 
- // CloneFrom clone cache from old pool
- func (p *Pool) CloneFrom(o *Pool) {
-+	p.mux.Lock()
-+	defer p.mux.Unlock()
-+
-+	o.mux.Lock()
-+	defer o.mux.Unlock()
-+
- 	o.store.CloneTo(p.store)
-+
-+	// the allocation state only matches the cloned entries if both pools cover the same range
-+	if o.first == p.first && o.last == p.last {
-+		p.offset, p.cycle = o.offset, o.cycle
-+	}
- }
- 
- func (p *Pool) get(host string) netip.Addr {
-diff --git a/component/fakeip/pool_test.go b/component/fakeip/pool_test.go
-index c445807aa5828dd20179b3dcf761a08424add81b..fe478e487b9bc080c91368a083da7fc364faf7ef 100644
---- a/component/fakeip/pool_test.go
-+++ b/component/fakeip/pool_test.go
-@@ -212,6 +212,33 @@ func TestPool_Clone(t *testing.T) {
- 	assert.True(t, lastExist)
- }
- 
-+func TestPool_CloneKeepsAllocationState(t *testing.T) {
-+	ipnet := netip.MustParsePrefix("192.168.0.1/24")
-+	pool, _ := New(Options{
-+		IPNet: ipnet,
-+		Size:  10,
-+	})
-+
-+	foo := pool.Lookup("foo.com")
-+	bar := pool.Lookup("bar.com")
-+
-+	newPool, _ := New(Options{
-+		IPNet: ipnet,
-+		Size:  10,
-+	})
-+	newPool.CloneFrom(pool)
-+
-+	// a fresh allocation must not overwrite the retained mappings
-+	baz := newPool.Lookup("baz.com")
-+	assert.NotEqual(t, foo, baz)
-+	assert.NotEqual(t, bar, baz)
-+	assert.Equal(t, foo, newPool.Lookup("foo.com"))
-+	assert.Equal(t, bar, newPool.Lookup("bar.com"))
-+	host, ok := newPool.LookBack(foo)
-+	assert.True(t, ok)
-+	assert.Equal(t, "foo.com", host)
-+}
-+
- func TestPool_Error(t *testing.T) {
- 	ipnet := netip.MustParsePrefix("192.168.0.1/31")
- 	_, err := New(Options{
 diff --git a/component/geodata/utils.go b/component/geodata/utils.go
 index ee7946a66f778c9d9e151d294e535db5c395c472..64b3ff66528f05388afc5fdf6ba35b3dffa38ee9 100644
 --- a/component/geodata/utils.go
@@ -14047,6 +13772,234 @@ index c7c96566e18803b8372178cc785bda930991e70c..a638ef20c2988c2b2e1f2025530ba5bf
  	}, nil
  }
  
+diff --git a/config/utils.go b/config/utils.go
+index 7b413847fd040b7f524eab59223d90f91f1ebb4d..ed4605146cc8d5b3d6dc96d5e9b786cd68389fa2 100644
+--- a/config/utils.go
++++ b/config/utils.go
+@@ -163,43 +163,26 @@ func validateDialerProxies(proxies map[string]C.Proxy) error {
+ 		}
+ 	}
+ 
+-	// perform depth-first search to detect cycles for each proxy
++	// every proxy has at most one dialer-proxy, so walk each chain once: reaching a proxy
++	// of the current walk means a cycle, reaching one an earlier walk finished does not
++	const onPath, acyclic = 1, 2
++	state := make(map[string]uint8, len(graph))
++	var path []string
+ 	for name := range graph {
+-		visited := make(map[string]bool, len(graph))
+-		path := make([]string, 0, len(graph))
+-		if validateDialerProxiesHasCycle(name, graph, visited, path) {
+-			return fmt.Errorf("proxy [%s] has circular dialer-proxy dependency", name)
+-		}
+-	}
+-
+-	return nil
+-}
+-
+-// validateDialerProxiesHasCycle performs DFS to detect if there's a cycle starting from current proxy
+-func validateDialerProxiesHasCycle(current string, graph map[string]string, visited map[string]bool, path []string) bool {
+-	// check if current is already in path (cycle detected)
+-	for _, p := range path {
+-		if p == current {
+-			return true
++		path = path[:0]
++		for current, ok := name, true; ok && state[current] != acyclic; current, ok = graph[current] {
++			if state[current] == onPath {
++				return fmt.Errorf("proxy [%s] has circular dialer-proxy dependency", name)
++			}
++			state[current] = onPath
++			path = append(path, current)
+ 		}
+-	}
+-
+-	// already visited and no cycle
+-	if visited[current] {
+-		return false
+-	}
+-
+-	visited[current] = true
+-	path = append(path, current)
+-
+-	// check dialer-proxy of current proxy
+-	if dialerProxy, exists := graph[current]; exists {
+-		if validateDialerProxiesHasCycle(dialerProxy, graph, visited, path) {
+-			return true
++		for _, p := range path {
++			state[p] = acyclic
+ 		}
+ 	}
+ 
+-	return false
++	return nil
+ }
+ 
+ func verifyIP6() bool {
+diff --git a/config/utils_test.go b/config/utils_test.go
+index 542c23300404f7af0dada8a9da518e610d07ce1d..aba0ddc673176650d384e428870dc846d2435a23 100644
+--- a/config/utils_test.go
++++ b/config/utils_test.go
+@@ -8,9 +8,11 @@ import (
+ 
+ func TestValidateDialerProxies(t *testing.T) {
+ 	testCases := []struct {
+-		testName    string
+-		proxy       []map[string]any
+-		errContains string
++		testName string
++		proxy    []map[string]any
++		// the proxy named in a cycle error depends on map iteration order,
++		// so any of these errors is accepted; nil means no error
++		errs []string
+ 	}{
+ 		{
+ 			testName: "ValidReference",
+@@ -18,61 +20,129 @@ func TestValidateDialerProxies(t *testing.T) {
+ 				{"name": "base-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1080},
+ 				{"name": "proxy-with-dialer", "type": "socks5", "server": "127.0.0.1", "port": 1081, "dialer-proxy": "base-proxy"},
+ 			},
+-			errContains: "",
+ 		},
+ 		{
+ 			testName: "NotFoundReference",
+ 			proxy: []map[string]any{ // create proxy with non-existent dialer-proxy reference
++				{"name": "base-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1080},
++				{"name": "valid-proxy-with-dialer", "type": "socks5", "server": "127.0.0.1", "port": 1081, "dialer-proxy": "base-proxy"},
+ 				{"name": "proxy-with-dialer", "type": "socks5", "server": "127.0.0.1", "port": 1081, "dialer-proxy": "non-existent-proxy"},
+ 			},
+-			errContains: "not found",
++			errs: []string{"proxy [proxy-with-dialer] dialer-proxy [non-existent-proxy] not found"},
+ 		},
+ 		{
+ 			testName: "CircularDependency",
+-			proxy: []map[string]any{
+-				// create proxy A that references B
++			proxy: []map[string]any{ // proxy-b -> proxy-a <-> proxy-c
+ 				{"name": "proxy-a", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "proxy-c"},
+-				// create proxy B that references C
+ 				{"name": "proxy-b", "type": "socks5", "server": "127.0.0.1", "port": 1081, "dialer-proxy": "proxy-a"},
+-				// create proxy C that references A (creates cycle)
+ 				{"name": "proxy-c", "type": "socks5", "server": "127.0.0.1", "port": 1082, "dialer-proxy": "proxy-a"},
+ 			},
+-			errContains: "circular",
++			errs: []string{
++				"proxy [proxy-a] has circular dialer-proxy dependency",
++				"proxy [proxy-b] has circular dialer-proxy dependency",
++				"proxy [proxy-c] has circular dialer-proxy dependency",
++			},
+ 		},
+ 		{
+ 			testName: "ComplexChain",
+-			proxy: []map[string]any{ // create a valid chain: proxy-d -> proxy-c -> proxy-b -> proxy-a
++			proxy: []map[string]any{ // proxy-d, proxy-e and proxy-f share the chain proxy-c -> proxy-b -> proxy-a
+ 				{"name": "proxy-a", "type": "socks5", "server": "127.0.0.1", "port": 1080},
+ 				{"name": "proxy-b", "type": "socks5", "server": "127.0.0.1", "port": 1081, "dialer-proxy": "proxy-a"},
+ 				{"name": "proxy-c", "type": "socks5", "server": "127.0.0.1", "port": 1082, "dialer-proxy": "proxy-b"},
+ 				{"name": "proxy-d", "type": "socks5", "server": "127.0.0.1", "port": 1083, "dialer-proxy": "proxy-c"},
++				{"name": "proxy-e", "type": "socks5", "server": "127.0.0.1", "port": 1084, "dialer-proxy": "proxy-c"},
++				{"name": "proxy-f", "type": "socks5", "server": "127.0.0.1", "port": 1085, "dialer-proxy": "proxy-c"},
+ 			},
+-			errContains: "",
+ 		},
+ 		{
+ 			testName: "EmptyDialerProxy",
+ 			proxy: []map[string]any{ // create proxy without dialer-proxy
+ 				{"name": "simple-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1080},
++				{"name": "another-simple-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1081},
+ 			},
+-			errContains: "",
+ 		},
+ 		{
+ 			testName: "SelfReference",
+ 			proxy: []map[string]any{ // create proxy that references itself
++				{"name": "base-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1080},
+ 				{"name": "self-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "self-proxy"},
+ 			},
+-			errContains: "circular",
++			errs: []string{"proxy [self-proxy] has circular dialer-proxy dependency"},
++		},
++		{
++			testName: "NotFoundBeforeCycle",
++			proxy: []map[string]any{
++				{"name": "a", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "b"},
++				{"name": "b", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "a"},
++				{"name": "c", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "missing"},
++			},
++			errs: []string{"proxy [c] dialer-proxy [missing] not found"},
++		},
++		{
++			testName: "TwoProxyCycle",
++			proxy: []map[string]any{
++				{"name": "a", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "b"},
++				{"name": "b", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "a"},
++				{"name": "c", "type": "socks5", "server": "127.0.0.1", "port": 1080},
++			},
++			errs: []string{
++				"proxy [a] has circular dialer-proxy dependency",
++				"proxy [b] has circular dialer-proxy dependency",
++			},
++		},
++		{
++			testName: "LongChainIntoCycle",
++			// x -> a -> b -> c -> d -> e -> c, beside an acyclic chain y -> z, w -> z
++			proxy: []map[string]any{
++				{"name": "x", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "a"},
++				{"name": "a", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "b"},
++				{"name": "b", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "c"},
++				{"name": "c", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "d"},
++				{"name": "d", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "e"},
++				{"name": "e", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "c"},
++				{"name": "y", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "z"},
++				{"name": "z", "type": "socks5", "server": "127.0.0.1", "port": 1080},
++				{"name": "w", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "z"},
++			},
++			errs: []string{
++				"proxy [x] has circular dialer-proxy dependency",
++				"proxy [a] has circular dialer-proxy dependency",
++				"proxy [b] has circular dialer-proxy dependency",
++				"proxy [c] has circular dialer-proxy dependency",
++				"proxy [d] has circular dialer-proxy dependency",
++				"proxy [e] has circular dialer-proxy dependency",
++			},
++		},
++		{
++			testName: "SharedRelayBesideCycle",
++			// p and q share an acyclic relay, t leads into the cycle r <-> s
++			proxy: []map[string]any{
++				{"name": "p", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "relay"},
++				{"name": "q", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "relay"},
++				{"name": "relay", "type": "socks5", "server": "127.0.0.1", "port": 1080},
++				{"name": "r", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "s"},
++				{"name": "s", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "r"},
++				{"name": "t", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "s"},
++			},
++			errs: []string{
++				"proxy [r] has circular dialer-proxy dependency",
++				"proxy [s] has circular dialer-proxy dependency",
++				"proxy [t] has circular dialer-proxy dependency",
++			},
+ 		},
+ 	}
+ 
+ 	for _, testCase := range testCases {
+ 		t.Run(testCase.testName, func(t *testing.T) {
+ 			config := RawConfig{Proxy: testCase.proxy}
+-			_, _, err := parseProxies(&config)
+-			if testCase.errContains == "" {
+-				assert.NoError(t, err, testCase.testName)
+-			} else {
+-				assert.ErrorContains(t, err, testCase.errContains, testCase.testName)
++			// repeat so that different map iteration orders are covered
++			for i := 0; i < 20; i++ {
++				_, _, err := parseProxies(&config)
++				if testCase.errs == nil {
++					assert.NoError(t, err)
++				} else if assert.Error(t, err) {
++					assert.Contains(t, testCase.errs, err.Error())
++				}
+ 			}
+ 		})
+ 	}
 diff --git a/constant/adapters.go b/constant/adapters.go
 index a44b2cdfab8df4e8192b46882a869bb57c67fee1..cbef425bf4e1f8ad8520abb8d4badddace2bf01d 100644
 --- a/constant/adapters.go
@@ -14217,52 +14170,10 @@ index 05ea8ebd32f444ca49f94f7e794aedc93e114bfd..2f58ad56d67ab24e899bbfbad5508c82
  func (rt RuleType) String() string {
  	switch rt {
  	case Domain:
-diff --git a/dns/doh.go b/dns/doh.go
-index 690973f37956611c9f7aa759dafc66a4c09e42a8..b56d8ffd45a70648fc0adb49904491da506f067c 100644
---- a/dns/doh.go
-+++ b/dns/doh.go
-@@ -383,10 +383,17 @@ func (doh *dnsOverHTTPS) createClient(ctx context.Context) (*http.Client, error)
- // HTTP3 is enabled in the upstream options).  If this attempt is successful,
- // it returns an HTTP3 transport, otherwise it returns the H1/H2 transport.
- func (doh *dnsOverHTTPS) createTransport(ctx context.Context) (t http.RoundTripper, err error) {
-+	// http.Transport dials in a context detached from the request, so a dial
-+	// that the query has given up on must still end on its own.
- 	transport := &http.Transport{
- 		DisableCompression: true,
--		DialContext:        doh.dialer.DialContext,
--		IdleConnTimeout:    transportDefaultIdleConnTimeout,
-+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-+			ctx, cancel := context.WithTimeout(ctx, dialTimeout)
-+			defer cancel()
-+			return doh.dialer.DialContext(ctx, network, addr)
-+		},
-+		IdleConnTimeout:     transportDefaultIdleConnTimeout,
-+		TLSHandshakeTimeout: dialTimeout,
- 	}
- 
- 	if doh.url.Scheme == "http" {
 diff --git a/go.mod b/go.mod
-index 13e840336772b0443596e8b0807d3362d8a61427..ca4c8424d58d654c40bbbb75dd44b2f2af74298d 100644
+index 7709291311c5363c559151f5680ece5e2afd069a..ca4c8424d58d654c40bbbb75dd44b2f2af74298d 100644
 --- a/go.mod
 +++ b/go.mod
-@@ -7,7 +7,7 @@ require (
- 	github.com/coreos/go-iptables v0.8.0
- 	github.com/dlclark/regexp2 v1.12.0
- 	github.com/easytier/easytier/easytier-go v0.0.0-20260910071355-3d0c9c3ca5e2
--	github.com/enfein/mieru/v3 v3.38.0
-+	github.com/enfein/mieru/v3 v3.38.1
- 	github.com/gobwas/ws v1.4.0
- 	github.com/gofrs/uuid/v5 v5.4.0
- 	github.com/golang/snappy v1.0.0
-@@ -41,7 +41,7 @@ require (
- 	github.com/metacubex/sing-shadowsocks2 v0.2.8
- 	github.com/metacubex/sing-tun v0.4.27
- 	github.com/metacubex/sing-vmess v0.2.5
--	github.com/metacubex/sing-wireguard v0.0.0-20260826105301-c3ae17d19f9e
-+	github.com/metacubex/sing-wireguard v0.0.0-20261002050126-e5fa1a607406
- 	github.com/metacubex/smux v0.0.0-20260105030934-d0c8756d3141
- 	github.com/metacubex/ssh v0.1.0
- 	github.com/metacubex/tailscale v0.0.0-20260821153257-ff0ecd818181
 @@ -56,6 +56,7 @@ require (
  	github.com/samber/lo v1.53.0
  	github.com/sirupsen/logrus v1.9.4
@@ -14272,31 +14183,9 @@ index 13e840336772b0443596e8b0807d3362d8a61427..ca4c8424d58d654c40bbbb75dd44b2f2
  	github.com/yosida95/uritemplate/v3 v3.0.2
  	gitlab.com/go-extension/aes-ccm v0.0.0-20230221065045-e58665ef23c7
 diff --git a/go.sum b/go.sum
-index 9852404cac53b4a55773df2148a467c81eea4f08..3abb1cd46051e455d3326a64553d191dd114b9ac 100644
+index ae217175c904516cf5ab318b4d778ab1f13d4d15..3abb1cd46051e455d3326a64553d191dd114b9ac 100644
 --- a/go.sum
 +++ b/go.sum
-@@ -29,8 +29,8 @@ github.com/dunglas/httpsfv v1.0.2 h1:iERDp/YAfnojSDJ7PW3dj1AReJz4MrwbECSSE59JWL0
- github.com/dunglas/httpsfv v1.0.2/go.mod h1:zID2mqw9mFsnt7YC3vYQ9/cjq30q41W+1AnDwH8TiMg=
- github.com/easytier/easytier/easytier-go v0.0.0-20260910071355-3d0c9c3ca5e2 h1:2/9iRUcMR3QPrT2XFf/i7QV5YoSHPFjkgBM5tP8xbcc=
- github.com/easytier/easytier/easytier-go v0.0.0-20260910071355-3d0c9c3ca5e2/go.mod h1:fCEi5+K2yt+sPDONSWO1uNpOifrwPgFGvm3J0YrFRvk=
--github.com/enfein/mieru/v3 v3.38.0 h1:+DuixHFoCGEYEopoEg8fHmDJ5Ak30PuXuf1GIh2Xpu0=
--github.com/enfein/mieru/v3 v3.38.0/go.mod h1:zJBUCsi5rxyvHM8fjFf+GLaEl4OEjjBXr1s5F6Qd3hM=
-+github.com/enfein/mieru/v3 v3.38.1 h1:UZ5zAJi0caSmaOniVy33pyY7ANxyf4PmPeLSuYZpDro=
-+github.com/enfein/mieru/v3 v3.38.1/go.mod h1:zJBUCsi5rxyvHM8fjFf+GLaEl4OEjjBXr1s5F6Qd3hM=
- github.com/ericlagergren/aegis v0.0.0-20250325060835-cd0defd64358 h1:kXYqH/sL8dS/FdoFjr12ePjnLPorPo2FsnrHNuXSDyo=
- github.com/ericlagergren/aegis v0.0.0-20250325060835-cd0defd64358/go.mod h1:hkIFzoiIPZYxdFOOLyDho59b7SrDfo+w3h+yWdlg45I=
- github.com/ericlagergren/polyval v0.0.0-20220411101811-e25bc10ba391 h1:8j2RH289RJplhA6WfdaPqzg1MjH2K8wX5e0uhAxrw2g=
-@@ -167,8 +167,8 @@ github.com/metacubex/sing-tun v0.4.27 h1:dWCpFDlWelQrhH3y5KkMrJXEXYeJ0V2LROP8Cxv
- github.com/metacubex/sing-tun v0.4.27/go.mod h1:5nlmrOy+FG0yhiLm+O/pzmirZVrpLuDQZuA+qI9x5kg=
- github.com/metacubex/sing-vmess v0.2.5 h1:m9Zt5I27lB9fmLMZfism9sH2LcnAfShZfwSkf6/KJoE=
- github.com/metacubex/sing-vmess v0.2.5/go.mod h1:AwtlzUgf8COe9tRYAKqWZ+leDH7p5U98a0ZUpYehl8Q=
--github.com/metacubex/sing-wireguard v0.0.0-20260826105301-c3ae17d19f9e h1:KGKZt//rrELT/dEwgYcHCqNYEGr3a7uVutlZrzrZZWY=
--github.com/metacubex/sing-wireguard v0.0.0-20260826105301-c3ae17d19f9e/go.mod h1:OiYj4hitKrN1YIrgGHXp6zKnc9asCspF+SrYlLN2hYQ=
-+github.com/metacubex/sing-wireguard v0.0.0-20261002050126-e5fa1a607406 h1:sronRtbNXPCT9sOpcsISq87w4mLufxP7mQFUEg+zUCY=
-+github.com/metacubex/sing-wireguard v0.0.0-20261002050126-e5fa1a607406/go.mod h1:OiYj4hitKrN1YIrgGHXp6zKnc9asCspF+SrYlLN2hYQ=
- github.com/metacubex/smux v0.0.0-20260105030934-d0c8756d3141 h1:DK2l6m2Fc85H2BhiAPgbJygiWhesPlfGmF+9Vw6ARdk=
- github.com/metacubex/smux v0.0.0-20260105030934-d0c8756d3141/go.mod h1:/yI4OiGOSn0SURhZdJF3CbtPg3nwK700bG8TZLMBvAg=
- github.com/metacubex/ssh v0.1.0 h1:iGfr99qk/eMHzUnQ/0bTxXT8+8SWqLSHBWDHoAhngzw=
 @@ -255,6 +255,8 @@ github.com/tailscale/peercred v0.0.0-20250107143737-35a0c7bd7edc h1:24heQPtnFR+y
  github.com/tailscale/peercred v0.0.0-20250107143737-35a0c7bd7edc/go.mod h1:f93CXfllFsO9ZQVq+Zocb1Gp4G5Fz0b0rXHLOzt/Djc=
  github.com/u-root/uio v0.0.0-20230220225925-ffce2a382923 h1:tHNk7XK9GkmKUR6Gh8gVBKXc2MVSZ4G/NnWLtzw4gNA=

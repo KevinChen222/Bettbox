@@ -30,6 +30,8 @@ public class TrayIcon: NSView {
     public var onTrayIconRightMouseDown:(() -> Void)?
     public var onTrayIconRightMouseUp:(() -> Void)?
     
+    public private(set) var isOptionPressed = false
+
     var statusItem: NSStatusItem?
     private var sourceImage: NSImage?
     private var isActive = true
@@ -222,6 +224,7 @@ public class TrayIcon: NSView {
     
     public override func mouseDown(with event: NSEvent) {
         statusItem?.button?.highlight(true)
+        isOptionPressed = event.modifierFlags.contains(.option)
         self.onTrayIconMouseDown!()
     }
     
@@ -231,6 +234,7 @@ public class TrayIcon: NSView {
     }
     
     public override func rightMouseDown(with event: NSEvent) {
+        isOptionPressed = event.modifierFlags.contains(.option)
         self.onTrayIconRightMouseDown!()
     }
     

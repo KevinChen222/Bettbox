@@ -42,7 +42,7 @@ jobs:
             core/Clash.Meta/go.sum
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.9'
+          flutter-version: '3.47.7'
           channel: stable
           cache: true
       - uses: dtolnay/rust-toolchain@stable
@@ -80,7 +80,7 @@ jobs:
           cp lib/features/chains/LICENSE assets/data/avalon-chain-LICENSE.txt
           cp NOTICE assets/data/avalon-chain-NOTICE.txt
       - name: Test Smart client models and proxy chains
-        run: flutter test test/features/chains test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart test/main_page_titles_test.dart
+        run: flutter test test/features/chains test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart test/main_page_titles_test.dart test/models/profile_save_test.dart
       - name: Prepare Smart kernel
         run: dart tool/prepare_smart_core.dart
       - name: Test Go bridge
@@ -122,7 +122,11 @@ jobs:
           dpkg-deb -x Bettbox-smart-linux-x64.deb .test/linux-deb
           test -x .test/linux-deb/usr/share/Bettbox/Bettbox
           test -x .test/linux-deb/usr/share/Bettbox/BettboxCore
-          test -u .test/linux-deb/usr/share/Bettbox/BettboxCore
+          # 1.19.5 grants network capabilities in postinst; no packaged setuid.
+          test ! -u .test/linux-deb/usr/share/Bettbox/BettboxCore
+          dpkg-deb -e Bettbox-smart-linux-x64.deb .test/linux-deb-control
+          grep -F 'cap_net_admin,cap_net_bind_service,cap_net_raw=+ep' .test/linux-deb-control/postinst
+          dpkg-deb -f Bettbox-smart-linux-x64.deb Depends | grep -F libcap2-bin
           test -f .test/linux-deb/usr/share/Bettbox/data/flutter_assets/assets/data/avalon-chain-LICENSE.txt
           test -f .test/linux-deb/usr/share/Bettbox/data/flutter_assets/assets/data/avalon-chain-NOTICE.txt
           desktop-file-validate .test/linux-deb/usr/share/applications/Bettbox.desktop
@@ -142,10 +146,9 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE" ]; then
-            printf '%s' "$KEYSTORE" | base64 --decode > android/app/keystore.jks
-            printf '\nkeyAlias=%s\nstorePassword=%s\nkeyPassword=%s\n' "$KEY_ALIAS" "$STORE_PASSWORD" "$KEY_PASSWORD" >> android/local.properties
-          fi
+          test -n "$KEYSTORE" && test -n "$KEY_ALIAS" && test -n "$STORE_PASSWORD" && test -n "$KEY_PASSWORD"
+          printf '%s' "$KEYSTORE" | base64 --decode > android/app/keystore.jks
+          printf '\nkeyAlias=%s\nstorePassword=%s\nkeyPassword=%s\n' "$KEY_ALIAS" "$STORE_PASSWORD" "$KEY_PASSWORD" >> android/local.properties
           dart setup.dart android --arch arm64 --out core
           flutter build apk --release --split-per-abi --target-platform android-arm64 --dart-define=APP_ENV=pre
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk Bettbox-smart-android-arm64-v8a.apk

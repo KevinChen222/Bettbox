@@ -54,7 +54,7 @@
 链路运行和备份的三个主要接入点：
 
 1. `lib/views/tools.dart`：导入 `view.dart`、加入 `ProxyChainsItem` 和搜索入口。上游改 UI 时可以将这个入口移到新工具页面，不需要移植 Avalon 界面或重做导航枚举。
-2. `lib/state.dart`：`patchRawConfig` 在脚本、过滤和组开关等处理完成后、写入/加载运行配置前调用 `applyProxyChains(profileId, rawConfig)`。对旧版未落盘或被订阅更新覆盖的链路补入运行配置，失效链路使用 REJECT 隔离；已落盘链路使用 YAML，仅隔离管理标记下失去前置引用的节点，避免重复生成或覆盖配置编辑页的修改。编辑器用 `includeProxyChains: false` 移除管理标记对应的生成内容后读取基础有效配置，避免旧链路影响编辑。`lib/controller.dart` 在重新应用配置前清空旧策略组、Provider 和高度缓存，加载失败时不保留旧配置列表。
+2. `lib/state.dart`：1.19.5 起由 Go 的 `PatchParams` 处理覆写。`buildSetupParams` 先通过 `getRuntimeConfig` 预览脚本、过滤及组开关处理后的配置，再调用 `applyProxyChains(profileId, rawConfig)`，仅将节点与组通过 `chain-proxies` / `chain-groups` 交回 `core/patch.go`，在最终加载的常规覆写之后、GLOBAL 选择之前替换，避免规则或隧道重复覆写。对旧版未落盘或被订阅更新覆盖的链路补入运行配置，失效链路使用 REJECT 隔离；已落盘链路使用 YAML，仅隔离管理标记下失去前置引用的节点，避免重复生成或覆盖配置编辑页的修改。编辑器与快照继续使用 `patchRawConfig` 薄适配入口；`includeProxyChains: false` 在脚本及 Go 覆写前移除管理标记对应的生成内容，避免旧链路影响编辑。Android 服务 isolate 的运行配置预览及 Provider 解析直接使用原生 handler。`lib/controller.dart` 在重新应用配置前清空旧策略组、Provider 和高度缓存，加载失败时不保留旧配置列表。
 3. `lib/controller.dart`：在备份中加入链路库；恢复时先校验版本，再按恢复策略合并/覆盖；清空数据时清空链路库。上游改备份格式时迁移这三个行为。
 
 节点添加另接入 `lib/views/profiles/edit_profile.dart`，并通过 `ActionMethod.importNodes`、`lib/clash/core.dart` / `interface.dart`、`core/action.go` / `constant.go` 调用独立桥接文件。保持生成 JSON 枚举映射与方法名一致。UI 合并时保留配置页左下角入口和链路选节点窗口顶部入口。

@@ -5,7 +5,7 @@ import 'package:bett_box/common/common.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:bett_box/widgets/fade_box.dart';
 import 'package:bett_box/widgets/text.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class MessageManager extends StatefulWidget {
   final Widget child;

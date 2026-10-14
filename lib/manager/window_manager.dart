@@ -1,13 +1,10 @@
 import 'dart:async';
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_ext/window_ext.dart';
 import 'package:window_manager/window_manager.dart';
@@ -45,7 +42,8 @@ class _WindowContainerState extends ConsumerState<WindowManager>
     _windowGeometryTimer?.cancel();
     _windowGeometryTimer = Timer(const Duration(milliseconds: 125), () async {
       if (!mounted || revision != _windowGeometryRevision) return;
-      final isAbnormal = (await windowManager.isMaximized()) ||
+      final isAbnormal =
+          (await windowManager.isMaximized()) ||
           (await windowManager.isFullScreen()) ||
           (await windowManager.isMinimized());
       if (isAbnormal) return;
@@ -59,7 +57,9 @@ class _WindowContainerState extends ConsumerState<WindowManager>
       }
       if (!bounds.left.isFinite || !bounds.top.isFinite) return;
 
-      ref.read(windowSettingProvider.notifier).updateState(
+      ref
+          .read(windowSettingProvider.notifier)
+          .updateState(
             (state) => state.copyWith(
               width: bounds.width,
               height: bounds.height,
@@ -209,7 +209,7 @@ class _WindowContainerState extends ConsumerState<WindowManager>
     try {
       await windowExtManager.setDockIconVisible(visible);
     } catch (e) {
-      commonPrint.log('Update dock icon visibility failed: $e');
+      commonPrint.warn('Update dock icon visibility failed: $e');
     }
   }
 
@@ -235,20 +235,27 @@ class WindowHeaderContainer extends StatelessWidget {
     return Consumer(
       builder: (_, ref, child) {
         final isMobileView = ref.watch(isMobileViewProvider);
-        final version = ref.watch(versionProvider);
-        if ((version <= 10 || !isMobileView) && system.isMacOS) {
-          return child!;
-        }
-        return Stack(
-          children: [
-            Column(
-              children: [
-                SizedBox(height: kHeaderHeight),
-                Expanded(flex: 1, child: child!),
-              ],
-            ),
-            const WindowHeader(),
-          ],
+        return Material(
+          color: isMobileView
+              ? context.colorScheme.surfaceContainer
+              : Colors.transparent,
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  SizedBox(height: kHeaderHeight),
+                  Expanded(flex: 1, child: child!),
+                ],
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: kHeaderHeight,
+                child: const WindowHeader(),
+              ),
+            ],
+          ),
         );
       },
       child: child,
@@ -278,7 +285,7 @@ class _WindowHeaderState extends ConsumerState<WindowHeader> {
     final isMaximized = await windowManager.isMaximized();
     if (!mounted) return;
     isMaximizedNotifier.value = isMaximized;
-    
+
     final isAlwaysOnTop = await windowManager.isAlwaysOnTop();
     if (!mounted) return;
     isPinNotifier.value = isAlwaysOnTop;
@@ -310,12 +317,15 @@ class _WindowHeaderState extends ConsumerState<WindowHeader> {
     final newIsPinned = !isAlwaysOnTop;
     await windowManager.setAlwaysOnTop(newIsPinned);
     isPinNotifier.value = newIsPinned;
-    ref.read(windowSettingProvider.notifier).updateState(
-          (state) => state.copyWith(isPinned: newIsPinned),
-        );
+    ref
+        .read(windowSettingProvider.notifier)
+        .updateState((state) => state.copyWith(isPinned: newIsPinned));
   }
 
   Widget _buildActions() {
+    if (system.isMacOS) {
+      return const SizedBox.shrink();
+    }
     final shouldUseHoverEffect = system.isWindows || system.isLinux;
     final alwaysShowTitleBar = ref.watch(
       vpnSettingProvider.select((state) => state.alwaysShowTitleBar),
@@ -356,33 +366,35 @@ class _WindowHeaderState extends ConsumerState<WindowHeader> {
                       );
                     },
                   ),
-                  IconButton(
-                    onPressed: () {
-                      windowManager.minimize();
-                    },
-                    icon: const Icon(Icons.remove),
-                  ),
-                  ValueListenableBuilder(
-                    valueListenable: isMaximizedNotifier,
-                    builder: (_, value, _) {
-                      return IconButton(
-                        onPressed: () async {
-                          _updateMaximized();
-                        },
-                        icon: value
-                            ? const Icon(Icons.filter_none, size: 20)
-                            : const Icon(Icons.crop_square),
-                      );
-                    },
-                  ),
-                  IconButton(
-                    onPressed: () {
-                      FocusManager.instance.primaryFocus?.unfocus();
-                      globalState.appController.unBackBlock();
-                      globalState.appController.handleBackOrExit();
-                    },
-                    icon: const Icon(Icons.close),
-                  ),
+                  if (!system.isMacOS) ...[
+                    IconButton(
+                      onPressed: () {
+                        windowManager.minimize();
+                      },
+                      icon: const Icon(Icons.remove),
+                    ),
+                    ValueListenableBuilder(
+                      valueListenable: isMaximizedNotifier,
+                      builder: (_, value, _) {
+                        return IconButton(
+                          onPressed: () async {
+                            _updateMaximized();
+                          },
+                          icon: value
+                              ? const Icon(Icons.filter_none, size: 20)
+                              : const Icon(Icons.crop_square),
+                        );
+                      },
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        globalState.appController.unBackBlock();
+                        globalState.appController.handleBackOrExit();
+                      },
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -394,118 +406,33 @@ class _WindowHeaderState extends ConsumerState<WindowHeader> {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      child: Stack(
-        alignment: AlignmentDirectional.center,
-        children: [
-          Positioned(
-            child: GestureDetector(
-              onPanStart: (_) {
-                windowManager.startDragging();
-              },
-              onDoubleTap: () {
-                _updateMaximized();
-              },
-              child: Container(
-                color: context.colorScheme.secondary.opacity15,
-                alignment: Alignment.centerLeft,
-                height: kHeaderHeight,
+    return SizedBox(
+      height: kHeaderHeight,
+      child: Material(
+        color: Colors.transparent,
+        child: Stack(
+          alignment: AlignmentDirectional.centerStart,
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onPanStart: (_) {
+                  windowManager.startDragging();
+                },
+                onDoubleTap: () {
+                  _updateMaximized();
+                },
               ),
             ),
-          ),
-          if (system.isMacOS)
-            const Text(appName)
-          else ...[
-            Positioned(right: 0, child: _buildActions()),
+            Positioned(
+              top: 0,
+              bottom: 0,
+              right: 0,
+              child: RepaintBoundary(child: _buildActions()),
+            ),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-final sidebarIconPathProvider =
-    StateNotifierProvider<SidebarIconPathNotifier, String?>((ref) {
-      return SidebarIconPathNotifier();
-    });
-
-class SidebarIconPathNotifier extends StateNotifier<String?> {
-  SidebarIconPathNotifier() : super(null) {
-    _init();
-  }
-
-  Future<void> _init() async {
-    final prefs = await preferences.sharedPreferencesCompleter.future;
-    state = prefs?.getString(customSidebarIconKey);
-  }
-
-  Future<void> updatePath(String? path) async {
-    state = path;
-    final prefs = await preferences.sharedPreferencesCompleter.future;
-    if (path == null) {
-      prefs?.remove(customSidebarIconKey);
-    } else {
-      prefs?.setString(customSidebarIconKey, path);
-    }
-  }
-}
-
-class AppIcon extends ConsumerWidget {
-  const AppIcon({super.key});
-
-  Future<void> _handlePickImage(BuildContext context, WidgetRef ref) async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.image);
-
-    if (result != null && result.files.single.path != null) {
-      final path = result.files.single.path!;
-      final file = File(path);
-      final size = await file.length();
-      if (size > 1024 * 1024) {
-        if (context.mounted) {
-          globalState.showNotifier('Image size exceeds 1MB');
-        }
-        return;
-      }
-      ref.read(sidebarIconPathProvider.notifier).updatePath(path);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final customIconPath = ref.watch(sidebarIconPathProvider);
-
-    Widget icon;
-    if (customIconPath != null && customIconPath.isNotEmpty) {
-      icon = ClipOval(
-        child: Image.file(
-          File(customIconPath),
-          width: 32,
-          height: 32,
-          fit: BoxFit.cover,
-          cacheWidth: 64,
-          cacheHeight: 64,
-          errorBuilder: (_, _, _) {
-            // Fallback if file load fails
-            return Image.asset(
-              isDark
-                  ? 'assets/images/icon.png'
-                  : 'assets/images/icon_light.png',
-              fit: BoxFit.contain,
-            );
-          },
         ),
-      );
-    } else {
-      icon = Image.asset(
-        isDark ? 'assets/images/icon.png' : 'assets/images/icon_light.png',
-        fit: BoxFit.contain,
-      );
-    }
-
-    return GestureDetector(
-      onLongPress: () => _handlePickImage(context, ref),
-      child: SizedBox(width: 40, height: 40, child: icon),
+      ),
     );
   }
 }

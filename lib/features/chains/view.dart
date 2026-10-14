@@ -249,10 +249,7 @@ class _ProxyChainsViewState extends State<ProxyChainsView> {
   Future<void> _import() async {
     final selected = await picker.pickerFile();
     if (selected == null) return;
-    final bytes = selected.bytes;
-    if (bytes == null) {
-      throw const FormatException('Unable to read chain library');
-    }
+    final bytes = await selected.readAsBytes();
     final content = utf8.decode(bytes);
     final incoming = ChainStore.decode(content);
     for (final profileId
@@ -654,7 +651,7 @@ class _ChainEditorViewState extends State<ChainEditorView> {
       final generated = createProfile
           ? createChainProfileConfig(widget.source, _draft, widget.catalog)
           : assembleChains(widget.source, [_draft], widget.catalog);
-      final yaml = await encodeCompactYamlTask(generated);
+      final yaml = encodeChainProfile(generated);
       if (createProfile) {
         final profile = await Profile.normal(label: _draft.name)
             .copyWith(
@@ -871,7 +868,7 @@ class _ChainEditorViewState extends State<ChainEditorView> {
                         _draft,
                         widget.catalog,
                       );
-                      final content = await encodeCompactYamlTask(generated);
+                      final content = encodeChainProfile(generated);
                       await picker.saveFile(
                         '${_name.text.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}.yaml',
                         Uint8List.fromList(utf8.encode(content)),

@@ -1,8 +1,18 @@
+import 'dart:convert';
+
 import 'package:bett_box/features/node_import/nodes.dart';
 import 'package:yaml/yaml.dart';
 
 import 'assembler.dart';
 import 'model.dart';
+
+/// JSON flow values are valid YAML and preserve strings without scalar coercion.
+/// Keep top-level sections separate, as in [writeChainsToProfile].
+String encodeChainProfile(Map<String, dynamic> config) => config.isEmpty
+    ? '{}\n'
+    : config.entries
+          .map((entry) => '${jsonEncode(entry.key)}: ${jsonEncode(entry.value)}\n')
+          .join();
 
 Map<String, dynamic> chainProfileBase(String content) => removePersistedChains(
   _resolveYamlMerges(loadYaml(content)) as Map<String, dynamic>,

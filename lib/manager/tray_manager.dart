@@ -5,7 +5,7 @@ import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/providers/config.dart';
 import 'package:bett_box/providers/state.dart';
 import 'package:bett_box/state.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tray_manager/tray_manager.dart';
 
@@ -52,6 +52,17 @@ class _TrayContainerState extends ConsumerState<TrayManager> with TrayListener {
       return;
     }
     final vpnProps = ref.read(vpnSettingProvider);
+    final showHiddenItems = ref.read(
+      proxiesStyleSettingProvider.select((state) => state.showHiddenItems),
+    );
+    if (trayManager.isOptionPressed &&
+        vpnProps.trayEnhancement &&
+        !showHiddenItems) {
+      tray.showHiddenGroups = true;
+      await globalState.appController.updateTray(false, false, true);
+      await trayManager.popUpContextMenu();
+      return;
+    }
     final behavior = isRightClick
         ? vpnProps.trayRightClickBehavior
         : vpnProps.trayLeftClickBehavior;
@@ -79,6 +90,13 @@ class _TrayContainerState extends ConsumerState<TrayManager> with TrayListener {
     if (globalState.backgroundMode.value) {
       globalState.appController.updateTray(false, false, true);
     }
+  }
+
+  @override
+  void onTrayMenuClose() {
+    if (!tray.showHiddenGroups || trayManager.isMenuOpen) return;
+    tray.showHiddenGroups = false;
+    globalState.appController.updateTray(false, false, true);
   }
 
   @override

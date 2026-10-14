@@ -4,7 +4,7 @@ import 'package:bett_box/models/models.dart';
 import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
 import 'package:bett_box/widgets/widgets.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,8 +34,7 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  bool get isNavFocused =>
-      _navFocusNodes.values.any((node) => node.hasFocus);
+  bool get isNavFocused => _navFocusNodes.values.any((node) => node.hasFocus);
 
   void focusNav() {
     if (!globalState.isAndroidTV || !mounted) return;
@@ -76,80 +75,91 @@ class _HomePageState extends State<HomePage> {
         focusNav();
         return true;
       },
-      child: Material(
-        color: context.colorScheme.surface,
+      child: Consumer(
+        builder: (context, ref, child) {
+          final (isMobile, navigationItems, currentIndex) = ref.watch(
+            navigationStateProvider.select(
+              (state) => (
+                state.viewMode == ViewMode.mobile,
+                state.navigationItems,
+                state.currentIndex,
+              ),
+            ),
+          );
+          final bottomNavigationBar = globalState.isAndroidTV
+              ? _buildTVBottomNavBar(
+                  context,
+                  navigationItems: navigationItems,
+                  currentIndex: currentIndex,
+                )
+              : GoogleBottomNavBar(
+                  navigationItems: navigationItems,
+                  selectedIndex: currentIndex,
+                  onTabChange: (index) {
+                    globalState.appController.toPage(
+                      navigationItems[index].label,
+                    );
+                  },
+                );
+          if (child == null) {
+            return const SizedBox();
+          }
+          Widget bodyWidget = child;
+          if (isMobile) {
+            final pageContent = MediaQuery.removePadding(
+              removeTop: false,
+              removeBottom: false,
+              removeLeft: true,
+              removeRight: true,
+              context: context,
+              child: child,
+            );
+            final navBar = MediaQuery.removePadding(
+              removeTop: true,
+              removeBottom: false,
+              removeLeft: true,
+              removeRight: true,
+              context: context,
+              child: bottomNavigationBar,
+            );
+            bodyWidget = Stack(
+              children: [
+                Positioned.fill(child: RepaintBoundary(child: pageContent)),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: RepaintBoundary(child: navBar),
+                ),
+              ],
+            );
+          }
+          return Material(
+            color: isMobile
+                ? context.colorScheme.surfaceContainer
+                : Colors.transparent,
+            child: bodyWidget,
+          );
+        },
         child: Consumer(
-          builder: (context, ref, child) {
-            final state = ref.watch(navigationStateProvider);
-            final isMobile = state.viewMode == ViewMode.mobile;
-            final navigationItems = state.navigationItems;
-            final currentIndex = state.currentIndex;
-            final bottomNavigationBar = globalState.isAndroidTV
-                ? _buildTVBottomNavBar(
-                    context,
-                    navigationItems: navigationItems,
-                    currentIndex: currentIndex,
-                  )
-                : GoogleBottomNavBar(
-                    navigationItems: navigationItems,
-                    selectedIndex: currentIndex,
-                    onTabChange: (index) {
-                      globalState.appController.toPage(
-                        navigationItems[index].label,
-                      );
-                    },
-                  );
-            if (isMobile) {
-              final pageContent = MediaQuery.removePadding(
-                removeTop: false,
-                removeBottom: false,
-                removeLeft: true,
-                removeRight: true,
-                context: context,
-                child: child!,
-              );
-              final navBar = MediaQuery.removePadding(
-                removeTop: true,
-                removeBottom: false,
-                removeLeft: true,
-                removeRight: true,
-                context: context,
-                child: bottomNavigationBar,
-              );
-              return Stack(
-                children: [
-                  Positioned.fill(child: pageContent),
-                  Positioned(left: 0, right: 0, bottom: 0, child: navBar),
-                ],
-              );
-            }
-            return child!;
+          builder: (_, ref, _) {
+            final navigationItems = ref
+                .watch(currentNavigationItemsStateProvider)
+                .value;
+            final isMobile = ref.watch(isMobileViewProvider);
+            return _HomePageView(
+              navigationItems: navigationItems,
+              pageBuilder: (_, index) {
+                final navigationItem = navigationItems[index];
+                return _NavigationPage(
+                  key: ValueKey(navigationItem.label),
+                  item: navigationItem,
+                  isMobile: isMobile,
+                  view: navigationItem.builder(context),
+                );
+              },
+            );
           },
-          child: Consumer(
-            builder: (_, ref, _) {
-              final navigationItems = ref
-                  .watch(currentNavigationItemsStateProvider)
-                  .value;
-              final isMobile = ref.watch(isMobileViewProvider);
-              return _HomePageView(
-                navigationItems: navigationItems,
-                pageBuilder: (_, index) {
-                  final navigationItem = navigationItems[index];
-                  final navigationView = navigationItem.builder(context);
-                  return KeepScope(
-                    key: ValueKey(navigationItem.label),
-                    keep: navigationItem.keep,
-                    child: isMobile
-                        ? navigationView
-                        : Navigator(
-                            pages: [MaterialPage(child: navigationView)],
-                            onDidRemovePage: (_) {},
-                          ),
-                  );
-                },
-              );
-            },
-          ),
         ),
       ),
     );
@@ -241,9 +251,9 @@ class _HomePageState extends State<HomePage> {
                               ? context.colorScheme.primary.withValues(
                                   alpha:
                                       context.colorScheme.brightness ==
-                                              Brightness.light
-                                          ? 0.20
-                                          : 0.26,
+                                          Brightness.light
+                                      ? 0.20
+                                      : 0.26,
                                 )
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(16),
@@ -291,6 +301,49 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+class _NavigationPage extends StatelessWidget {
+  const _NavigationPage({
+    super.key,
+    required this.item,
+    required this.isMobile,
+    required this.view,
+  });
+
+  final NavigationItem item;
+  final bool isMobile;
+  final Widget view;
+
+  @override
+  Widget build(BuildContext context) {
+    final keptView = KeepScope(
+      key: ValueKey(item.label),
+      keep: item.keep,
+      child: isMobile
+          ? view
+          : Navigator(
+              key: ValueKey('${item.label.name}_navigator'),
+              pages: [MaterialPage(child: view)],
+              onDidRemovePage: (_) {},
+            ),
+    );
+    return Consumer(
+      builder: (_, ref, child) {
+        final isActive = ref.watch(
+          currentPageLabelProvider.select((label) => label == item.label),
+        );
+        return PageActivityScope(
+          isActive: isActive,
+          child: TickerMode(
+            enabled: isActive,
+            child: ExcludeFocus(excluding: !isActive, child: child!),
+          ),
+        );
+      },
+      child: keptView,
+    );
+  }
+}
+
 class _HomePageView extends ConsumerStatefulWidget {
   final IndexedWidgetBuilder pageBuilder;
   final List<NavigationItem> navigationItems;
@@ -320,6 +373,10 @@ class _HomePageViewState extends ConsumerState<_HomePageView> {
     ) {
       if (prev != next) {
         _toPage(next);
+        if (next == PageLabel.dashboard && !system.isDesktop) {
+          dashboardRefreshManager.triggerImmediateTick();
+          globalState.appController.updateTraffic();
+        }
       }
     });
   }
@@ -424,14 +481,22 @@ class HomeBackScope extends ConsumerWidget {
           (state) => state.value.map((item) => item.label).toSet(),
         ),
       );
+      final morePageLabels = ref.watch(
+        moreToolsSelectorStateProvider.select(
+          (state) => state.navigationItems.map((item) => item.label).toSet(),
+        ),
+      );
       final isCurrentRootPage = rootPageLabels.contains(currentPage);
 
       return PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, _) async {
           if (didPop || backBlock) return;
+          if (!routeIdleObserver.isSettled) {
+            commonPrint.log('Back ignored: route transition not settled');
+            return;
+          }
           final navigatorState = globalState.navigatorKey.currentState;
-          if (navigatorState?.userGestureInProgress == true) return;
 
           if (globalState.isAndroidTV) {
             final tvBack = onTvBack;
@@ -439,7 +504,11 @@ class HomeBackScope extends ConsumerWidget {
           }
 
           if (!isCurrentRootPage) {
-            globalState.appController.toPage(PageLabel.dashboard);
+            globalState.appController.toPage(
+              morePageLabels.contains(currentPage)
+                  ? PageLabel.tools
+                  : PageLabel.dashboard,
+            );
             return;
           }
           if (navigatorState != null && navigatorState.canPop()) {

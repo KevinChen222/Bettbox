@@ -4,7 +4,7 @@ import 'package:bett_box/providers/config.dart';
 import 'package:bett_box/state.dart';
 import 'package:bett_box/views/config/general.dart';
 import 'package:bett_box/widgets/widgets.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,15 +12,13 @@ class IntranetIP extends StatelessWidget {
   const IntranetIP({super.key});
 
   void _showMoreIpInfoDialog(BuildContext context) {
-    globalState.showCommonDialog(
-      child: const _IntranetIpInfoDialog(),
-    );
+    globalState.showCommonDialog(child: const _IntranetIpInfoDialog());
   }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: getWidgetHeight(1),
+      height: getWidgetHeight(context, 1),
       child: CommonCard(
         info: Info(label: appLocalizations.intranetIP, iconData: Icons.devices),
         onPressed: () => _showMoreIpInfoDialog(context),
@@ -34,7 +32,9 @@ class IntranetIP extends StatelessWidget {
                 height: globalState.measure.bodyMediumHeight + 2,
                 child: Consumer(
                   builder: (_, ref, _) {
-                    final localIp = ref.watch(localIpProvider);
+                    final localIp = ref.watch(
+                      localNetworkProvider.select((state) => state?.ip),
+                    );
                     return FadeThroughBox(
                       child: localIp != null
                           ? TooltipText(
@@ -69,11 +69,6 @@ class IntranetIP extends StatelessWidget {
   }
 }
 
-String _cachedNetworkType = '';
-List<String> _cachedGateways = [];
-List<String> _cachedSystemDns = [];
-bool _hasNetworkCache = false;
-
 class _IntranetIpInfoDialog extends ConsumerStatefulWidget {
   const _IntranetIpInfoDialog();
 
@@ -83,57 +78,10 @@ class _IntranetIpInfoDialog extends ConsumerStatefulWidget {
 }
 
 class _IntranetIpInfoDialogState extends ConsumerState<_IntranetIpInfoDialog> {
-  late String _networkType;
-  late List<String> _gateways;
-  late List<String> _systemDns;
-  late bool _isLoading;
-
   @override
   void initState() {
     super.initState();
-    if (_hasNetworkCache) {
-      _networkType = _cachedNetworkType;
-      _gateways = _cachedGateways;
-      _systemDns = _cachedSystemDns;
-      _isLoading = false;
-    } else {
-      _networkType = '';
-      _gateways = [];
-      _systemDns = [];
-      _isLoading = true;
-    }
-    _loadNetworkDetails();
-  }
-
-  Future<void> _loadNetworkDetails() async {
-    try {
-      final results = await Future.wait([
-        utils.getNetworkType(),
-        utils.getLocalGateways(),
-        utils.getSystemDns(),
-      ]);
-      final networkType = results[0] as String;
-      final gateways = results[1] as List<String>;
-      final systemDns = results[2] as List<String>;
-
-      _cachedNetworkType = networkType;
-      _cachedGateways = gateways;
-      _cachedSystemDns = systemDns;
-      _hasNetworkCache = true;
-
-      if (!mounted) return;
-      setState(() {
-        _networkType = networkType;
-        _gateways = gateways;
-        _systemDns = systemDns;
-        _isLoading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-    }
+    globalState.appController.updateLocalNetwork(silent: true);
   }
 
   void _openLanSettings(BuildContext context) {
@@ -215,18 +163,15 @@ class _IntranetIpInfoDialogState extends ConsumerState<_IntranetIpInfoDialog> {
                     ],
                   )
                 : (customValue ??
-                    SelectableText(
-                      value,
-                      style: context.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                    )),
+                      SelectableText(
+                        value,
+                        style: context.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                      )),
           ),
-          if (action != null) ...[
-            const SizedBox(width: 4),
-            action,
-          ],
+          if (action != null) ...[const SizedBox(width: 4), action],
         ],
       ),
     );
@@ -285,7 +230,7 @@ class _IntranetIpInfoDialogState extends ConsumerState<_IntranetIpInfoDialog> {
                         color: allowLan
                             ? context.colorScheme.primaryContainer
                             : context.colorScheme.surfaceContainerHighest
-                                .withValues(alpha: 0.5),
+                                  .withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(12),
                         border: allowLan
                             ? null
@@ -311,8 +256,9 @@ class _IntranetIpInfoDialogState extends ConsumerState<_IntranetIpInfoDialog> {
                     Icon(
                       Icons.chevron_right_rounded,
                       size: 18,
-                      color: context.colorScheme.onSurfaceVariant
-                          .withValues(alpha: 0.7),
+                      color: context.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.7,
+                      ),
                     ),
                   ],
                 ),
@@ -391,7 +337,7 @@ class _IntranetIpInfoDialogState extends ConsumerState<_IntranetIpInfoDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final localIp = ref.watch(localIpProvider) ?? '';
+    final network = ref.watch(localNetworkProvider);
     final allowLan = ref.watch(
       patchClashConfigProvider.select((state) => state.allowLan),
     );
@@ -399,14 +345,19 @@ class _IntranetIpInfoDialogState extends ConsumerState<_IntranetIpInfoDialog> {
       patchClashConfigProvider.select((state) => state.mixedPort),
     );
 
-    final displayLocalIp = localIp.isNotEmpty ? localIp : '-';
-    final primaryGateway = _gateways.isNotEmpty ? _gateways.first : '';
-    final displayGateway = primaryGateway.isNotEmpty ? primaryGateway : '-';
-    final sharedAddress = localIp.isNotEmpty ? '$localIp:$mixedPort' : '-';
-
-    final systemDnsText = _systemDns.isNotEmpty
-        ? _systemDns.join(', ')
-        : (_isLoading ? '...' : '-');
+    final placeholder = network == null ? '...' : '-';
+    final type = network?.type ?? '';
+    final interfaceName = network?.interfaceName ?? '';
+    final localIp = network?.ip ?? '';
+    final gateway = network?.gateway ?? '';
+    final networkType = [
+      type,
+      if (interfaceName.toLowerCase() != type.toLowerCase())
+        type.isEmpty ? interfaceName : '($interfaceName)',
+    ].where((e) => e.isNotEmpty).join(' ');
+    final canOpenGateway = _canOpenGateway(gateway, type);
+    final sharedAddress = '$localIp:$mixedPort';
+    final systemDnsText = network?.dns.join(', ') ?? '';
 
     return CommonDialog(
       title: appLocalizations.moreIpInfo,
@@ -429,32 +380,32 @@ class _IntranetIpInfoDialogState extends ConsumerState<_IntranetIpInfoDialog> {
               isFirst: true,
             ),
             _buildStatTile(
-              icon: _resolveNetworkIcon(_networkType),
+              icon: _resolveNetworkIcon(type),
               iconColor: context.colorScheme.primary,
               label: appLocalizations.networkType,
-              value: _networkType.isNotEmpty
-                  ? _networkType
-                  : (_isLoading ? '...' : appLocalizations.noNetwork),
+              value: networkType.isNotEmpty
+                  ? networkType
+                  : (network == null ? '...' : appLocalizations.noNetwork),
             ),
             const SizedBox(height: 8),
             _buildStatTile(
               icon: Icons.devices_rounded,
               iconColor: context.colorScheme.secondary,
               label: appLocalizations.intranetIP,
-              value: displayLocalIp,
+              value: localIp.isNotEmpty ? localIp : placeholder,
             ),
             const SizedBox(height: 8),
             _buildStatTile(
               icon: Icons.router_rounded,
               iconColor: context.colorScheme.tertiary,
               label: appLocalizations.defaultGateway,
-              value: displayGateway,
-              action: _canOpenGateway(primaryGateway, _networkType)
+              value: gateway.isNotEmpty ? gateway : placeholder,
+              action: canOpenGateway
                   ? _buildIconButton(
                       icon: Icons.open_in_new,
                       tooltip: appLocalizations.openRouterAdmin,
                       onPressed: () {
-                        globalState.openUrl('http://$primaryGateway');
+                        globalState.openUrl('http://$gateway');
                       },
                     )
                   : null,
@@ -466,7 +417,7 @@ class _IntranetIpInfoDialogState extends ConsumerState<_IntranetIpInfoDialog> {
               label: appLocalizations.systemDns,
               value: systemDnsText,
               customValue: SelectableText(
-                systemDnsText,
+                systemDnsText.isNotEmpty ? systemDnsText : placeholder,
                 style: context.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   fontSize: 12.5,
@@ -476,28 +427,22 @@ class _IntranetIpInfoDialogState extends ConsumerState<_IntranetIpInfoDialog> {
             ),
             _buildSectionHeader(appLocalizations.allowLan),
             _buildLanSharingTile(allowLan),
-            if (allowLan) ...[
+            if (allowLan && canOpenGateway && localIp.isNotEmpty) ...[
               const SizedBox(height: 8),
               _buildStatTile(
-                icon: Icons.hub_rounded,
+                icon: Icons.cable_rounded,
                 iconColor: context.colorScheme.primary,
                 value: sharedAddress,
-                action: localIp.isNotEmpty
-                    ? _buildIconButton(
-                        icon: Icons.copy_rounded,
-                        tooltip: appLocalizations.copy,
-                        onPressed: () async {
-                          await Clipboard.setData(
-                            ClipboardData(text: sharedAddress),
-                          );
-                          if (context.mounted) {
-                            context.showNotifier(
-                              appLocalizations.copySuccess,
-                            );
-                          }
-                        },
-                      )
-                    : null,
+                action: _buildIconButton(
+                  icon: Icons.copy_rounded,
+                  tooltip: appLocalizations.copy,
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: sharedAddress));
+                    if (context.mounted) {
+                      context.showNotifier(appLocalizations.copySuccess);
+                    }
+                  },
+                ),
               ),
             ],
           ],

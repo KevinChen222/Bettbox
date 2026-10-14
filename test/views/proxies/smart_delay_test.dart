@@ -18,11 +18,12 @@ class DelayCore implements ClashHandlerInterface {
   final tests = <String>[];
   final selections = <ChangeProxyParams>[];
   bool fail = false;
+  String selectionError = '';
 
   @override
   Future<String> changeProxy(ChangeProxyParams params) async {
     selections.add(params);
-    return '';
+    return selectionError;
   }
 
   @override
@@ -149,6 +150,83 @@ void main() {
       expect(core.tests, ['Smart']);
       expect(core.selections, isEmpty);
       expect(controller.delays.last.value, 80);
+    },
+  );
+
+  test(
+    'another group preserves a fixed Smart selection and probes once',
+    () async {
+      controller.groups[0] = controller.groups[0].copyWith(now: 'B');
+      controller.selected['Smart'] = 'B';
+      await delayTest(
+        const [Proxy(name: 'Smart', type: 'Smart')],
+        testUrl: testUrl,
+        groupName: 'Selector',
+      );
+      expect(core.tests, ['B']);
+      expect(core.selections, isEmpty);
+      expect(controller.selected['Smart'], 'B');
+      expect(controller.delays.last.name, 'B');
+    },
+  );
+
+  test(
+    'failed Smart reset does not probe or discard the fixed selection',
+    () async {
+      controller.groups[0] = controller.groups[0].copyWith(now: 'A');
+      controller.selected['Smart'] = 'A';
+      core.selectionError = 'reset failed';
+      await expectLater(
+        delayTest([nodeA], testUrl: testUrl, groupName: 'Smart'),
+        throwsStateError,
+      );
+      expect(core.tests, isEmpty);
+      expect(controller.selected['Smart'], 'A');
+      expect(delayTestCoordinator.isTesting, isFalse);
+    },
+  );
+
+  test('failed Smart group test clears spinners and permits retry', () async {
+    core.fail = true;
+    await expectLater(
+      delayTest([nodeA], testUrl: testUrl, groupName: 'Smart'),
+      throwsStateError,
+    );
+    expect(controller.delays.lastWhere((delay) => delay.name == 'A').value, -1);
+    expect(controller.delays.lastWhere((delay) => delay.name == 'B').value, -1);
+    expect(delayTestCoordinator.isTesting, isFalse);
+    core.fail = false;
+    await delayTest([nodeA], testUrl: testUrl, groupName: 'Smart');
+    expect(core.tests, unorderedEquals(['A', 'B', 'A', 'B']));
+    expect(controller.delays.last.value, 80);
+  });
+
+  test(
+    'Smart group test retains upstream non-testable and Rematch filtering',
+    () async {
+      const rematch = Proxy(name: 'Rematch rule', type: 'Rematch');
+      controller.groups[0] = controller.groups[0].copyWith(
+        all: [
+          nodeA,
+          nodeB,
+          const Proxy(name: 'REJECT', type: 'Reject'),
+          const Proxy(name: 'REJECT-DROP', type: 'RejectDrop'),
+          const Proxy(name: 'PASS', type: 'Pass'),
+          rematch,
+          const Proxy(name: 'Rematch alias', type: 'Selector'),
+        ],
+      );
+      controller.groups.add(
+        Group(
+          name: 'Rematch alias',
+          type: GroupType.Selector,
+          now: rematch.name,
+          all: [rematch],
+        ),
+      );
+      await delayTest([nodeA], testUrl: testUrl, groupName: 'Smart');
+      expect(core.tests, unorderedEquals(['A', 'B']));
+      expect(controller.selected['Smart'], '');
     },
   );
 

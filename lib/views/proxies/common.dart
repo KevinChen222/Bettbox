@@ -83,7 +83,8 @@ double getItemHeight(ProxyCardType proxyCardType) {
   final baseHeight =
       16 + measure.bodyMediumHeight * 2 + measure.bodySmallHeight + 8 + 4;
   return switch (proxyCardType) {
-    ProxyCardType.expand => baseHeight - measure.bodySmallHeight + measure.labelSmallHeight * 2 + 4,
+    ProxyCardType.expand =>
+      baseHeight - measure.bodySmallHeight + measure.labelSmallHeight * 2 + 4,
     ProxyCardType.shrink => baseHeight,
     ProxyCardType.min => baseHeight - measure.bodyMediumHeight,
   };
@@ -112,7 +113,9 @@ Future<Delay> _testProxyDelay(DelayTestTarget target) {
       appController.setDelay(delay);
       return delay;
     } catch (_) {
-      appController.setDelay(Delay(url: target.url, name: target.name, value: -1));
+      appController.setDelay(
+        Delay(url: target.url, name: target.name, value: -1),
+      );
       rethrow;
     }
   });
@@ -130,17 +133,6 @@ bool _isNonTestableProxyType(String proxyType) {
 bool _isNonTestableProxy(Proxy proxy) {
   return _isNonTestableProxyName(proxy.name) ||
       _isNonTestableProxyType(proxy.type);
-}
-
-String? _getProxyType(String proxyName) {
-  final groups = globalState.appController.getCurrentGroups();
-  for (final group in groups) {
-    if (group.name == proxyName) return group.type.name;
-    for (final proxy in group.all) {
-      if (proxy.name == proxyName) return proxy.type;
-    }
-  }
-  return null;
 }
 
 Future<void> delayTest(
@@ -161,7 +153,10 @@ Future<void> delayTest(
       appController.updateCurrentSelectedMap(group.name, '');
       await appController.updateGroups();
     }
+    // Only the Smart group's own test resets selection and ignores UI filters.
+    // A Smart card in another group remains a single resolved target.
     final testProxies = isSmartGroupTest ? group!.all : proxies;
+    final currentGroups = appController.getCurrentGroups();
     final targets = <DelayTestTarget>{};
     for (final proxy in testProxies) {
       if (_isNonTestableProxy(proxy)) {
@@ -174,7 +169,8 @@ Future<void> delayTest(
       final name = state.proxyName;
       if (name.isEmpty ||
           _isNonTestableProxyName(name) ||
-          _isNonTestableProxyType(_getProxyType(name) ?? '')) {
+          (currentGroups.getGroup(name) == null &&
+              currentGroups.getRematchProxy(name) != null)) {
         continue;
       }
       targets.add(DelayTestTarget(name: name, url: url));

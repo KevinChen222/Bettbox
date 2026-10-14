@@ -7,7 +7,7 @@ import 'package:bett_box/providers/config.dart';
 import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
 import 'package:bett_box/widgets/widgets.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class SmartAutoStopSection extends ConsumerWidget {
@@ -64,8 +64,7 @@ class SmartAutoStopSection extends ConsumerWidget {
                   ref
                       .read(vpnSettingProvider.notifier)
                       .updateState(
-                        (state) =>
-                            state.copyWith(smartAutoStopNetworks: value),
+                        (state) => state.copyWith(smartAutoStopNetworks: value),
                       );
                 }
               },
@@ -145,8 +144,142 @@ class StoreFixItem extends ConsumerWidget {
   }
 }
 
+class CloseConnectionsItem extends ConsumerWidget {
+  const CloseConnectionsItem({super.key});
+
+  @override
+  Widget build(BuildContext context, ref) {
+    final closeConnections = ref.watch(
+      appSettingProvider.select((state) => state.closeConnections),
+    );
+    return ListItem.switchItem(
+      title: Text(appLocalizations.autoCloseConnections),
+      subtitle: Text(appLocalizations.autoCloseConnectionsDesc),
+      delegate: SwitchDelegate(
+        value: closeConnections,
+        onChanged: (value) async {
+          ref
+              .read(appSettingProvider.notifier)
+              .updateState((state) => state.copyWith(closeConnections: value));
+        },
+      ),
+    );
+  }
+}
+
+class _RelatedSettingDialog extends StatefulWidget {
+  final bool closeConnections;
+  final bool flushDns;
+
+  const _RelatedSettingDialog({
+    required this.closeConnections,
+    required this.flushDns,
+  });
+
+  @override
+  State<_RelatedSettingDialog> createState() => _RelatedSettingDialogState();
+}
+
+class _RelatedSettingDialogState extends State<_RelatedSettingDialog> {
+  late bool _closeConnections = widget.closeConnections;
+  late bool _flushDns = widget.flushDns;
+
+  Widget _buildItem({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: context.textTheme.bodyLarge?.copyWith(
+                  color: context.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: context.textTheme.bodySmall?.copyWith(
+                  color: context.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        Switch(value: value, onChanged: onChanged),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CommonDialog(
+      title: appLocalizations.relatedSettings,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(appLocalizations.cancel),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.of(
+              context,
+            ).pop((closeConnections: _closeConnections, flushDns: _flushDns));
+          },
+          child: Text(appLocalizations.confirm),
+        ),
+      ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildItem(
+            title: appLocalizations.autoCloseConnections,
+            subtitle: appLocalizations.autoCloseConnectionsDesc,
+            value: _closeConnections,
+            onChanged: (value) => setState(() => _closeConnections = value),
+          ),
+          const SizedBox(height: 16),
+          _buildItem(
+            title: appLocalizations.flushDnsOnNetworkChange,
+            subtitle: appLocalizations.flushDnsOnNetworkChangeDesc,
+            value: _flushDns,
+            onChanged: (value) => setState(() => _flushDns = value),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class QuickResponseItem extends ConsumerWidget {
   const QuickResponseItem({super.key});
+
+  Future<void> _showRelatedSettingDialog(WidgetRef ref) async {
+    final appSetting = ref.read(appSettingProvider);
+    final result = await globalState
+        .showCommonDialog<({bool closeConnections, bool flushDns})>(
+          child: _RelatedSettingDialog(
+            closeConnections: appSetting.closeConnections,
+            flushDns: appSetting.flushDnsOnNetworkChange,
+          ),
+        );
+    if (result == null) return;
+    ref
+        .read(appSettingProvider.notifier)
+        .updateState(
+          (state) => state.copyWith(
+            closeConnections: result.closeConnections,
+            flushDnsOnNetworkChange: result.flushDns,
+          ),
+        );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -155,7 +288,16 @@ class QuickResponseItem extends ConsumerWidget {
     );
 
     return ListItem.switchItem(
-      title: Text(appLocalizations.quickResponse),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(appLocalizations.quickResponse),
+          TitleSettingButton(
+            tooltip: appLocalizations.relatedSettings,
+            onTap: () => _showRelatedSettingDialog(ref),
+          ),
+        ],
+      ),
       subtitle: Text(appLocalizations.quickResponseDesc),
       delegate: SwitchDelegate(
         value: quickResponse,
@@ -231,7 +373,7 @@ class NetworkFixItem extends ConsumerWidget {
         }
       }
     } catch (e) {
-      commonPrint.log('Network fix error: $e');
+      commonPrint.warn('Network fix error: $e');
       rethrow;
     }
   }
@@ -289,7 +431,7 @@ class HighPriorityItem extends ConsumerWidget {
             try {
               await globalState.appController.setProcessPriority(value);
             } catch (e) {
-              commonPrint.log('Set process priority error: $e');
+              commonPrint.warn('Set process priority error: $e');
               if (context.mounted) {
                 context.showSnackBar('Failed to set process priority: $e');
               }
@@ -301,95 +443,42 @@ class HighPriorityItem extends ConsumerWidget {
   }
 }
 
-class BatteryOptimizationItem extends ConsumerStatefulWidget {
-  const BatteryOptimizationItem({super.key});
+class BatteryOptimizationItem extends StatelessWidget {
+  final VoidCallback onRequest;
 
-  @override
-  ConsumerState<BatteryOptimizationItem> createState() =>
-      _BatteryOptimizationItemState();
-}
-
-class _BatteryOptimizationItemState extends ConsumerState<BatteryOptimizationItem>
-    with WidgetsBindingObserver {
-  bool? _isIgnoring;
-  bool _isWaitingForSettings = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _checkStatus();
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkStatus(maxRetries: _isWaitingForSettings ? 3 : 1);
-    }
-  }
-
-  Future<void> _checkStatus({int maxRetries = 1}) async {
-    for (int attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        final isIgnoring = await app.isIgnoringBatteryOptimizations();
-        if (mounted) {
-          setState(() {
-            _isIgnoring = isIgnoring;
-            if (isIgnoring) {
-              _isWaitingForSettings = false;
-            }
-          });
-        }
-        if (isIgnoring || attempt >= maxRetries - 1) {
-          break;
-        }
-        await Future.delayed(const Duration(milliseconds: 666));
-      } catch (e) {
-        commonPrint.log('Battery optimization check error: $e');
-        break;
-      }
-    }
-    if (mounted && _isWaitingForSettings) {
-      setState(() => _isWaitingForSettings = false);
-    }
-  }
-
-  Future<void> _handleSwitchChanged(BuildContext context, bool value) async {
-    final isIgnoring = _isIgnoring;
-    if (isIgnoring == null) return;
-
-    if (isIgnoring) {
-      if (context.mounted) {
-        context.showSnackBar(appLocalizations.alreadyInWhitelist);
-      }
-      setState(() {});
-    } else {
-      try {
-        setState(() => _isWaitingForSettings = true);
-        await app.requestIgnoreBatteryOptimizations();
-      } catch (e) {
-        commonPrint.log('Battery optimization error: $e');
-        setState(() => _isWaitingForSettings = false);
-      }
-    }
-  }
+  const BatteryOptimizationItem({super.key, required this.onRequest});
 
   @override
   Widget build(BuildContext context) {
-    final isIgnoring = _isIgnoring;
-
     return ListItem.switchItem(
       title: Text(appLocalizations.batteryOptimization),
       subtitle: Text(appLocalizations.batteryOptimizationDesc),
+      delegate: SwitchDelegate(value: false, onChanged: (_) => onRequest()),
+    );
+  }
+}
+
+class LoopbackProtectionItem extends ConsumerWidget {
+  const LoopbackProtectionItem({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final loopbackProtection = ref.watch(
+      vpnSettingProvider.select((state) => state.loopbackProtection),
+    );
+
+    return ListItem.switchItem(
+      title: Text(appLocalizations.loopbackProtection),
+      subtitle: Text(appLocalizations.loopbackProtectionDesc),
       delegate: SwitchDelegate(
-        value: isIgnoring ?? false,
-        onChanged: (value) => _handleSwitchChanged(context, value),
+        value: loopbackProtection,
+        onChanged: (bool value) {
+          ref
+              .read(vpnSettingProvider.notifier)
+              .updateState(
+                (state) => state.copyWith(loopbackProtection: value),
+              );
+        },
       ),
     );
   }
@@ -447,7 +536,9 @@ class DisableQuicSection extends ConsumerWidget {
               onChanged: (bool value) async {
                 ref
                     .read(vpnSettingProvider.notifier)
-                    .updateState((state) => state.copyWith(excludeChina: value));
+                    .updateState(
+                      (state) => state.copyWith(excludeChina: value),
+                    );
                 globalState.appController.setupClashConfigDebounce();
               },
             ),
@@ -597,28 +688,13 @@ class TraySection extends ConsumerWidget {
             children: [
               Text(appLocalizations.trayEnhancement),
               if (showClickBehaviorSetting) ...[
-                Tooltip(
-                  message: appLocalizations.trayClickBehavior,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkResponse(
-                      radius: 16,
-                      highlightShape: BoxShape.circle,
-                      onTap: () => _showTrayClickBehaviorDialog(
-                        context,
-                        ref,
-                        leftBehavior: leftBehavior,
-                        rightBehavior: rightBehavior,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(7),
-                        child: Icon(
-                          Icons.settings_outlined,
-                          size: 18,
-                          color: context.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
+                TitleSettingButton(
+                  tooltip: appLocalizations.trayClickBehavior,
+                  onTap: () => _showTrayClickBehaviorDialog(
+                    context,
+                    ref,
+                    leftBehavior: leftBehavior,
+                    rightBehavior: rightBehavior,
                   ),
                 ),
               ],
@@ -630,7 +706,9 @@ class TraySection extends ConsumerWidget {
             onChanged: (bool value) async {
               ref
                   .read(vpnSettingProvider.notifier)
-                  .updateState((state) => state.copyWith(trayEnhancement: value));
+                  .updateState(
+                    (state) => state.copyWith(trayEnhancement: value),
+                  );
               await globalState.appController.updateTray();
             },
           ),
@@ -655,7 +733,9 @@ class TraySection extends ConsumerWidget {
               onChanged: (bool value) async {
                 ref
                     .read(vpnSettingProvider.notifier)
-                    .updateState((state) => state.copyWith(enableTraySpeed: value));
+                    .updateState(
+                      (state) => state.copyWith(enableTraySpeed: value),
+                    );
                 await globalState.appController.updateTray();
               },
             ),
@@ -761,23 +841,84 @@ class _TrayClickBehaviorDialogState extends State<_TrayClickBehaviorDialog> {
   }
 }
 
-class OtherSettingView extends ConsumerWidget {
+class OtherSettingView extends StatefulWidget {
   const OtherSettingView({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  State<OtherSettingView> createState() => _OtherSettingViewState();
+}
+
+class _OtherSettingViewState extends State<OtherSettingView>
+    with WidgetsBindingObserver {
+  bool _showBatteryOptimization = false;
+  bool _isWaitingForSettings = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!system.isAndroid) return;
+    WidgetsBinding.instance.addObserver(this);
+    _checkBatteryOptimization();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final maxRetries = _isWaitingForSettings ? 3 : 1;
+    _isWaitingForSettings = false;
+    _checkBatteryOptimization(maxRetries: maxRetries);
+  }
+
+  Future<void> _checkBatteryOptimization({int maxRetries = 1}) async {
+    for (int attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        final isIgnoring = await app.isIgnoringBatteryOptimizations();
+        if (!mounted) return;
+        if (_showBatteryOptimization == isIgnoring) {
+          setState(() => _showBatteryOptimization = !isIgnoring);
+        }
+        if (isIgnoring || attempt >= maxRetries - 1) return;
+        await Future.delayed(const Duration(milliseconds: 666));
+      } catch (e) {
+        commonPrint.warn('Battery optimization check error: $e');
+        return;
+      }
+    }
+  }
+
+  Future<void> _requestBatteryOptimization() async {
+    _isWaitingForSettings = true;
+    try {
+      await app.requestIgnoreBatteryOptimizations();
+    } catch (e) {
+      commonPrint.warn('Battery optimization error: $e');
+      _isWaitingForSettings = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     List<Widget> items = [
       const SmartAutoStopSection(),
       if (system.isAndroid) const DozeSuspendItem(),
       if (system.isAndroid) const QuickResponseItem(),
       if (system.isAndroid) const StoreFixItem(),
+      const LoopbackProtectionItem(),
       const DisableQuicSection(),
       if (system.isAndroid) const HighPriorityNotificationItem(),
       if (system.isAndroid) const NetworkSpeedNotificationItem(),
       if (!system.isAndroid) const TraySection(),
       if (system.isWindows) const HighPriorityItem(),
       if (system.isWindows) const NetworkFixItem(),
-      if (system.isAndroid) const BatteryOptimizationItem(),
+      if (system.isDesktop) const CloseConnectionsItem(),
+      if (_showBatteryOptimization)
+        BatteryOptimizationItem(onRequest: _requestBatteryOptimization),
     ];
 
     if (items.isEmpty) {

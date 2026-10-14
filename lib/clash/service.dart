@@ -11,6 +11,7 @@ import 'package:bett_box/models/core.dart';
 import 'package:bett_box/state.dart';
 import 'package:bett_box/utils/frame_codec.dart';
 import 'package:bett_box/utils/platform_check.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 class ClashService extends ClashHandlerInterface {
@@ -103,17 +104,18 @@ class ClashService extends ClashHandlerInterface {
                 },
                 onError: (error) {
                   if (_isDestroying || globalState.isExiting) return;
-                  commonPrint.log('Frame decode error: $error');
+                  commonPrint.error('Frame decode error: $error');
                 },
                 onDone: () {
                   commonPrint.log('Socket connection closed');
+                  abortRequests(socket);
                 },
               );
         }
       },
       (error, stack) {
         if (_isDestroying || globalState.isExiting) return;
-        commonPrint.log(error.toString());
+        commonPrint.error(error.toString());
         if (error is SocketException &&
             !_isDestroying &&
             !globalState.isExiting) {
@@ -153,7 +155,7 @@ class ClashService extends ClashHandlerInterface {
 
     await _destroySocket();
 
-    if (system.isWindows) {
+    if (system.isWindows && !kDebugMode) {
       await helperClient.stopCore().catchError((_) => false);
     }
 
@@ -184,7 +186,7 @@ class ClashService extends ClashHandlerInterface {
     final environment = Map<String, String>.from(Platform.environment);
     environment['SAFE_PATHS'] = homeDirPath;
 
-    if (system.isWindows) {
+    if (system.isWindows && !kDebugMode) {
       final serviceOk = AppIdentity.isDev
           ? (await windows?.isHelperHealthy() ?? false)
           : (await windows?.registerService() ?? false);
@@ -197,7 +199,8 @@ class ClashService extends ClashHandlerInterface {
         if (started) {
           await _waitForCoreReady();
           isStarting = false;
-          if (system.isWindows && globalState.config.appSetting.enableHighPriority) {
+          if (system.isWindows &&
+              globalState.config.appSetting.enableHighPriority) {
             unawaited(
               helperClient
                   .setProcessPriority(
@@ -205,14 +208,14 @@ class ClashService extends ClashHandlerInterface {
                     true,
                   )
                   .catchError((e) {
-                    commonPrint.log('Failed to set core process priority: $e');
+                    commonPrint.warn('Failed to set core process priority: $e');
                     return false;
                   }),
             );
           }
           return;
         }
-        commonPrint.log(
+        commonPrint.warn(
           'Helper start core failed, falling back to normal mode',
         );
       }
@@ -230,7 +233,7 @@ class ClashService extends ClashHandlerInterface {
 
     var connected = await _startCoreDirectly(arg, environment);
     if (!connected) {
-      commonPrint.log('core did not connect, retrying with a fresh transport');
+      commonPrint.warn('core did not connect, retrying with a fresh transport');
       process?.kill();
       process = null;
       await _rebindTransport();
@@ -240,39 +243,65 @@ class ClashService extends ClashHandlerInterface {
       await _startCoreDirectly(retryArg, environment);
     }
     isStarting = false;
-    if (system.isWindows && globalState.config.appSetting.enableHighPriority) {
+    if (system.isWindows &&
+        !kDebugMode &&
+        globalState.config.appSetting.enableHighPriority) {
       unawaited(
         helperClient
             .setProcessPriority('${AppIdentity.coreExecutableName}.exe', true)
             .catchError((e) {
-              commonPrint.log('Failed to set core process priority: $e');
+              commonPrint.warn('Failed to set core process priority: $e');
               return false;
             }),
       );
     }
   }
 
+  Duration get _coreReadyTimeout {
+    if (kDebugMode || AppIdentity.isDev) {
+      return const Duration(seconds: 15);
+    }
+    return const Duration(seconds: 6);
+  }
+
   Future<bool> _startCoreDirectly(
     String arg,
     Map<String, String> environment,
   ) async {
+    if (system.isLinux && appPath.isAppImage) {
+      await appPath.ensureAppImageCoreSynced();
+    }
     process = await Process.start(appPath.corePath, [
       arg,
     ], environment: environment);
     process?.stdout.listen((_) {});
     process?.stderr.listen((e) {
       final error = utf8.decode(e);
-      if (error.isNotEmpty) commonPrint.log(error);
+      if (error.isNotEmpty) commonPrint.error(error);
     });
-    return _waitForCoreReady();
+    return _waitForCoreReady(process);
   }
 
-  Future<bool> _waitForCoreReady() async {
+  Future<bool> _waitForCoreReady([Process? targetProcess]) async {
+    final timeout = _coreReadyTimeout;
     try {
-      await socketCompleter.future.timeout(const Duration(seconds: 5));
+      if (targetProcess != null) {
+        final result = await Future.any<bool>([
+          socketCompleter.future.then((_) => true),
+          targetProcess.exitCode.then((code) {
+            commonPrint.error(
+              'Core process exited prematurely with code: $code',
+            );
+            return false;
+          }),
+        ]).timeout(timeout);
+        return result;
+      }
+
+      await socketCompleter.future.timeout(timeout);
       return true;
     } on TimeoutException {
-      commonPrint.log('Core ready timeout after 5s');
+      commonPrint.error('Core ready timeout after ${timeout.inSeconds}s');
       return false;
     }
   }
@@ -287,9 +316,9 @@ class ClashService extends ClashHandlerInterface {
   }
 
   @override
-  sendMessage(String message) async {
+  Future<Socket> sendMessage(String message) async {
     if (_isDestroying || globalState.isExiting) {
-      return;
+      throw const CoreDisconnectedException();
     }
     final socket = await socketCompleter.future.timeout(
       const Duration(seconds: 5),
@@ -300,20 +329,21 @@ class ClashService extends ClashHandlerInterface {
     try {
       final frame = FrameCodec.encode(message);
       socket.add(frame);
+      return socket;
     } on SocketException catch (e) {
       if (_isDestroying || globalState.isExiting || isStarting) {
-        commonPrint.log(
+        commonPrint.debug(
           'Ignored message send on closed socket during transition: $e',
         );
-        return;
+        throw const CoreDisconnectedException();
       }
       rethrow;
     } on StateError catch (e) {
       if (_isDestroying || globalState.isExiting || isStarting) {
-        commonPrint.log(
+        commonPrint.debug(
           'Ignored message send on closed socket during transition: $e',
         );
-        return;
+        throw const CoreDisconnectedException();
       }
       rethrow;
     }
@@ -339,7 +369,7 @@ class ClashService extends ClashHandlerInterface {
   @override
   shutdown() async {
     _isDestroying = true;
-    if (system.isWindows) {
+    if (system.isWindows && !kDebugMode) {
       await helperClient.stopCore();
     }
     await _destroySocket();

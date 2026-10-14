@@ -64,6 +64,8 @@ app.*.map.json
 /android/app/release
 
 /android/core/.cxx
+# Native cache left by the pre-1.19.5 script engine.
+/plugins/flutter_qjs/android/.cxx/
 /android/.kotlin/
 
 #libclash
