@@ -948,7 +948,7 @@ ColorScheme genColorScheme(
 }
 
 @riverpod
-VM5<String?, String?, Dns?, List<String>?, String?> needSetup(Ref ref) {
+VM4<String?, String?, Dns?, String?> needSetup(Ref ref) {
   final profileId = ref.watch(currentProfileIdProvider);
   final scriptDigest = ref.watch(
     scriptStateProvider.select((state) => state.currentScript?.digest),
@@ -957,26 +957,11 @@ VM5<String?, String?, Dns?, List<String>?, String?> needSetup(Ref ref) {
   final dns = overrideDns == true
       ? ref.watch(patchClashConfigProvider.select((state) => state.dns))
       : null;
-  final routeExcludeAddress = system.isLinux
-      ? ref.watch(
-          networkSettingProvider.select(
-            (state) => state.bypassPrivateRoute
-                ? state.realBypassPrivateRouteAddress
-                : const <String>[],
-          ),
-        )
-      : null;
   final loopbackPorts =
       ref.watch(vpnSettingProvider.select((state) => state.loopbackProtection))
       ? ref.watch(patchClashConfigProvider.select((state) => state.listenPorts))
       : null;
-  return VM5(
-    a: profileId,
-    b: scriptDigest,
-    c: dns,
-    d: routeExcludeAddress,
-    e: loopbackPorts,
-  );
+  return VM4(a: profileId, b: scriptDigest, c: dns, d: loopbackPorts);
 }
 
 @riverpod

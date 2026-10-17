@@ -223,7 +223,7 @@ class AppController {
     if (isDesktop && patchConfig.tun.enable) {
       await _quickSetupConfig(enableTun: false);
 
-      if (system.isMacOS) {
+      if (system.isMacOS || system.isLinux) {
         try {
           final res = await _requestAdmin(true);
           if (res.needRestart) {
@@ -236,7 +236,7 @@ class AppController {
               try {
                 await _updateClashConfig();
               } catch (e) {
-                commonPrint.warn('FastStart macOS TUN update failed: $e');
+                commonPrint.warn('FastStart desktop TUN update failed: $e');
               }
               _backgroundLoad();
             });
@@ -244,7 +244,7 @@ class AppController {
             _backgroundLoad();
           }
         } catch (e) {
-          commonPrint.warn('FastStart macOS auth error: $e');
+          commonPrint.warn('FastStart desktop auth error: $e');
           await globalState.handleStart([updateRunTime, updateTraffic]);
           _backgroundLoad();
         }
@@ -685,7 +685,8 @@ class AppController {
 
   Future<Result<bool>> _requestAdmin(bool enableTun) async {
     final realTunEnable = _ref.read(realTunEnableProvider);
-    if (enableTun != realTunEnable && realTunEnable == false) {
+    final hasAdmin = await system.checkIsAdmin();
+    if (enableTun && (!realTunEnable || !hasAdmin)) {
       final code = await system.authorizeCore();
       switch (code) {
         case AuthorizeCode.success:
@@ -694,9 +695,7 @@ class AppController {
         case AuthorizeCode.none:
           break;
         case AuthorizeCode.error:
-          globalState.showNotifier(
-            'TUN mode requires administrator privileges.',
-          );
+          globalState.showNotifier(appLocalizations.tunEnableRequireAdmin);
           enableTun = false;
           break;
       }
@@ -1135,12 +1134,10 @@ class AppController {
     } catch (e) {
       commonPrint.warn('handleExit error: $e');
     } finally {
-      if (macOS != null) {
-        try {
-          await macOS!.updateDns(true);
-        } catch (e) {
-          commonPrint.warn('Failed to restore macOS system DNS on exit: $e');
-        }
+      try {
+        await system.updateDns(true);
+      } catch (e) {
+        commonPrint.warn('Failed to restore system DNS on exit: $e');
       }
       if (!exitLock.isCompleted) {
         exitLock.complete();
@@ -1420,8 +1417,8 @@ class AppController {
         }
       }
     }
-    if (system.isMacOS && !globalState.isStart) {
-      await macOS?.updateDns(true);
+    if (!globalState.isStart) {
+      await system.updateDns(true);
     }
     final hasProfile = _ref.read(currentProfileProvider) != null;
     final shouldStart =

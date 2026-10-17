@@ -74,8 +74,8 @@ _AppSettingProps _$AppSettingPropsFromJson(
       ) ??
       RecoveryStrategy.compatible,
   enableHighPriority: json['enableHighPriority'] as bool? ?? false,
-  sidebarCollapsed: json['sidebarCollapsed'] as bool? ?? false,
-  sidebarFlyout: json['sidebarFlyout'] as bool? ?? true,
+  sidebarCollapsed: json['sidebarCollapsed'] as bool? ?? true,
+  sidebarFlyout: json['sidebarFlyout'] as bool? ?? false,
   sidebarFlyoutOutsideTools:
       json['sidebarFlyoutOutsideTools'] as bool? ?? false,
   sidebarFlyoutDelay:
@@ -442,13 +442,13 @@ _ProxiesStyle _$ProxiesStyleFromJson(Map<String, dynamic> json) =>
           ProxiesIconStyle.none,
       cardType:
           $enumDecodeNullable(_$ProxyCardTypeEnumMap, json['cardType']) ??
-          ProxyCardType.shrink,
+          ProxyCardType.expand,
       delayAnimation:
           $enumDecodeNullable(
             _$DelayAnimationTypeEnumMap,
             json['delayAnimation'],
           ) ??
-          DelayAnimationType.none,
+          DelayAnimationType.pulse,
       syncDelayAnimation: json['syncDelayAnimation'] as bool? ?? true,
       iconMap:
           (json['iconMap'] as Map<String, dynamic>?)?.map(
@@ -456,7 +456,7 @@ _ProxiesStyle _$ProxiesStyleFromJson(Map<String, dynamic> json) =>
           ) ??
           const {},
       concurrencyLimit: (json['concurrencyLimit'] as num?)?.toInt() ?? 250,
-      autoStickyHeader: json['autoStickyHeader'] as bool? ?? true,
+      autoStickyHeader: json['autoStickyHeader'] as bool? ?? false,
       showHiddenItems: json['showHiddenItems'] as bool? ?? false,
       hasCustomizedStyle: json['hasCustomizedStyle'] as bool? ?? false,
     );

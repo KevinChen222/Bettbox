@@ -53,11 +53,7 @@ type PatchParams struct {
 
 const defaultHealthCheckTimeout = 5000
 
-const tunRouteExcludeSet = "bettbox-route-exclude"
-
 var patchForAndroid = runtime.GOOS == "android"
-
-var patchForLinux = runtime.GOOS == "linux"
 
 var protectedProxyNames = []string{"DIRECT", "REJECT", "REJECT-DROP", "COMPATIBLE", "PASS"}
 
@@ -108,7 +104,6 @@ func applyPatch(raw *config.RawConfig, params *PatchParams) (string, error) {
 			raw.GlobalUA = defaults.GlobalUA
 		}
 	}
-	patchTunRouteExclude(raw)
 	if hasPatchValue(params.GeoXUrl) {
 		raw.GeoXUrl = defaults.GeoXUrl
 		if err := yaml.Unmarshal(params.GeoXUrl, &raw.GeoXUrl); err != nil {
@@ -170,9 +165,7 @@ func applyPatch(raw *config.RawConfig, params *PatchParams) (string, error) {
 		for _, name := range params.DisabledGroups {
 			disabled[name] = true
 		}
-		raw.ProxyGroup = filterGroups(raw.ProxyGroup, func(name string) bool {
-			return !disabled[name]
-		})
+		raw.ProxyGroup = disableGroups(raw.ProxyGroup, disabled)
 		for i, rule := range rules {
 			parsed := parseRule(rule)
 			if parsed.hasTarget && disabled[parsed.target] {
@@ -206,27 +199,6 @@ func applyPatch(raw *config.RawConfig, params *PatchParams) (string, error) {
 	})
 	raw.Rule = rules
 	return global, nil
-}
-
-func patchTunRouteExclude(raw *config.RawConfig) {
-	tun := &raw.Tun
-	if !patchForLinux || !tun.AutoRedirect || raw.RoutingMark != 0 || len(tun.RouteExcludeAddress) == 0 {
-		return
-	}
-	payload := make([]any, 0, len(tun.RouteExcludeAddress))
-	for _, prefix := range tun.RouteExcludeAddress {
-		payload = append(payload, prefix.String())
-	}
-	if raw.RuleProvider == nil {
-		raw.RuleProvider = map[string]map[string]any{}
-	}
-	raw.RuleProvider[tunRouteExcludeSet] = map[string]any{
-		"type":     "inline",
-		"behavior": "ipcidr",
-		"payload":  payload,
-	}
-	tun.RouteExcludeAddressSet = append(tun.RouteExcludeAddressSet, tunRouteExcludeSet)
-	tun.RouteExcludeAddress = nil
 }
 
 func patchProviderPaths(providers map[string]map[string]any, base string, kind string) {
@@ -578,6 +550,52 @@ func filterGroups(groups []map[string]any, keep func(name string) bool) []map[st
 		filtered = append(filtered, group)
 	}
 	return filtered
+}
+
+func disableGroups(groups []map[string]any, disabled map[string]bool) []map[string]any {
+	for changed := true; changed; {
+		changed = false
+		for _, group := range groups {
+			name, ok := groupName(group)
+			if !ok || disabled[name] {
+				continue
+			}
+			proxies, ok := group["proxies"].([]any)
+			if !ok || len(proxies) == 0 {
+				continue
+			}
+			kept := make([]any, 0, len(proxies))
+			for _, proxy := range proxies {
+				if value, ok := proxy.(string); ok && disabled[value] {
+					continue
+				}
+				kept = append(kept, proxy)
+			}
+			if len(kept) == len(proxies) {
+				continue
+			}
+			group["proxies"] = kept
+			if len(kept) == 0 && !hasGroupSource(group) {
+				disabled[name] = true
+				changed = true
+			}
+		}
+	}
+	return filterGroups(groups, func(name string) bool {
+		return !disabled[name]
+	})
+}
+
+func hasGroupSource(group map[string]any) bool {
+	if use, ok := group["use"].([]any); ok && len(use) > 0 {
+		return true
+	}
+	for _, key := range []string{"include-all", "include-all-proxies", "include-all-providers"} {
+		if value, ok := group[key].(bool); ok && value {
+			return true
+		}
+	}
+	return false
 }
 
 func combineExcludeFilter(target map[string]any, filter string) {

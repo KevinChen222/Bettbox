@@ -215,10 +215,10 @@ class Build {
       if (item.arch != null) {
         env['GOARCH'] = item.arch!.name;
       }
-      if (item.arch == Arch.amd64 &&
-          (item.target == Target.windows ||
-              item.target == Target.linux ||
-              item.target == Target.macos)) {
+      if (item.arch == Arch.amd64 && item.target == Target.macos) {
+        env['GOAMD64'] = 'v1';
+      } else if (item.arch == Arch.amd64 &&
+          (item.target == Target.windows || item.target == Target.linux)) {
         env['GOAMD64'] = compatible ? 'v1' : 'v3';
       }
       if (isLib) {
@@ -589,7 +589,6 @@ class BuildCommand extends Command {
     String args = '',
     required String env,
     required String suffix,
-    bool compatible = false,
   }) async {
     final sentryDsn = Platform.environment['SENTRY_DSN'] ?? '';
     final sentryArg = sentryDsn.isNotEmpty
@@ -606,18 +605,12 @@ class BuildCommand extends Command {
 
     final appDevArg = Build.isDev ? ' --build-dart-define=APP_DEV=true' : '';
 
-    final environment = Map<String, String>.from(Platform.environment);
-    if (compatible) {
-      environment['BETTBOX_COMPATIBLE_BUILD'] = '1';
-    }
-
     await Build.getDistributor();
     await Build.exec(
       name: name,
       Build.getExecutable(
         'flutter_distributor package --skip-clean --platform ${target.name} --targets $targets --flutter-build-args=verbose$args$sentryArg$suffixArg$ipinfoArg --build-dart-define=APP_ENV=$env$appDevArg',
       ),
-      environment: environment,
     );
   }
 
@@ -846,7 +839,6 @@ class BuildCommand extends Command {
           args: ' --description $desc --build-dart-define=CORE_SHA256=$token',
           env: env,
           suffix: appAssetSuffix,
-          compatible: compatible,
         );
         return;
       case Target.linux:
@@ -868,7 +860,6 @@ class BuildCommand extends Command {
             args: ' --description $desc --build-target-platform $defaultTarget',
             env: env,
             suffix: currentSuffix,
-            compatible: compatible,
           );
         }
         return;
@@ -894,7 +885,6 @@ class BuildCommand extends Command {
           args: buildArgs,
           env: env,
           suffix: appAssetSuffix,
-          compatible: compatible,
         );
         return;
       case Target.macos:
@@ -908,14 +898,27 @@ class BuildCommand extends Command {
           Build.getExecutable('pod install --repo-update'),
           workingDirectory: 'macos',
         );
-        _buildDistributor(
-          target: target,
-          targets: 'dmg',
-          args: ' --description $desc',
-          env: env,
-          suffix: appAssetSuffix,
-          compatible: compatible,
-        );
+        final infoPlist = File('macos/Runner/Info.plist');
+        final infoPlistContent = await infoPlist.readAsString();
+        if (arch == Arch.amd64) {
+          await infoPlist.writeAsString(
+            infoPlistContent.replaceFirst(
+              '</dict>\n</plist>',
+              '\t<key>FLTEnableImpeller</key>\n\t<false/>\n</dict>\n</plist>',
+            ),
+          );
+        }
+        try {
+          await _buildDistributor(
+            target: target,
+            targets: 'dmg',
+            args: ' --description $desc',
+            env: env,
+            suffix: appAssetSuffix,
+          );
+        } finally {
+          await infoPlist.writeAsString(infoPlistContent);
+        }
         return;
     }
   }

@@ -137,7 +137,7 @@ flutter run -d linux --dart-define=APP_DEV=true
 
 维护者本机为 Ubuntu 24.04.5 LTS（noble）、x86_64、AMD Ryzen 5 5600H。固定维护适用于 Ubuntu 24.04 的 **Linux x64 DEB**，内核使用默认 `GOAMD64=v3`（本机支持 AVX2/FMA/BMI 等要求）；不额外构建 Linux arm64、Compatible、RPM 或 AppImage。换机或升级系统后重新核实环境，不沿用本机记录作为新机器的兼容性证明。
 
-沿用项目的 `flutter_distributor` DEB 打包器和 `linux/packaging/deb/make_config.yaml`。包名为 `bettbox-smart`，桌面显示 Bettbox Smart，运行时依赖采用 Ubuntu 24.04 的库包，不要求用户安装开发头文件。JNI 使用 `/usr/lib/jvm/java-17-openjdk-amd64/lib/server`，DEB 依赖 `openjdk-17-jre-headless`；CI 也使用 Ubuntu 的 OpenJDK 17，避免把 runner 私有的 Temurin 路径写进产物。可执行文件和安装目录仍沿用上游 `/usr/share/Bettbox/`，因此声明与上游 `bettbox` 包冲突，不承诺与原版共存；不要更改当前应用数据目录或在更新/卸载时删除配置。沿用 1.19.5 上游网络 capabilities 授权方式：DEB 中 `BettboxCore` 保持 root 所有权、0755 执行权限，不预置 setuid；安装脚本通过 `libcap2-bin` 设置 `cap_net_admin,cap_net_bind_service,cap_net_raw=+ep`，失败时才回退 setuid。核实包内权限和安装脚本；安装后的 capabilities/TUN 授权需实机确认。App 更新链接保持进入 fork 正式版 Release 页面，不设置上游格式的 `APP_ASSET_SUFFIX`，以免指向错误文件名。
+沿用项目的 `flutter_distributor` DEB 打包器和 `linux/packaging/deb/make_config.yaml`。包名为 `bettbox-smart`，桌面显示 Bettbox Smart，运行时依赖采用 Ubuntu 24.04 的库包，不要求用户安装开发头文件。JNI 使用 `/usr/lib/jvm/java-17-openjdk-amd64/lib/server`，DEB 依赖 `openjdk-17-jre-headless`；CI 也使用 Ubuntu 的 OpenJDK 17，避免把 runner 私有的 Temurin 路径写进产物。可执行文件和安装目录仍沿用上游 `/usr/share/Bettbox/`，因此声明与上游 `bettbox` 包冲突，不承诺与原版共存；不要更改当前应用数据目录或在更新/卸载时删除配置。DEB 中 `BettboxCore` 保持 root 所有权、0755 执行权限，不预置 setuid；安装脚本通过 `libcap2-bin` 设置 `cap_net_admin,cap_net_bind_service,cap_net_raw=+ep`。包内 `90-bettbox.rules` 仅允许本地活动会话执行所需的四项 systemd-resolved DNS 操作，运行时支持 Linux 系统 DNS 设置及恢复。核实包内权限和安装脚本；安装后的 capabilities/TUN 授权需实机确认。App 更新链接保持进入 fork 正式版 Release 页面，不设置上游格式的 `APP_ASSET_SUFFIX`，以免指向错误文件名。
 
 在本机加载工具链，准备依赖、生成代码和链路许可后，仅构建 Linux 内核并打包 DEB：
 

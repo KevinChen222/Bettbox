@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,7 +11,6 @@ import (
 	"github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/tunnel"
-	"go4.org/netipx"
 )
 
 func parsePatchProfile(t *testing.T, content string) *config.RawConfig {
@@ -234,61 +232,6 @@ func TestApplyPatchAndroidDns(t *testing.T) {
 	}
 }
 
-func TestApplyPatchLinuxRouteExclude(t *testing.T) {
-	previous := patchForLinux
-	defer func() { patchForLinux = previous }()
-
-	general := `{"general":{"tun":{"enable":true,"auto-route":true,"auto-redirect":true,"route-exclude-address":["192.168.0.0/16","fd00::/8"]}}}`
-	cases := []struct {
-		linux   bool
-		profile string
-		general string
-		useSet  bool
-	}{
-		{true, "mode: rule\n", general, true},
-		{false, "mode: rule\n", general, false},
-		{true, "routing-mark: 6666\n", general, false},
-		{true, "mode: rule\n", `{"general":{"tun":{"enable":true,"auto-redirect":true,"route-exclude-address":[]}}}`, false},
-		{true, "mode: rule\n", `{"general":{"tun":{"enable":true,"auto-redirect":false,"route-exclude-address":["192.168.0.0/16"]}}}`, false},
-	}
-	for index, item := range cases {
-		patchForLinux = item.linux
-		rawCfg := parsePatchProfile(t, item.profile)
-		if _, err := applyPatch(rawCfg, patchParams(t, item.general)); err != nil {
-			t.Fatal(err)
-		}
-		_, hasProvider := rawCfg.RuleProvider[tunRouteExcludeSet]
-		hasSet := len(rawCfg.Tun.RouteExcludeAddressSet) == 1 && rawCfg.Tun.RouteExcludeAddressSet[0] == tunRouteExcludeSet
-		if hasProvider != item.useSet || hasSet != item.useSet {
-			t.Errorf("case %d: provider = %v, set = %v, want %v", index, hasProvider, hasSet, item.useSet)
-		}
-		if item.useSet && len(rawCfg.Tun.RouteExcludeAddress) != 0 {
-			t.Errorf("case %d: route-exclude-address should move into the rule set", index)
-		}
-	}
-
-	patchForLinux = true
-	rawCfg := parsePatchProfile(t, "mode: rule\n")
-	if _, err := applyPatch(rawCfg, patchParams(t, general)); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.ParseRawConfig(rawCfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider, exist := cfg.RuleProviders[tunRouteExcludeSet]
-	if !exist {
-		t.Fatal("route exclude rule set should be parsed")
-	}
-	strategy, ok := provider.Strategy().(interface{ ToIpCidr() *netipx.IPSet })
-	if !ok || strategy.ToIpCidr() == nil {
-		t.Fatal("route exclude rule set should expose ip cidr")
-	}
-	if !strategy.ToIpCidr().Contains(netip.MustParseAddr("192.168.1.1")) {
-		t.Errorf("route exclude rule set should contain the private range")
-	}
-}
-
 func TestApplyPatchDnsInjection(t *testing.T) {
 	rawCfg := parsePatchProfile(t, "dns: {enable: false, nameserver: ['10.0.0.1']}\n")
 	dns, _ := json.Marshal(map[string]any{
@@ -468,5 +411,81 @@ func TestDecodeScriptedConfig(t *testing.T) {
 	}
 	if !rawCfg.DNS.UseHosts {
 		t.Errorf("defaults should apply to keys the script left out")
+	}
+}
+
+func TestDisabledGroupsCascade(t *testing.T) {
+	rawCfg, err := config.UnmarshalRawConfig([]byte(`proxies:
+  - {name: A, type: ss, server: a.com, port: 1, cipher: aes-128-gcm, password: x}
+proxy-providers:
+  p1: {type: http, url: "https://example.com/p1", path: ./p1.yaml}
+proxy-groups:
+  - {name: Main, type: select, proxies: [HK, Media, A, DIRECT]}
+  - {name: Media, type: select, proxies: [HK]}
+  - {name: Stream, type: select, proxies: [Media], use: [p1]}
+  - {name: Auto, type: url-test, proxies: [HK], include-all: true}
+  - {name: HK, type: select, proxies: [A]}
+rules:
+  - DOMAIN,hk.com,HK
+  - DOMAIN,media.com,Media
+  - DOMAIN,stream.com,Stream
+  - MATCH,Main
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := patchParams(t, `{"disabled-groups":["HK"]}`)
+	if _, err := applyPatch(rawCfg, params); err != nil {
+		t.Fatal(err)
+	}
+	groups := map[string][]any{}
+	for _, group := range rawCfg.ProxyGroup {
+		name, _ := groupName(group)
+		proxies, _ := group["proxies"].([]any)
+		groups[name] = proxies
+	}
+	if _, ok := groups["HK"]; ok {
+		t.Fatal("HK should be removed")
+	}
+	if _, ok := groups["Media"]; ok {
+		t.Fatal("Media should cascade off")
+	}
+	if !reflect.DeepEqual(groups["Main"], []any{"A", "DIRECT"}) {
+		t.Fatalf("Main proxies: %v", groups["Main"])
+	}
+	if _, ok := groups["Stream"]; !ok || len(groups["Auto"]) != 0 {
+		t.Fatalf("source groups should stay: %v", groups)
+	}
+	want := []string{"DOMAIN,hk.com,PASS", "DOMAIN,media.com,PASS", "DOMAIN,stream.com,Stream", "MATCH,Main"}
+	if !reflect.DeepEqual(rawCfg.Rule, want) {
+		t.Fatalf("rules: %v", rawCfg.Rule)
+	}
+	if _, err := config.ParseRawConfig(rawCfg); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGetConfigDisabledGroups(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "p.yaml")
+	if err := os.WriteFile(path, []byte(`proxies:
+  - {name: A, type: ss, server: a.com, port: 1, cipher: aes-128-gcm, password: x}
+proxy-groups:
+  - {name: Main, type: select, proxies: [Media, A]}
+  - {name: Media, type: select, proxies: [HK]}
+  - {name: HK, type: select, proxies: [A]}
+rules:
+  - MATCH,Main
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rawCfg, err := handleGetConfig(&GetConfigParams{Path: path, DisabledGroups: []string{"HK"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rawCfg.ProxyGroup) != 1 || !reflect.DeepEqual(rawCfg.ProxyGroup[0]["proxies"], []any{"A"}) {
+		t.Fatalf("groups: %v", rawCfg.ProxyGroup)
+	}
+	if !reflect.DeepEqual(rawCfg.Rule, []string{"MATCH,Main"}) {
+		t.Fatalf("rules: %v", rawCfg.Rule)
 	}
 }

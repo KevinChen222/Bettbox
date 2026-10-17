@@ -122,11 +122,11 @@ jobs:
           dpkg-deb -x Bettbox-smart-linux-x64.deb .test/linux-deb
           test -x .test/linux-deb/usr/share/Bettbox/Bettbox
           test -x .test/linux-deb/usr/share/Bettbox/BettboxCore
-          # 1.19.5 grants network capabilities in postinst; no packaged setuid.
           test ! -u .test/linux-deb/usr/share/Bettbox/BettboxCore
           dpkg-deb -e Bettbox-smart-linux-x64.deb .test/linux-deb-control
           grep -F 'cap_net_admin,cap_net_bind_service,cap_net_raw=+ep' .test/linux-deb-control/postinst
           dpkg-deb -f Bettbox-smart-linux-x64.deb Depends | grep -F libcap2-bin
+          cmp linux/packaging/polkit/90-bettbox.rules .test/linux-deb/usr/share/polkit-1/rules.d/90-bettbox.rules
           test -f .test/linux-deb/usr/share/Bettbox/data/flutter_assets/assets/data/avalon-chain-LICENSE.txt
           test -f .test/linux-deb/usr/share/Bettbox/data/flutter_assets/assets/data/avalon-chain-NOTICE.txt
           desktop-file-validate .test/linux-deb/usr/share/applications/Bettbox.desktop

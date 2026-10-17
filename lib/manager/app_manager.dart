@@ -9,7 +9,6 @@ import 'package:bett_box/plugins/app.dart';
 import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
 import 'package:bett_box/views/tools.dart';
-import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -89,7 +88,7 @@ class _AppStateManagerState extends ConsumerState<AppStateManager>
         return;
       }
       final shouldSet = next.a == true && next.b == true;
-      await macOS?.updateDns(!shouldSet);
+      await system.updateDns(!shouldSet);
     });
     ref.listenManual(currentBrightnessProvider, (prev, next) {
       if (prev == next) {
@@ -222,26 +221,6 @@ class _AppStateManagerState extends ConsumerState<AppStateManager>
   @override
   Widget build(BuildContext context) {
     return widget.child;
-  }
-}
-
-class AppEnvManager extends StatelessWidget {
-  final Widget child;
-
-  const AppEnvManager({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    if (kDebugMode) {
-      if (globalState.isPre) {
-        return Banner(
-          message: 'DEBUG',
-          location: BannerLocation.topEnd,
-          child: child,
-        );
-      }
-    }
-    return child;
   }
 }
 
@@ -1199,7 +1178,7 @@ class _SidebarFlyoutState extends ConsumerState<_SidebarFlyout>
                 shadowColor: Colors.black.withValues(
                   alpha: isLight ? 0.35 : 0.6,
                 ),
-                shape: RoundedRectangleBorder(
+                shape: RoundedSuperellipseBorder(
                   borderRadius: BorderRadius.circular(16),
                   side: BorderSide(
                     color: colorScheme.outlineVariant.withValues(
