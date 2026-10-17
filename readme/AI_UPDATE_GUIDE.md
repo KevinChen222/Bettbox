@@ -14,7 +14,7 @@
 
 本机测试阶段只构建 **Linux x64 客户端/DEB** 和 **Android arm64-v8a APK**。安卓使用 `bash tool/build-android-local.sh --require-signing`，沿用原持久签名；Linux 按维护参考的本机 DEB 步骤构建。先运行与变更有关的定向测试，再构建交给维护者实测。Windows x64 包由 GitHub Actions 的 Windows runner 构建，不要求本机安装 Windows/MSVC 工具链。
 
-维护者说“先本机测试”时，完成上述 Linux/Android 产物后交付路径，等待明确发布指令；不把构建成功当作维护者已完成实测。明确发布时，仍核实同一提交的 Windows、Android、Linux Actions 构建全部成功，再按指定测试版/正式版规则发布。
+维护者说“先本机测试”时，完成上述 Linux/Android 产物后交付路径，等待明确发布指令；不把构建成功当作维护者已完成实测。明确发布时，核实同一提交的 Windows、Android Actions 构建和本机 Linux DEB 构建检查全部成功，再按指定测试版/正式版规则发布。
 
 例如：
 
@@ -25,7 +25,7 @@
 - 唯一可写远端：`KevinChen222/Bettbox`，分支 `feat/smart-core`。只读上游为 `appshubcc/Bettbox:main` 和 `vernesong/mihomo:Alpha`；不能用 `main`/`Meta` 替代 Smart，也不向上游推送或发消息。
 - 保留用户改动，不强推、不改写历史、不删除或移动旧标签。保留个人自用声明、开源许可和 NOTICE；密钥及密码不进入 Git、日志或产物。
 - `core/Clash.Meta/` 保留 Bettbox 原内核；Smart 改动保存在 `core/smart.patch`，生成目录 `core/.smart-mihomo/` 和 `.test/` 不提交。冲突修复保存补丁前不能重新生成或构建，以免覆盖修复。
-- 发布 Windows x64 便携包、Android **仅 arm64-v8a** APK 和适合本机 **Ubuntu 24.04 x86_64** 的 Linux x64 DEB。安卓沿用持久签名并核实 16 KB 页对齐；Linux 使用普通 AMD64 v3 内核（本机 Ryzen 5 5600H 支持），不额外维护 arm64、旧系统兼容版、RPM 或 AppImage。只用本次提交三个任务均成功的构建；资产含三个安装包、SHA256SUMS 和 build-info。验证范围如实说明。
+- 发布 Windows x64 便携包、Android **仅 arm64-v8a** APK 和适合本机 **Ubuntu 24.04 x86_64** 的 Linux x64 DEB。安卓沿用持久签名并核实 16 KB 页对齐；Linux 使用普通 AMD64 v3 内核（本机 Ryzen 5 5600H 支持），不额外维护 arm64、旧系统兼容版、RPM 或 AppImage。Windows/Android 使用本次提交成功的 Actions 产物，Linux 使用同一提交在本机构建并检查的 DEB；资产含三个安装包、SHA256SUMS 和 build-info。验证范围如实说明。
 - 新版先发 test。**功能更新**：新 test 公开后转正上一 test；**bug 修复**：替换上一 test，保留正式版。最终各留一个测试版和正式版（首次只发 test），清理 Release 时保留标签；转正只改元数据。模式不明时先完成修复与构建，再询问。
 
 ## AI 按需读取

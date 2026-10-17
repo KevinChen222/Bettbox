@@ -28,7 +28,7 @@
 - 资源页面提供 LightGBM 同步按钮。桥接复用 `updateGeoData` 的 `LightGBM` 类型，调用原生模型更新器，校验后写 `HomeDir/Model.bin` 并重新加载。默认来源如上；配置的 `lgbm-url` 可覆盖。
 - `core/common.go` 保留 Smart 使用的 GeoIP/ASN 数据，不能让原内存清理卸载它们。
 - `core/smart_test.go` 验证组、选择、Geo 数据、模型更新和单次 Smart 延迟请求；`test/smart_group_test.dart` 验证客户端模型及虚拟节点解析，`test/views/proxies/smart_delay_test.dart` 验证整组测速、嵌套卡片单次测速和失败状态清理。保留 Smart 组自身测速全部成员并恢复自动选路、其他组中 Smart 卡片单次测速且不清除固定选择的区别。
-- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包、Android arm64-v8a 单架构 APK 和 Ubuntu 24.04 Linux x64 DEB。Linux runner 使用 ubuntu-24.04，Rust target 为 x86_64-unknown-linux-gnu，内核为 AMD64 v3；只调用现有 flutter_distributor 的 deb 目标，不运行 setup.dart 的全平台打包流程。工作流显示名 `Build Smart`。完整历史用于三方合并。Android 只编译和发布 arm64-v8a，不生成通用包、armeabi-v7a 或 x86_64 包。内核使用 `dart setup.dart android --arch arm64 --out core`，APK 使用 `--split-per-abi --target-platform android-arm64`；Rust 只安装 Android 的 `aarch64-linux-android` target。`android/core` 的 `ndk.abiFilters` 也只保留 arm64-v8a，避免 Gradle 额外编译其他 ABI。1.19.5 已移除 `flutter_qjs`，脚本引擎由 `code_forge` 的 Rust 模块提供。不能先编译全部架构再改名或删除已签名 APK 中的文件。
+- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包与 Android arm64-v8a 单架构 APK。Ubuntu 24.04 Linux x64 DEB 由本机 `tool/build-linux-local.sh` 构建并检查；Rust target 为 x86_64-unknown-linux-gnu，内核为 AMD64 v3，只使用 flutter_distributor 的 deb 目标。工作流显示名 `Build Smart`。完整历史用于三方合并。Android 只编译和发布 arm64-v8a，不生成通用包、armeabi-v7a 或 x86_64 包。内核使用 `dart setup.dart android --arch arm64 --out core`，APK 使用 `--split-per-abi --target-platform android-arm64`；Rust 只安装 Android 的 `aarch64-linux-android` target。`android/core` 的 `ndk.abiFilters` 也只保留 arm64-v8a，避免 Gradle 额外编译其他 ABI。1.19.5 已移除 `flutter_qjs`，脚本引擎由 `code_forge` 的 Rust 模块提供。不能先编译全部架构再改名或删除已签名 APK 中的文件。
 - `.test/` 与生成目录都不能提交；密钥与密码不能进入 Git、文档、日志、构建 Artifact 或 Release。
 
 ### 独立客户端扩展：代理链路
@@ -152,7 +152,7 @@ dart pub global activate --source path plugins/flutter_distributor/packages/flut
 dart pub global run flutter_distributor:main package --skip-clean --platform linux --targets deb --description x64 --build-target-platform linux-x64 --build-dart-define=APP_ENV=pre
 ```
 
-本地产物位于 `dist/*.deb`；Actions 将它规范为 `Bettbox-smart-linux-x64.deb`。不要直接运行未指定 `--out core` 的 `dart setup.dart linux`，它会安装额外系统依赖并构建 DEB/RPM/AppImage。本地打包不提交、不推送、不安装、不发布、不修改版本号；需要试装时由维护者运行 `sudo apt install ./Bettbox-smart-linux-x64.deb`（或本地实际文件路径），由 apt 处理运行时依赖。
+上述步骤及包检查封装在 `bash tool/build-linux-local.sh`。脚本将 DEB 和本机构建来源记录写入 `dist/smart-local/<提交SHA>/`，包名为 `Bettbox-smart-linux-x64.deb`。不要直接运行未指定 `--out core` 的 `dart setup.dart linux`，它会安装额外系统依赖并构建 DEB/RPM/AppImage。本地打包不提交、不推送、不安装、不发布、不修改版本号；需要试装时由维护者运行 `sudo apt install ./Bettbox-smart-linux-x64.deb`（或本地实际文件路径），由 apt 处理运行时依赖。
 
 以后按 AI 更新入口更新时，Linux 与 Windows/Android 使用同一 App 提交、版本号、Bettbox SHA、Smart SHA 和发布轮换规则。发布前核实 DEB 的 `Package=bettbox-smart`、`Architecture=amd64`、版本含本次构建号，包含界面、Smart 内核、链路许可及 NOTICE，所有 ELF 依赖均可解析。Linux 实机验证包括启动、托盘、系统代理、TUN 授权/连接、Smart 选路与模型同步；没有执行时如实注明，构建成功不能替代这些验证。旧测试版转正时保持旧资产，不给它补装新 Linux 包。
 
@@ -209,7 +209,7 @@ git rev-parse HEAD
 gh run list --repo KevinChen222/Bettbox --branch feat/smart-core --workflow smart.yaml --limit 5 --json databaseId,headSha,status,conclusion,url
 ```
 
-选择 `headSha` 等于本次提交的运行，记下运行 ID。`Build Smart` 的 Windows、Android、Linux 三个任务都必须成功。用 `gh run view <ID> --repo KevinChen222/Bettbox --json status,conclusion,jobs` 检查进度，有失败则读取该运行失败日志修复后再提交。不要以旧提交的绿色构建替代当前提交结果，不带着失败发布，也不要连续高频轮询。
+选择 `headSha` 等于本次提交的运行，记下运行 ID。`Build Smart` 的 Windows、Android 两个任务和同一提交的本机 Linux DEB 构建检查都必须成功。用 `gh run view <ID> --repo KevinChen222/Bettbox --json status,conclusion,jobs` 检查进度，有失败则读取该运行失败日志修复后再提交。不要以旧提交的绿色构建替代当前提交结果，不带着失败发布，也不要连续高频轮询。
 
 Fork 的工作流只在功能分支，手动 workflow_dispatch 的可用性取决于 GitHub 默认分支注册情况。日常依靠分支推送触发；已完成的同一提交可以 rerun。不要为触发工作流推送上游或创建空提交。
 
@@ -221,13 +221,13 @@ Fork 的工作流只在功能分支，手动 workflow_dispatch 的可用性取�
 
 ## 5. 在个人 fork 发布
 
-完整构建成功后，从准确的运行下载三个 Artifact 到 `dist/smart/<运行ID>`：
+完整构建成功后，从准确的运行下载 Windows/Android 两个 Artifact 到 `dist/smart/<运行ID>`：
 
 ```sh
 gh run download <ID> --repo KevinChen222/Bettbox --dir dist/smart/<ID>
 ```
 
-应有 `Bettbox-smart-windows-x64.zip`、`Bettbox-smart-android-arm64-v8a.apk` 和 `Bettbox-smart-linux-x64.deb`。核实 Windows 内核/HelperService、APK 的 `lib/` 仅含 arm64-v8a 且含 `libmeta.so`；验证 APK 沿用上一版的持久自用签名，Smart 库保持 16 KB 页对齐。核实 Linux DEB 的 amd64 架构、版本、内核权限和链路许可/NOTICE，并在 Ubuntu 24.04 检查动态库依赖。计算三个安装包 SHA256，生成 `SHA256SUMS.txt`，并写 `build-info.json` 记录 App 提交、Bettbox SHA、Smart SHA、Actions URL、构建版本、产物架构和签名方式。新 Release 共五个资产：Windows ZIP、arm64-v8a APK、Linux x64 DEB、校验和与来源 JSON；上一版转正时保持其原有资产不变。不得把日志中的秘密、签名备份或源缓存打包。
+将 `tool/build-linux-local.sh` 生成且来源提交一致的 `Bettbox-smart-linux-x64.deb` 复制到同一产物目录，与下载的 `Bettbox-smart-windows-x64.zip`、`Bettbox-smart-android-arm64-v8a.apk` 一起发布。核实 Windows 内核/HelperService、APK 的 `lib/` 仅含 arm64-v8a 且含 `libmeta.so`；验证 APK 沿用上一版的持久自用签名，Smart 库保持 16 KB 页对齐。核实 Linux DEB 的 amd64 架构、版本、内核权限和链路许可/NOTICE，并在 Ubuntu 24.04 检查动态库依赖。计算三个安装包 SHA256，生成 `SHA256SUMS.txt`，并写 `build-info.json` 记录 App 提交、Bettbox SHA、Smart SHA、Actions URL、本机 Linux 构建环境与来源、构建版本、产物架构和签名方式。新 Release 共五个资产：Windows ZIP、arm64-v8a APK、Linux x64 DEB、校验和与来源 JSON；上一版转正时保持其原有资产不变。不得把日志中的秘密、签名备份或源缓存打包。
 
 ### 测试版与正式版轮换规则
 
@@ -267,4 +267,4 @@ bug 修复时跳过上面的转正命令。完成所需元数据操作后，使�
 
 ## 成功标准
 
-两个上游都已核查（单独发布客户端修复时如实说明沿用原内核基线，不冒称已更新上游）；代码与来源 JSON 一致；Bettbox 原内核目录未混入 Smart；个人自用声明保留；工作区无临时试验；本次提交的 Windows/Android/Linux 构建都成功；新 Release 为 test，含正确二进制、校验和及来源信息；正式版按用户指定模式保留或转正；Release 仅保留这两个版本。账号失效或构建确实受阻时明确说明已完成内容和阻塞原因，保留可继续的状态，不能假称发布成功。
+两个上游都已核查（单独发布客户端修复时如实说明沿用原内核基线，不冒称已更新上游）；代码与来源 JSON 一致；Bettbox 原内核目录未混入 Smart；个人自用声明保留；工作区无临时试验；本次提交的 Windows/Android Actions 构建与本机 Linux DEB 构建检查都成功；新 Release 为 test，含正确二进制、校验和及来源信息；正式版按用户指定模式保留或转正；Release 仅保留这两个版本。账号失效或构建确实受阻时明确说明已完成内容和阻塞原因，保留可继续的状态，不能假称发布成功。
