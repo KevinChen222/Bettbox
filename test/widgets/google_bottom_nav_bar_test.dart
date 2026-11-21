@@ -179,39 +179,6 @@ void main() {
     expect(changes, [0, 3]);
   });
 
-  testWidgets('跨多格点击时抬手不重启滑行，并立即切换页面', (tester) async {
-    final changes = <int>[];
-    await _pumpBar(tester, selectedIndex: 0, onTabChange: changes.add);
-
-    final gesture = await tester.startGesture(Offset(_slotCenterX(3), _barY));
-    await tester.pump();
-    final steps = <double>[];
-    var previous = _pillCenterX(tester);
-    for (var i = 0; i < 4; i++) {
-      await tester.pump(const Duration(milliseconds: 16));
-      final current = _pillCenterX(tester);
-      steps.add(current - previous);
-      previous = current;
-    }
-    await gesture.up();
-    for (var i = 0; i < 3; i++) {
-      await tester.pump(const Duration(milliseconds: 16));
-      final current = _pillCenterX(tester);
-      steps.add(current - previous);
-      previous = current;
-    }
-
-    expect(changes, [3]);
-    for (var i = 1; i < steps.length; i++) {
-      expect(steps[i], greaterThan(0), reason: 'step $i');
-      expect(steps[i], lessThan(steps[i - 1]), reason: 'step $i');
-    }
-
-    await tester.pumpAndSettle();
-    expect(changes, [3]);
-    expect(_pillCenterX(tester), closeTo(_slotCenterX(3), 0.5));
-  });
-
   testWidgets('按下非当前格后立即拖动，指示块不会与手指错位', (tester) async {
     await _pumpBar(tester, selectedIndex: 0, onTabChange: (_) {});
 
@@ -224,6 +191,46 @@ void main() {
     expect(_pillCenterX(tester), closeTo(fingerX, 0.5));
 
     await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('跨项点击时中间项不产生缩放跳动', (tester) async {
+    await _pumpBar(tester, selectedIndex: 0, onTabChange: (_) {});
+
+    await tester.tapAt(Offset(_slotCenterX(3), _barY));
+    await tester.pump();
+
+    for (var i = 0; i < 15; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final transforms = tester
+          .widgetList<Transform>(find.byType(Transform))
+          .toList();
+      if (transforms.length >= 4) {
+        final scale1 = transforms[1].transform.storage[0];
+        final scale2 = transforms[2].transform.storage[0];
+        expect(scale1, closeTo(1.0, 0.001));
+        expect(scale2, closeTo(1.0, 0.001));
+      }
+    }
+
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('相邻点击时正常产生缩放连续过渡', (tester) async {
+    await _pumpBar(tester, selectedIndex: 0, onTabChange: (_) {});
+
+    await tester.tapAt(Offset(_slotCenterX(1), _barY));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final transforms = tester
+        .widgetList<Transform>(find.byType(Transform))
+        .toList();
+    if (transforms.length >= 2) {
+      final scale1 = transforms[1].transform.storage[0];
+      expect(scale1, greaterThan(1.0));
+    }
+
     await tester.pumpAndSettle();
   });
 }

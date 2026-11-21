@@ -1,19 +1,15 @@
-// ignore_for_file: deprecated_member_use
-
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
-import 'package:bett_box/models/selector.dart';
-import 'package:bett_box/plugins/app.dart';
 import 'package:bett_box/providers/config.dart';
-import 'package:bett_box/providers/state.dart';
 import 'package:bett_box/state.dart';
 import 'package:bett_box/widgets/widgets.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:material_ui/material_ui.dart';
 
 class ThemeModeItem {
   final ThemeMode themeMode;
@@ -39,56 +35,31 @@ class ThemeView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final brightness = ref.watch(currentBrightnessProvider);
-    final locale = ref.watch(
-      appSettingProvider.select((state) => state.locale),
+    final shouldShowHarmonyFont = ref.watch(
+      appSettingProvider.select(
+        (state) => switch (state.locale) {
+          final locale? => locale.startsWith('zh') || locale.startsWith('en'),
+          null => false,
+        },
+      ),
     );
-    final shouldShowHarmonyFont =
-        locale?.startsWith('zh') == true || locale?.startsWith('en') == true;
 
-    final toggleItems = [
-      if (shouldShowHarmonyFont) _HarmonyFontItem(),
-      if (system.isAndroid) const _DarkIconItem(),
-      if (system.isWindows) _TrayIconInvertItem(),
-      _TextScaleFactorItem(),
+    final toggleItems = <Widget>[
+      if (shouldShowHarmonyFont) const _HarmonyFontItem(),
+      const _PhosphorIconsItem(),
+      if (system.isWindows) const _TrayIconInvertItem(),
+      const _TextScaleFactorItem(),
     ];
 
-    final items = [
-      _ThemeModeItem(),
-      _PrimaryColorItem(),
-      if (brightness == Brightness.dark) _PrueBlackItem(),
+    final items = <Widget>[
+      ...generateSection(
+        title: appLocalizations.themeMode,
+        items: [const _ThemeModeItem()],
+      ),
+      const SizedBox(child: _PrimaryColorItem()),
       if (toggleItems.isNotEmpty) ...generateSection(items: toggleItems),
     ];
     return generateListView(items);
-  }
-}
-
-class ItemCard extends StatelessWidget {
-  final Widget child;
-  final Info info;
-  final List<Widget> actions;
-
-  const ItemCard({
-    super.key,
-    required this.info,
-    required this.child,
-    this.actions = const [],
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          InfoHeader(info: info, actions: actions),
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
-    );
   }
 }
 
@@ -100,7 +71,7 @@ class _ThemeModeItem extends ConsumerWidget {
     final themeMode = ref.watch(
       themeSettingProvider.select((state) => state.themeMode),
     );
-    List<ThemeModeItem> themeModeItems = [
+    final themeModeItems = <ThemeModeItem>[
       ThemeModeItem(
         iconData: Icons.auto_mode,
         label: appLocalizations.auto,
@@ -117,47 +88,24 @@ class _ThemeModeItem extends ConsumerWidget {
         themeMode: ThemeMode.dark,
       ),
     ];
-    return ItemCard(
-      info: Info(
-        label: appLocalizations.themeMode,
-        iconData: Icons.brightness_high,
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        height: 56,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: themeModeItems.length,
-          itemBuilder: (_, index) {
-            final themeModeItem = themeModeItems[index];
-            return CommonCard(
-              isSelected: themeModeItem.themeMode == themeMode,
-              onPressed: () {
-                ref
-                    .read(themeSettingProvider.notifier)
-                    .updateState(
-                      (state) =>
-                          state.copyWith(themeMode: themeModeItem.themeMode),
-                    );
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    Flexible(child: Icon(themeModeItem.iconData)),
-                    const SizedBox(width: 8),
-                    Flexible(child: Text(themeModeItem.label)),
-                  ],
-                ),
-              ),
-            );
-          },
-          separatorBuilder: (_, _) {
-            return const SizedBox(width: 16);
-          },
-        ),
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: SegmentButtonGroup<ThemeMode>(
+        maxWidth: 480,
+        options: [
+          for (final item in themeModeItems)
+            SegmentOption(
+              value: item.themeMode,
+              icon: AppIcon(item.iconData),
+              label: item.label,
+            ),
+        ],
+        selected: themeMode,
+        onSelected: (mode) {
+          ref
+              .read(themeSettingProvider.notifier)
+              .updateState((state) => state.copyWith(themeMode: mode));
+        },
       ),
     );
   }
@@ -185,7 +133,7 @@ class _PrimaryColorItemState extends ConsumerState<_PrimaryColorItem> {
     ref.read(themeSettingProvider.notifier).updateState((state) {
       return state.copyWith(
         primaryColors: defaultPrimaryColors,
-        primaryColor: defaultPrimaryColor,
+        primaryColor: null,
         schemeVariant: DynamicSchemeVariant.content,
       );
     });
@@ -203,14 +151,12 @@ class _PrimaryColorItemState extends ConsumerState<_PrimaryColorItem> {
     ref.read(themeSettingProvider.notifier).updateState((state) {
       final newPrimaryColors = List<int>.from(state.primaryColors)
         ..remove(color);
-      int? newPrimaryColor = state.primaryColor;
-      if (state.primaryColor == color) {
-        if (newPrimaryColors.contains(defaultPrimaryColor)) {
-          newPrimaryColor = defaultPrimaryColor;
-        } else {
-          newPrimaryColor = null;
-        }
-      }
+      final int? newPrimaryColor = switch (state.primaryColor == color) {
+        true when newPrimaryColors.contains(defaultPrimaryColor) =>
+          defaultPrimaryColor,
+        true => null,
+        false => state.primaryColor,
+      };
       return state.copyWith(
         primaryColors: newPrimaryColors,
         primaryColor: newPrimaryColor,
@@ -220,7 +166,7 @@ class _PrimaryColorItemState extends ConsumerState<_PrimaryColorItem> {
 
   Future<void> _handleAdd() async {
     final res = await globalState.showCommonDialog<int>(
-      child: _PaletteDialog(),
+      child: const _PaletteDialog(),
     );
     if (res == null) {
       return;
@@ -229,14 +175,16 @@ class _PrimaryColorItemState extends ConsumerState<_PrimaryColorItem> {
       themeSettingProvider.select((state) => state.primaryColors.contains(res)),
     );
     if (isExists && mounted) {
-      context.showNotifier(
-        appLocalizations.existsTip(appLocalizations.colorSchemes),
+      unawaited(
+        context.showNotifier(
+          appLocalizations.existsTip(appLocalizations.colorSchemes),
+        ),
       );
       return;
     }
     ref.read(themeSettingProvider.notifier).updateState((state) {
       return state.copyWith(
-        primaryColors: List.from(state.primaryColors)..add(res),
+        primaryColors: List<int>.from(state.primaryColors)..add(res),
       );
     });
   }
@@ -245,7 +193,7 @@ class _PrimaryColorItemState extends ConsumerState<_PrimaryColorItem> {
     final schemeVariant = ref.read(
       themeSettingProvider.select((state) => state.schemeVariant),
     );
-    final value = await globalState.showCommonDialog<DynamicSchemeVariant>(
+    final value = await globalState.showAdaptiveSheet<DynamicSchemeVariant>(
       child: OptionsDialog<DynamicSchemeVariant>(
         title: appLocalizations.colorSchemes,
         options: DynamicSchemeVariant.values,
@@ -263,118 +211,107 @@ class _PrimaryColorItemState extends ConsumerState<_PrimaryColorItem> {
 
   @override
   Widget build(BuildContext context) {
-    final vm4 = ref.watch(
+    final (primaryColor, rawPrimaryColors, schemeVariant, isEquals) = ref.watch(
       themeSettingProvider.select(
-        (state) => VM4(
-          a: state.primaryColor,
-          b: state.primaryColors,
-          c: state.schemeVariant,
-          d:
-              state.primaryColor == defaultPrimaryColor &&
+        (state) => (
+          state.primaryColor,
+          state.primaryColors,
+          state.schemeVariant,
+          state.primaryColor == null &&
               intListEquality.equals(state.primaryColors, defaultPrimaryColors),
         ),
       ),
     );
-    final primaryColor = vm4.a;
-    final primaryColors = [null, ...vm4.b];
-    final schemeVariant = vm4.c;
-    final isEquals = vm4.d;
+    final primaryColors = <int?>[null, ...rawPrimaryColors];
+    final isDynamic = primaryColor == null && globalState.corePalette != null;
 
-    return ItemCard(
-      info: Info(label: appLocalizations.themeColor, iconData: Icons.palette),
-      actions: genActions([
-        FilledButton(
-          style: const ButtonStyle(visualDensity: VisualDensity.compact),
-          onPressed: _handleChangeSchemeVariant,
-          child: Text(Intl.message('${schemeVariant.name}Scheme')),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ListHeader(
+          title: appLocalizations.themeColor,
+          space: 8,
+          actions: [
+            FilledButton(
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              onPressed: isDynamic ? null : _handleChangeSchemeVariant,
+              child: Text(
+                isDynamic
+                    ? appLocalizations.dynamicColor
+                    : Intl.message('${schemeVariant.name}Scheme'),
+              ),
+            ),
+            if (!isEquals)
+              IconButton.filledTonal(
+                iconSize: 20,
+                padding: const EdgeInsets.all(4),
+                visualDensity: VisualDensity.compact,
+                onPressed: _handleReset,
+                icon: Icon(context.resolveIcon(Icons.replay)),
+              ),
+          ],
         ),
-        if (!isEquals)
-          IconButton.filledTonal(
-            iconSize: 20,
-            padding: const EdgeInsets.all(4),
-            visualDensity: VisualDensity.compact,
-            onPressed: _handleReset,
-            icon: const Icon(Icons.replay),
-          ),
-      ], space: 8),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        child: LayoutBuilder(
-          builder: (_, constraints) {
-            final columns = _calcColumns(constraints.maxWidth);
-            final itemWidth =
-                (constraints.maxWidth - (columns - 1) * 16) / columns;
-            return Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: [
-                for (final color in primaryColors)
-                  SizedBox(
-                    width: itemWidth,
-                    height: itemWidth,
-                    child: EffectGestureDetector(
-                      onLongPress: color != null
-                          ? () {
-                              _handleDel(color);
-                            }
-                          : null,
-                      child: ColorSchemeBox(
-                        isSelected: color == primaryColor,
-                        primaryColor: color != null ? Color(color) : null,
-                        onPressed: () {
-                          ref
-                              .read(themeSettingProvider.notifier)
-                              .updateState(
-                                (state) => state.copyWith(primaryColor: color),
-                              );
-                        },
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+          child: CommonCard(
+            type: CommonCardType.filled,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: LayoutBuilder(
+                builder: (_, constraints) {
+                  final columns = _calcColumns(constraints.maxWidth);
+                  final itemWidth =
+                      (constraints.maxWidth - (columns - 1) * 16) / columns;
+                  return Wrap(
+                    spacing: 16,
+                    runSpacing: 16,
+                    children: [
+                      for (final color in primaryColors)
+                        SizedBox(
+                          width: itemWidth,
+                          height: itemWidth,
+                          child: EffectGestureDetector(
+                            onLongPress: color != null
+                                ? () {
+                                    _handleDel(color);
+                                  }
+                                : null,
+                            child: ColorSchemeBox(
+                              isSelected: color == primaryColor,
+                              primaryColor: color != null ? Color(color) : null,
+                              onPressed: () {
+                                ref
+                                    .read(themeSettingProvider.notifier)
+                                    .updateState(
+                                      (state) =>
+                                          state.copyWith(primaryColor: color),
+                                    );
+                              },
+                            ),
+                          ),
+                        ),
+                      Container(
+                        width: itemWidth,
+                        height: itemWidth,
+                        padding: const EdgeInsets.all(4),
+                        child: IconButton.filledTonal(
+                          onPressed: _handleAdd,
+                          iconSize: 32,
+                          icon: AppIcon(
+                            color: context.colorScheme.primary,
+                            Icons.add,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                Container(
-                  width: itemWidth,
-                  height: itemWidth,
-                  padding: const EdgeInsets.all(4),
-                  child: IconButton.filledTonal(
-                    onPressed: _handleAdd,
-                    iconSize: 32,
-                    icon: Icon(color: context.colorScheme.primary, Icons.add),
-                  ),
-                ),
-              ],
-            );
-          },
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
         ),
-      ),
-    );
-  }
-}
-
-class _PrueBlackItem extends ConsumerWidget {
-  const _PrueBlackItem();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final prueBlack = ref.watch(
-      themeSettingProvider.select((state) => state.pureBlack),
-    );
-    return ListItem.switchItem(
-      leading: Icon(Icons.contrast),
-      horizontalTitleGap: 12,
-      title: Text(
-        appLocalizations.pureBlackMode,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: context.colorScheme.onSurfaceVariant,
-        ),
-      ),
-      delegate: SwitchDelegate(
-        value: prueBlack,
-        onChanged: (value) {
-          ref
-              .read(themeSettingProvider.notifier)
-              .updateState((state) => state.copyWith(pureBlack: value));
-        },
-      ),
+      ],
     );
   }
 }
@@ -387,19 +324,19 @@ class _HarmonyFontItem extends ConsumerWidget {
     final useHarmonyFont = ref.watch(
       themeSettingProvider.select((state) => state.useHarmonyFont),
     );
+    final textTheme = Theme.of(context).textTheme;
+    final onSurfaceVariant = context.colorScheme.onSurfaceVariant;
     return ListItem.switchItem(
-      leading: Icon(Icons.font_download_outlined),
+      leading: const AppIcon(Icons.font_download_outlined),
       horizontalTitleGap: 12,
       title: Text(
         appLocalizations.harmonyFont,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: context.colorScheme.onSurfaceVariant,
-        ),
+        style: textTheme.titleSmall?.copyWith(color: onSurfaceVariant),
       ),
       subtitle: Text(
         appLocalizations.harmonyFontDesc,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: context.colorScheme.onSurfaceVariant.withOpacity(0.7),
+        style: textTheme.bodySmall?.copyWith(
+          color: onSurfaceVariant.withValues(alpha: 0.7),
         ),
       ),
       delegate: SwitchDelegate(
@@ -414,36 +351,35 @@ class _HarmonyFontItem extends ConsumerWidget {
   }
 }
 
-class _DarkIconItem extends ConsumerWidget {
-  const _DarkIconItem();
+class _PhosphorIconsItem extends ConsumerWidget {
+  const _PhosphorIconsItem();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final useDarkIcon = ref.watch(
-      themeSettingProvider.select((state) => state.useDarkIcon),
+    final usePhosphorIcons = ref.watch(
+      themeSettingProvider.select((state) => state.usePhosphorIcons),
     );
+    final textTheme = Theme.of(context).textTheme;
+    final onSurfaceVariant = context.colorScheme.onSurfaceVariant;
     return ListItem.switchItem(
-      leading: const Icon(Icons.dark_mode_outlined),
+      leading: const AppIcon(Icons.style_outlined),
       horizontalTitleGap: 12,
       title: Text(
-        appLocalizations.darkIcon,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: context.colorScheme.onSurfaceVariant,
-        ),
+        appLocalizations.phosphorIcons,
+        style: textTheme.titleSmall?.copyWith(color: onSurfaceVariant),
       ),
       subtitle: Text(
-        appLocalizations.darkIconDesc,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: context.colorScheme.onSurfaceVariant.withOpacity(0.7),
+        appLocalizations.phosphorIconsDesc,
+        style: textTheme.bodySmall?.copyWith(
+          color: onSurfaceVariant.withValues(alpha: 0.7),
         ),
       ),
       delegate: SwitchDelegate(
-        value: useDarkIcon,
-        onChanged: (value) async {
-          await app.setLauncherIcon(value);
+        value: usePhosphorIcons,
+        onChanged: (value) {
           ref
               .read(themeSettingProvider.notifier)
-              .updateState((state) => state.copyWith(useDarkIcon: value));
+              .updateState((state) => state.copyWith(usePhosphorIcons: value));
         },
       ),
     );
@@ -458,19 +394,19 @@ class _TrayIconInvertItem extends ConsumerWidget {
     final invertTrayIcon = ref.watch(
       themeSettingProvider.select((state) => state.invertTrayIcon),
     );
+    final textTheme = Theme.of(context).textTheme;
+    final onSurfaceVariant = context.colorScheme.onSurfaceVariant;
     return ListItem.switchItem(
-      leading: Icon(Icons.invert_colors),
+      leading: const AppIcon(Icons.invert_colors),
       horizontalTitleGap: 12,
       title: Text(
         appLocalizations.trayIconInvert,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: context.colorScheme.onSurfaceVariant,
-        ),
+        style: textTheme.titleSmall?.copyWith(color: onSurfaceVariant),
       ),
       subtitle: Text(
         appLocalizations.trayIconInvertDesc,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: context.colorScheme.onSurfaceVariant.withOpacity(0.7),
+        style: textTheme.bodySmall?.copyWith(
+          color: onSurfaceVariant.withValues(alpha: 0.7),
         ),
       ),
       delegate: SwitchDelegate(
@@ -491,26 +427,29 @@ class _TextScaleFactorItem extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final textScale = ref.watch(
-      themeSettingProvider.select((state) => state.textScale),
+    final (enable, rawScale) = ref.watch(
+      themeSettingProvider.select(
+        (state) => (state.textScale.enable, state.textScale.scale),
+      ),
     );
-    final String process = '${(textScale.scale * 100).round()}%';
+    final scale = rawScale.clamp(minTextScale, maxTextScale).toDouble();
+    final String process = '${(scale * 100).round()}%';
+    final colorScheme = context.colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: 8),
           child: ListItem.switchItem(
-            leading: Icon(Icons.text_fields),
+            leading: const AppIcon(Icons.text_fields),
             horizontalTitleGap: 12,
             title: Text(
               appLocalizations.textScale,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: context.colorScheme.onSurfaceVariant,
-              ),
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(color: context.colorScheme.onSurfaceVariant),
             ),
             delegate: SwitchDelegate(
-              value: textScale.enable,
+              value: enable,
               onChanged: (value) {
                 ref
                     .read(themeSettingProvider.notifier)
@@ -522,24 +461,45 @@ class _TextScaleFactorItem extends ConsumerWidget {
           ),
         ),
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.fromLTRB(16, 0, 8, 16),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            mainAxisSize: MainAxisSize.max,
-            spacing: 32,
+            spacing: 12,
             children: [
+              Text(
+                'A',
+                style: context.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
               Expanded(
                 child: DisabledMask(
-                  status: !textScale.enable,
+                  status: !enable,
                   child: ActivateBox(
-                    active: textScale.enable,
+                    active: enable,
                     child: SliderTheme(
-                      data: _SliderDefaultsM3(context),
+                      data: SliderThemeData(
+                        trackHeight: 4,
+                        activeTrackColor: colorScheme.primary,
+                        inactiveTrackColor: colorScheme.primary.withValues(
+                          alpha: 0.2,
+                        ),
+                        thumbColor: colorScheme.primary,
+                        overlayShape: SliderComponentShape.noOverlay,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 10,
+                          elevation: 0,
+                          pressedElevation: 0,
+                        ),
+                        tickMarkShape: SliderTickMarkShape.noTickMark,
+                        trackShape: const RoundedRectSliderTrackShape(),
+                      ),
                       child: Slider(
                         padding: EdgeInsets.zero,
                         min: minTextScale,
                         max: maxTextScale,
-                        value: textScale.scale,
+                        divisions: ((maxTextScale - minTextScale) / 0.05)
+                            .round(),
+                        value: scale,
                         onChanged: (value) {
                           ref
                               .read(themeSettingProvider.notifier)
@@ -553,9 +513,23 @@ class _TextScaleFactorItem extends ConsumerWidget {
                   ),
                 ),
               ),
-              Padding(
-                padding: EdgeInsets.only(right: 4),
-                child: Text(process, style: context.textTheme.titleMedium),
+              Text(
+                'A',
+                style: context.textTheme.titleLarge?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              SizedBox(
+                width: 52,
+                child: Text(
+                  process,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  style: context.textTheme.labelLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
               ),
             ],
           ),
@@ -573,43 +547,61 @@ class _PaletteDialog extends StatefulWidget {
 }
 
 class _PaletteDialogState extends State<_PaletteDialog> {
+  static final RegExp _hex6RegExp = RegExp(r'^#?[0-9a-f]{6}$');
+  static final RegExp _hex8RegExp = RegExp(r'^#?[0-9a-f]{8}$');
+  static final RegExp _rgbRegExp = RegExp(
+    r'^rgba?\((\d+),(\d+),(\d+)(?:,([\d.]+))?\)$',
+  );
+
   final _controller = ValueNotifier<ui.Color>(const Color(defaultPrimaryColor));
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   ui.Color? _parseColor(String input) {
     final cleanInput = input.trim().replaceAll(' ', '').toLowerCase();
 
-    // Hex: #RRGGBB or RRGGBB
-    if (RegExp(r'^#?[0-9a-f]{6}$').hasMatch(cleanInput)) {
+    if (_hex6RegExp.hasMatch(cleanInput)) {
       final hexString = cleanInput.startsWith('#')
           ? cleanInput.substring(1)
           : cleanInput;
-      return ui.Color(int.parse('FF$hexString', radix: 16));
+      final parsed = int.tryParse('FF$hexString', radix: 16);
+      return parsed != null ? ui.Color(parsed) : null;
     }
 
-    // Hex with alpha: #AARRGGBB or AARRGGBB
-    if (RegExp(r'^#?[0-9a-f]{8}$').hasMatch(cleanInput)) {
+    if (_hex8RegExp.hasMatch(cleanInput)) {
       final hexString = cleanInput.startsWith('#')
           ? cleanInput.substring(1)
           : cleanInput;
-      return ui.Color(int.parse(hexString, radix: 16));
+      final parsed = int.tryParse(hexString, radix: 16);
+      return parsed != null ? ui.Color(parsed) : null;
     }
 
-    // RGB/RGBA: rgb(255,255,255) or rgba(255,255,255,1.0)
-    final rgbMatch = RegExp(
-      r'^rgba?\((\d+),(\d+),(\d+)(?:,([\d.]+))?\)$',
-    ).firstMatch(cleanInput);
-    if (rgbMatch != null) {
-      final r = int.parse(rgbMatch.group(1)!);
-      final g = int.parse(rgbMatch.group(2)!);
-      final b = int.parse(rgbMatch.group(3)!);
-      final aStr = rgbMatch.group(4);
-      final a = aStr != null ? double.parse(aStr) : 1.0;
+    if (_rgbRegExp.firstMatch(cleanInput) case final rgbMatch?) {
+      if ((rgbMatch.group(1), rgbMatch.group(2), rgbMatch.group(3)) case (
+        final rStr?,
+        final gStr?,
+        final bStr?,
+      )) {
+        final r = int.tryParse(rStr);
+        final g = int.tryParse(gStr);
+        final b = int.tryParse(bStr);
+        if ((r, g, b) case (final rVal?, final gVal?, final bVal?)) {
+          final aStr = rgbMatch.group(4);
+          final a = aStr != null ? (double.tryParse(aStr) ?? 1.0) : 1.0;
 
-      final alphaVal = (a * 255).round().clamp(0, 255);
-      final rVal = r.clamp(0, 255);
-      final gVal = g.clamp(0, 255);
-      final bVal = b.clamp(0, 255);
-      return ui.Color.fromARGB(alphaVal, rVal, gVal, bVal);
+          final alphaVal = (a * 255).round().clamp(0, 255);
+          return ui.Color.fromARGB(
+            alphaVal,
+            rVal.clamp(0, 255),
+            gVal.clamp(0, 255),
+            bVal.clamp(0, 255),
+          );
+        }
+      }
     }
 
     return null;
@@ -635,14 +627,16 @@ class _PaletteDialogState extends State<_PaletteDialog> {
       ],
       child: Column(
         children: [
-          SizedBox(height: 8),
-          SizedBox(
-            width: 250,
-            height: 250,
-            child: Palette(controller: _controller),
+          const SizedBox(height: 8),
+          RepaintBoundary(
+            child: SizedBox(
+              width: 250,
+              height: 250,
+              child: Palette(controller: _controller),
+            ),
           ),
-          SizedBox(height: 24),
-          ValueListenableBuilder(
+          const SizedBox(height: 24),
+          ValueListenableBuilder<ui.Color>(
             valueListenable: _controller,
             builder: (_, color, _) {
               return FilledButton(
@@ -687,112 +681,4 @@ class _PaletteDialogState extends State<_PaletteDialog> {
       ),
     );
   }
-}
-
-class _SliderDefaultsM3 extends SliderThemeData {
-  _SliderDefaultsM3(this.context) : super(trackHeight: 16.0);
-
-  final BuildContext context;
-  late final ColorScheme _colors = Theme.of(context).colorScheme;
-
-  @override
-  Color? get activeTrackColor => _colors.primary;
-
-  @override
-  Color? get inactiveTrackColor => _colors.secondaryContainer;
-
-  @override
-  Color? get secondaryActiveTrackColor => _colors.primary.withOpacity(0.54);
-
-  @override
-  Color? get disabledActiveTrackColor => _colors.onSurface.withOpacity(0.38);
-
-  @override
-  Color? get disabledInactiveTrackColor => _colors.onSurface.withOpacity(0.12);
-
-  @override
-  Color? get disabledSecondaryActiveTrackColor =>
-      _colors.onSurface.withOpacity(0.38);
-
-  @override
-  Color? get activeTickMarkColor => _colors.onPrimary.withOpacity(1.0);
-
-  @override
-  Color? get inactiveTickMarkColor =>
-      _colors.onSecondaryContainer.withOpacity(1.0);
-
-  @override
-  Color? get disabledActiveTickMarkColor => _colors.onInverseSurface;
-
-  @override
-  Color? get disabledInactiveTickMarkColor => _colors.onSurface;
-
-  @override
-  Color? get thumbColor => _colors.primary;
-
-  @override
-  Color? get disabledThumbColor => _colors.onSurface.withOpacity(0.38);
-
-  @override
-  Color? get overlayColor =>
-      WidgetStateColor.resolveWith((Set<WidgetState> states) {
-        if (states.contains(WidgetState.dragged)) {
-          return _colors.primary.withOpacity(0.1);
-        }
-        if (states.contains(WidgetState.hovered)) {
-          return _colors.primary.withOpacity(0.08);
-        }
-        if (states.contains(WidgetState.focused)) {
-          return _colors.primary.withOpacity(0.1);
-        }
-
-        return Colors.transparent;
-      });
-
-  @override
-  TextStyle? get valueIndicatorTextStyle => Theme.of(
-    context,
-  ).textTheme.labelLarge!.copyWith(color: _colors.onInverseSurface);
-
-  @override
-  Color? get valueIndicatorColor => _colors.inverseSurface;
-
-  @override
-  SliderComponentShape? get valueIndicatorShape =>
-      const RoundedRectSliderValueIndicatorShape();
-
-  @override
-  SliderComponentShape? get thumbShape => const HandleThumbShape();
-
-  @override
-  SliderTrackShape? get trackShape => const GappedSliderTrackShape();
-
-  @override
-  SliderComponentShape? get overlayShape => const RoundSliderOverlayShape();
-
-  @override
-  SliderTickMarkShape? get tickMarkShape =>
-      const RoundSliderTickMarkShape(tickMarkRadius: 4.0 / 2);
-
-  @override
-  WidgetStateProperty<Size?>? get thumbSize {
-    return WidgetStateProperty.resolveWith((Set<WidgetState> states) {
-      if (states.contains(WidgetState.disabled)) {
-        return const Size(4.0, 44.0);
-      }
-      if (states.contains(WidgetState.hovered)) {
-        return const Size(4.0, 44.0);
-      }
-      if (states.contains(WidgetState.focused)) {
-        return const Size(2.0, 44.0);
-      }
-      if (states.contains(WidgetState.pressed)) {
-        return const Size(2.0, 44.0);
-      }
-      return const Size(4.0, 44.0);
-    });
-  }
-
-  @override
-  double? get trackGap => 6.0;
 }

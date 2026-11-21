@@ -1,4 +1,6 @@
-import 'package:bett_box/common/utils.dart';
+import 'dart:convert';
+
+import 'package:bett_box/clash/core.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:bett_box/providers/state.dart' show resolveProxyCardState;
@@ -6,130 +8,67 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   const testUrl = 'https://example.com/generate_204';
-  final smart = Group(
-    name: 'Smart',
-    type: GroupType.Smart,
-    now: 'Smart - Select',
-    testUrl: testUrl,
-    all: const [Proxy(name: 'DIRECT', type: 'Direct')],
+
+  List<Group> groupsWithSelection(String now) => buildGroups(
+    jsonEncode({
+      'names': ['Smart', 'DIRECT'],
+      'types': ['Smart', 'Direct'],
+      'groups': [
+        {
+          'name': 'Main',
+          'type': 'Selector',
+          'now': 'Smart',
+          'all': [0],
+        },
+        {
+          'name': 'Smart',
+          'type': 'Smart',
+          'now': now,
+          'testUrl': testUrl,
+          'all': [1],
+        },
+      ],
+    }),
   );
 
-  test('automatic Smart delay targets the group, not its virtual now', () {
-    final state = resolveProxyCardState(
-      [smart],
-      {},
-      const ProxyCardState(proxyName: 'Smart'),
-    );
-    expect(state.proxyName, 'Smart');
-    expect(state.testUrl, testUrl);
+  test('compact core payload includes Smart and its automatic selection', () {
+    final groups = groupsWithSelection('Smart - Select');
+    final smart = groups.last;
+    expect(smart.type, GroupType.Smart);
+    expect(smart.type.isComputedSelected, isTrue);
+    expect(smart.all.single.name, 'DIRECT');
+    expect(Group.fromJson(jsonDecode(jsonEncode(smart))), smart);
+    expect(groups.first.all.single.now, 'Smart - Select');
+
+    for (final name in ['Smart', 'Main']) {
+      final state = resolveProxyCardState(groups, {
+        'Smart': 'DIRECT',
+      }, ProxyCardState(proxyName: name));
+      expect(state.proxyName, 'Smart');
+      expect(state.testUrl, testUrl);
+    }
   });
 
-  test('Smart nested in a Selector remains one test target', () {
-    final selector = Group(
-      name: 'Selector',
-      type: GroupType.Selector,
-      now: 'Smart',
-      all: const [Proxy(name: 'Smart', type: 'Smart')],
-    );
-    final state = resolveProxyCardState(
-      [selector, smart],
-      {},
-      const ProxyCardState(proxyName: 'Selector'),
-    );
-    expect(state.proxyName, 'Smart');
-    expect(state.testUrl, testUrl);
-  });
+  test(
+    'fixed Smart delay resolves to the node and uses the group test URL',
+    () {
+      final state = resolveProxyCardState(
+        groupsWithSelection('DIRECT'),
+        {},
+        const ProxyCardState(proxyName: 'Smart'),
+      );
+      expect(state.proxyName, 'DIRECT');
+      expect(state.testUrl, testUrl);
+    },
+  );
 
-  test('fixed Smart delay follows only the fixed node', () {
-    final state = resolveProxyCardState(
-      [smart.copyWith(now: 'DIRECT')],
-      {},
-      const ProxyCardState(proxyName: 'Smart'),
-    );
-    expect(state.proxyName, 'DIRECT');
-    expect(state.testUrl, testUrl);
-  });
-
-  test('Smart release tags compare the Bettbox application version', () {
-    final utils = Utils();
-    expect(utils.compareVersions('smart-v1.19.5-20261004.1', '1.19.4'), 1);
-    expect(utils.compareVersions('smart-v1.19.4-20261004.1', '1.19.4'), 0);
-    expect(utils.compareVersions('v1.19.5', '1.19.4'), 1);
-  });
-
-  test('Smart updates compare release builds without offering a downgrade', () {
-    final utils = Utils();
-    expect(
-      utils.hasReleaseUpdate(
-        'smart-v1.19.4-20261005.1',
-        '1.19.4',
-        '2026100101',
-      ),
-      isTrue,
-    );
-    expect(
-      utils.hasReleaseUpdate(
-        'smart-v1.19.4-20261005.1',
-        '1.19.4',
-        '2026100501',
-      ),
-      isFalse,
-    );
-    expect(
-      utils.hasReleaseUpdate(
-        'smart-v1.19.4-20261004.3',
-        '1.19.4',
-        '2026100501',
-      ),
-      isFalse,
-    );
-    expect(
-      utils.hasReleaseUpdate(
-        'smart-v1.19.4-20261005.2',
-        '1.19.4',
-        '2026100501',
-      ),
-      isTrue,
-    );
-    expect(
-      utils.hasReleaseUpdate(
-        'smart-v1.19.5-20261004.1',
-        '1.19.4',
-        '2026100501',
-      ),
-      isTrue,
-    );
-    expect(
-      utils.hasReleaseUpdate(
-        'smart-v1.19.3-20261006.1',
-        '1.19.4',
-        '2026100501',
-      ),
-      isFalse,
-    );
-  });
-
-  test('Smart profile group is accepted', () {
+  test('Smart profile groups accept the YAML type smart', () {
     final group = ProxyGroup.fromJson({
       'name': 'Smart',
       'type': 'smart',
       'proxies': ['DIRECT'],
     });
     expect(group.type, GroupType.Smart);
-  });
-
-  test('Smart core JSON is visible and supports automatic selection', () {
-    final group = Group.fromJson({
-      'name': 'Smart',
-      'type': 'Smart',
-      'now': 'Smart - Select',
-      'all': [
-        {'name': 'DIRECT', 'type': 'Direct'},
-      ],
-    });
-    expect(GroupTypeExtension.valueList, contains('Smart'));
-    expect(group.type.isComputedSelected, isTrue);
-    expect(group.all.single.name, 'DIRECT');
     expect(group.toJson()['type'], 'Smart');
   });
 }

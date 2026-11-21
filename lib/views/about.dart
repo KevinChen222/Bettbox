@@ -27,18 +27,20 @@ class AboutView extends StatelessWidget {
       title: appLocalizations.checkUpdate,
       needLoading: true,
     );
-    globalState.appController.checkUpdateResultHandle(
-      data: data,
-      handleError: true,
+    unawaited(
+      globalState.appController.checkUpdateResultHandle(
+        data: data,
+        handleError: true,
+      ),
     );
   }
 
   List<Widget> _buildMoreSection(BuildContext context) {
     final links = [
       _LinkTile(
-        title: 'GitHub · $repository',
+        title: 'GitHub Releases',
         icon: Icons.star,
-        onTap: () => globalState.openUrl('https://github.com/$repository'),
+        onTap: () => globalState.openUrl(appUpdater.releaseUrl),
       ),
       _LinkTile(
         title: appLocalizations.checkUpdate,
@@ -47,23 +49,21 @@ class AboutView extends StatelessWidget {
         onTap: () => _checkUpdate(context),
       ),
       _LinkTile(
+        title: 'Telegram Group',
+        icon: Icons.forum_outlined,
+        onTap: () => globalState.openUrl('https://t.me/bettbox_chat'),
+      ),
+      _LinkTile(
+        title: 'Channel',
+        icon: Icons.campaign_outlined,
+        onTap: () => globalState.openUrl('https://t.me/appshub_channel'),
+      ),
+      _LinkTile(
+        prefix: 'Forked from',
         title: 'Bettbox',
         icon: Icons.code,
         onTap: () =>
             globalState.openUrl('https://github.com/appshubcc/Bettbox'),
-      ),
-      _LinkTile(
-        title: 'Avalon',
-        icon: Icons.code,
-        onTap: () =>
-            globalState.openUrl('https://github.com/MasterAlanLab/avalon'),
-      ),
-      _LinkTile(
-        prefix: 'Forked from',
-        title: 'FlClash',
-        icon: Icons.code,
-        onTap: () =>
-            globalState.openUrl('https://github.com/chen08209/FlClash'),
       ),
       _LinkTile(
         prefix: 'Powered by',
@@ -145,6 +145,42 @@ class AboutView extends StatelessWidget {
         avatar: 'assets/images/avatars/wfion.png',
         name: 'wfion',
       ),
+      const Contributor(
+        avatar: 'assets/images/avatars/uclort.jpg',
+        name: 'uclort',
+      ),
+      const Contributor(
+        avatar: 'assets/images/avatars/Catapult291.jpg',
+        name: 'Catapult291',
+      ),
+      const Contributor(
+        avatar: 'assets/images/avatars/fig0ut.jpg',
+        name: 'fig0ut',
+      ),
+      const Contributor(
+        avatar: 'assets/images/avatars/HarwoodKinnav.jpg',
+        name: 'HarwoodKinnav',
+      ),
+      const Contributor(
+        avatar: 'assets/images/avatars/aaANDkk.jpg',
+        name: 'aaANDkk',
+      ),
+      const Contributor(
+        avatar: 'assets/images/avatars/YumeYuka.jpg',
+        name: 'YumeYuka',
+      ),
+      const Contributor(
+        avatar: 'assets/images/avatars/jasonsamtago.jpg',
+        name: 'jasonsamtago',
+      ),
+      const Contributor(
+        avatar: 'assets/images/avatars/argsno.jpg',
+        name: 'argsno',
+      ),
+      const Contributor(
+        avatar: 'assets/images/avatars/suplzzz.jpg',
+        name: 'suplzzz',
+      ),
     ]..shuffle();
     return generateSection(
       separated: false,
@@ -173,6 +209,9 @@ class AboutView extends StatelessWidget {
                           'assets/images/icon.png',
                           width: 48,
                           height: 48,
+                          cacheWidth: 48,
+                          cacheHeight: 48,
+                          useLogicalCacheSize: true,
                         ),
                       ),
                       Column(
@@ -424,10 +463,10 @@ class _LinkTile extends StatelessWidget {
                     color: colorScheme.primary.opacity12,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(icon, size: 19, color: colorScheme.primary),
+                  child: AppIcon(icon, size: 19, color: colorScheme.primary),
                 ),
                 const Spacer(),
-                Icon(
+                AppIcon(
                   external ? Icons.arrow_outward : Icons.arrow_forward,
                   size: 16,
                   color: colorScheme.onSurfaceVariant.opacity50,

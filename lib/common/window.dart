@@ -12,7 +12,7 @@ import 'package:window_manager/window_manager.dart';
 class Window {
   Future<void> init() async {
     final props = globalState.config.windowProps;
-    if (system.isWindows) {
+    if (system.isWindows && !appPath.isPortable) {
       protocol.register('clash');
       protocol.register('clashmeta');
       protocol.register('flclash');

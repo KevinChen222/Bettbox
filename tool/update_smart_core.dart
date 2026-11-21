@@ -51,36 +51,55 @@ Future<void> main() async {
   }
   await prepare.main([]);
   if (exitCode != 0) return;
+  final generated = p.join(root, 'core', '.smart-mihomo');
+  const sourcePaths = ['*.go', 'go.mod', 'go.sum'];
+  final deleted = await prepare.git([
+    'diff',
+    '--name-only',
+    '-z',
+    '--no-renames',
+    '--diff-filter=D',
+    previous,
+    latest,
+    '--',
+    ...sourcePaths,
+  ], checkout);
+  final tracked = await prepare.git(['ls-files', '-z'], generated);
+  final trackedPaths = (tracked.stdout as String).split('\x00').toSet();
+  // Bettbox may already have applied some deletions from the shared Mihomo base.
+  final alreadyDeleted = (deleted.stdout as String)
+      .split('\x00')
+      .where((path) => path.isNotEmpty && !trackedPaths.contains(path))
+      .map((path) => ':(exclude,literal)$path');
   // Preserve Bettbox adaptations while merging the old-to-new Smart delta.
-  // This also carries changes to the official Mihomo base included by Smart.
   final delta = await prepare.git([
     'diff',
+    '--no-renames',
     '--full-index',
     '--binary',
     previous,
     latest,
     '--',
-    '*.go',
-    'go.mod',
-    'go.sum',
+    ...sourcePaths,
+    ...alreadyDeleted,
   ], checkout);
-  final generated = p.join(root, 'core', '.smart-mihomo');
   final patch = File(p.join(generated, '.git', 'incoming-smart.patch'));
-  await patch.writeAsString(delta.stdout as String);
+  final incoming = delta.stdout as String;
+  await patch.writeAsString(incoming);
   final candidate = {...manifest, 'revision': latest};
   final encoder = const JsonEncoder.withIndent('  ');
-  await File(
-    p.join(root, '.test', 'smart-candidate.json'),
-  ).writeAsString('${encoder.convert(candidate)}\n');
+  await File(p.join(root, '.test', 'smart-candidate.json'))
+      .writeAsString('${encoder.convert(candidate)}\n');
   await prepare.addObjectSource(generated, p.join(checkout, '.git', 'objects'));
   try {
-    await prepare.git(
-      ['apply', '--3way', '--whitespace=nowarn', patch.path],
-      generated,
-      environment: {
-        'GIT_ALTERNATE_OBJECT_DIRECTORIES': p.join(checkout, '.git', 'objects'),
-      },
-    );
+    if (incoming.isNotEmpty) {
+      await prepare.git([
+        'apply',
+        '--3way',
+        '--whitespace=nowarn',
+        patch.path,
+      ], generated);
+    }
   } on ProcessException catch (error) {
     stderr.writeln(error.message);
     stderr.writeln(

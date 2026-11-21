@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
@@ -7,7 +8,6 @@ import 'package:bett_box/state.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'generated/app.g.dart';
@@ -136,38 +136,43 @@ class Requests extends _$Requests with AutoDisposeNotifierMixin {
   }
 }
 
-// Search and filter providers for requests
-final requestsSearchProvider = StateProvider<String>((ref) => '');
-final requestsKeywordsProvider = StateProvider<List<String>>((ref) => []);
+bool _matchTrackerInfo(
+  TrackerInfo item,
+  String query,
+  List<String> keywords,
+  bool udpOnly,
+) {
+  if (udpOnly && item.metadata.network != 'udp') return false;
+  if (query.isNotEmpty) {
+    final meta = item.metadata;
+    final matchesQuery =
+        meta.host.toLowerCase().contains(query) ||
+        meta.destinationIP.toLowerCase().contains(query) ||
+        meta.process.toLowerCase().contains(query) ||
+        meta.network.toLowerCase().contains(query) ||
+        item.chains.any((c) => c.toLowerCase().contains(query));
+    if (!matchesQuery) return false;
+  }
+  if (keywords.isNotEmpty) {
+    final process = item.metadata.process;
+    final chains = item.chains;
+    final matchesKeywords = keywords.every(
+      (kw) => process == kw || chains.contains(kw),
+    );
+    if (!matchesKeywords) return false;
+  }
+  return true;
+}
 
 final filteredRequestsProvider = Provider<List<TrackerInfo>>((ref) {
   final requests = ref.watch(requestsProvider.select((s) => s.list));
-  final query = ref.watch(requestsSearchProvider).toLowerCase().trim();
-  final keywords = ref.watch(requestsKeywordsProvider);
+  final query = ref.watch(connectionsSearchProvider).toLowerCase().trim();
+  final keywords = ref.watch(connectionsKeywordsProvider);
+  final udpOnly = ref.watch(connectionsUdpOnlyProvider);
 
-  return requests.where((item) {
-    if (query.isNotEmpty) {
-      final networkText = item.metadata.network.toLowerCase();
-      final hostText = item.metadata.host.toLowerCase();
-      final destinationIPText = item.metadata.destinationIP.toLowerCase();
-      final processText = item.metadata.process.toLowerCase();
-      final chainsText = item.chains.join('').toLowerCase();
-      final matchesQuery =
-          networkText.contains(query) ||
-          hostText.contains(query) ||
-          destinationIPText.contains(query) ||
-          processText.contains(query) ||
-          chainsText.contains(query);
-      if (!matchesQuery) return false;
-    }
-    if (keywords.isNotEmpty) {
-      final chains = item.chains;
-      final process = item.metadata.process;
-      final matchesKeywords = {...chains, process}.containsAll(keywords);
-      if (!matchesKeywords) return false;
-    }
-    return true;
-  }).toList();
+  return requests
+      .where((item) => _matchTrackerInfo(item, query, keywords, udpOnly))
+      .toList();
 });
 
 @riverpod
@@ -487,6 +492,26 @@ class DelayDataSource extends _$DelayDataSource with AutoDisposeNotifierMixin {
     }
   }
 
+  void clear() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    _pendingDelays.clear();
+    state = {};
+  }
+
+  void dropTesting() {
+    flush();
+    if (!state.values.any((delays) => delays.containsValue(0))) return;
+    state = {
+      for (final MapEntry(:key, :value) in state.entries)
+        if (value.values.any((delay) => delay != 0))
+          key: {
+            for (final entry in value.entries)
+              if (entry.value != 0) entry.key: entry.value,
+          },
+    };
+  }
+
   DelayMap? _merge(DelayMap current) {
     if (_pendingDelays.isEmpty) return null;
     final DelayMap next = Map.of(current);
@@ -535,63 +560,217 @@ class IsSmartStopped extends _$IsSmartStopped {
   }
 }
 
+@Riverpod(keepAlive: true)
+class ConnectionsUdpOnly extends _$ConnectionsUdpOnly {
+  @override
+  bool build() => false;
+
+  void toggle() => state = !state;
+}
+
 // Connections providers
-final connectionsProvider = StateProvider<List<TrackerInfo>>((ref) => []);
-final connectionsSearchProvider = StateProvider<String>((ref) => '');
-final connectionsKeywordsProvider = StateProvider<List<String>>((ref) => []);
-final connectionsSortProvider = StateProvider<ConnectionsSortType>(
-  (ref) => ConnectionsSortType.defaultSort,
-);
+@Riverpod(keepAlive: true)
+class Connections extends _$Connections with NotifierValueMixin {
+  @override
+  List<TrackerInfo> build() => [];
+}
+
+@Riverpod(keepAlive: true)
+class ConnectionsSearch extends _$ConnectionsSearch with NotifierValueMixin {
+  @override
+  String build() => '';
+}
+
+@Riverpod(keepAlive: true)
+class ConnectionsKeywords extends _$ConnectionsKeywords
+    with NotifierValueMixin {
+  @override
+  List<String> build() => [];
+}
+
+@Riverpod(keepAlive: true)
+class ConnectionsSort extends _$ConnectionsSort with NotifierValueMixin {
+  @override
+  ConnectionsSortType build() => ConnectionsSortType.defaultSort;
+}
+
+@Riverpod(keepAlive: true)
+class AppUpdateState extends _$AppUpdateState with NotifierValueMixin {
+  @override
+  AppUpdate? build() => null;
+}
+
+@Riverpod(keepAlive: true)
+class ProfilesSlide extends _$ProfilesSlide {
+  static const _idleReset = Duration(minutes: 5);
+  DateTime? _leftAt;
+
+  @override
+  ({bool showNodes, bool animate}) build() =>
+      (showNodes: false, animate: false);
+
+  void show(bool showNodes) {
+    if (state.showNodes == showNodes) return;
+    state = (showNodes: showNodes, animate: true);
+  }
+
+  void toggle() => show(!state.showNodes);
+
+  void leave() => _leftAt ??= DateTime.now();
+
+  void enter() {
+    final leftAt = _leftAt;
+    _leftAt = null;
+    if (leftAt == null ||
+        !state.showNodes ||
+        DateTime.now().difference(leftAt) < _idleReset) {
+      return;
+    }
+    state = (showNodes: false, animate: false);
+  }
+}
+
+@Riverpod(keepAlive: true)
+class ForceRefreshIcon extends _$ForceRefreshIcon with NotifierValueMixin {
+  @override
+  bool build() => false;
+}
+
+@riverpod
+class GeoUpdatingKeys extends _$GeoUpdatingKeys with NotifierValueMixin {
+  @override
+  Set<String> build() => {};
+
+  void add(String key) => state = {...state, key};
+
+  void remove(String key) => state = Set.of(state)..remove(key);
+}
+
+int _compareTrackerInfo(
+  ConnectionsSortType sortType,
+  TrackerInfo a,
+  TrackerInfo b,
+) {
+  final primary = switch (sortType) {
+    ConnectionsSortType.realTimeSpeed =>
+      ((b.uploadSpeed ?? 0) + (b.downloadSpeed ?? 0)).compareTo(
+        (a.uploadSpeed ?? 0) + (a.downloadSpeed ?? 0),
+      ),
+    ConnectionsSortType.totalTraffic => (b.upload + b.download).compareTo(
+      a.upload + a.download,
+    ),
+    ConnectionsSortType.defaultSort || ConnectionsSortType.creationTime => 0,
+  };
+  if (primary != 0) return primary;
+  final byStart = b.start.compareTo(a.start);
+  if (byStart != 0) return byStart;
+  return b.id.compareTo(a.id);
+}
 
 final filteredConnectionsProvider = Provider<List<TrackerInfo>>((ref) {
   final connections = ref.watch(connectionsProvider);
+  final closed = ref.watch(requestsProvider.select((state) => state.list));
   final query = ref.watch(connectionsSearchProvider).toLowerCase().trim();
   final keywords = ref.watch(connectionsKeywordsProvider);
-
-  final filtered = connections.where((item) {
-    if (query.isNotEmpty) {
-      final networkText = item.metadata.network.toLowerCase();
-      final hostText = item.metadata.host.toLowerCase();
-      final destinationIPText = item.metadata.destinationIP.toLowerCase();
-      final processText = item.metadata.process.toLowerCase();
-      final chainsText = item.chains.join('').toLowerCase();
-      final matchesQuery =
-          networkText.contains(query) ||
-          hostText.contains(query) ||
-          destinationIPText.contains(query) ||
-          processText.contains(query) ||
-          chainsText.contains(query);
-      if (!matchesQuery) return false;
-    }
-    if (keywords.isNotEmpty) {
-      final chains = item.chains;
-      final process = item.metadata.process;
-      final matchesKeywords = {...chains, process}.containsAll(keywords);
-      if (!matchesKeywords) return false;
-    }
-    return true;
-  }).toList();
-
+  final udpOnly = ref.watch(connectionsUdpOnlyProvider);
   final sortType = ref.watch(connectionsSortProvider);
-  switch (sortType) {
-    case ConnectionsSortType.realTimeSpeed:
-      filtered.sort((a, b) {
-        final aSpeed = (a.uploadSpeed ?? 0) + (a.downloadSpeed ?? 0);
-        final bSpeed = (b.uploadSpeed ?? 0) + (b.downloadSpeed ?? 0);
-        return bSpeed.compareTo(aSpeed);
-      });
-      break;
-    case ConnectionsSortType.totalTraffic:
-      filtered.sort((a, b) {
-        final aTraffic = a.upload + a.download;
-        final bTraffic = b.upload + b.download;
-        return bTraffic.compareTo(aTraffic);
-      });
-      break;
-    case ConnectionsSortType.defaultSort:
-    case ConnectionsSortType.creationTime:
-      filtered.sort((a, b) => b.start.compareTo(a.start));
-      break;
-  }
-  return filtered;
+  final closedIds = {for (final item in closed) item.id};
+
+  return connections
+      .where(
+        (item) =>
+            !closedIds.contains(item.id) &&
+            _matchTrackerInfo(item, query, keywords, udpOnly),
+      )
+      .toList()
+    ..sort((a, b) => _compareTrackerInfo(sortType, a, b));
 });
+
+final filteredAllConnectionsProvider =
+    Provider<List<({TrackerInfo info, bool closed})>>((ref) {
+      final active = ref.watch(filteredConnectionsProvider);
+      final closed = ref.watch(filteredRequestsProvider);
+      final sortType = ref.watch(connectionsSortProvider);
+      return [
+        for (final info in active) (info: info, closed: false),
+        for (final info in closed) (info: info, closed: true),
+      ]..sort((a, b) => _compareTrackerInfo(sortType, a.info, b.info));
+    });
+
+@riverpod
+Future<IconSet> builtInIconSet(Ref ref) async {
+  final index = await ManagedScript.catalog();
+  return routeIconSet(index.catalog);
+}
+
+@Riverpod(keepAlive: true)
+class IconSets extends _$IconSets {
+  @override
+  Future<List<IconSet>> build() => IconSetStore.instance.read();
+
+  Future<({String name, List<IconSetIcon> icons})> _parse(
+    String content,
+  ) async {
+    try {
+      return await Isolate.run(() => parseIconSet(content));
+    } on FormatException {
+      throw appLocalizations.invalidIconSet;
+    }
+  }
+
+  String _nameOf(String parsed, String fallback) {
+    final name = parsed.isNotEmpty ? parsed : iconFileStem(fallback);
+    return name.isNotEmpty ? name : appLocalizations.iconSets;
+  }
+
+  Future<void> _put(IconSet iconSet) async {
+    final current = await future;
+    final index = current.indexWhere((item) => item.id == iconSet.id);
+    final next = [...current];
+    if (index < 0) {
+      next.add(iconSet);
+    } else {
+      next[index] = iconSet;
+    }
+    state = AsyncData(next);
+    await IconSetStore.instance.write(next);
+  }
+
+  Future<IconSet> importUrl(String url) async {
+    final response = await request.getTextResponseForUrl(url);
+    final parsed = await _parse('${response.data ?? ''}');
+    final current = await future;
+    final existing = current.firstWhereOrNull((item) => item.url == url);
+    final iconSet =
+        (existing ??
+                IconSet(
+                  id: utils.id,
+                  name: _nameOf(parsed.name, Uri.parse(url).path),
+                  url: url,
+                ))
+            .copyWith(icons: parsed.icons, lastUpdateTime: DateTime.now());
+    await _put(iconSet);
+    return iconSet;
+  }
+
+  Future<IconSet> importContent(String fileName, String content) async {
+    final parsed = await _parse(content);
+    final iconSet = IconSet(
+      id: utils.id,
+      name: _nameOf(parsed.name, fileName),
+      icons: parsed.icons,
+      lastUpdateTime: DateTime.now(),
+    );
+    await _put(iconSet);
+    return iconSet;
+  }
+
+  Future<void> delete(String id) async {
+    final next = [
+      for (final item in await future)
+        if (item.id != id) item,
+    ];
+    state = AsyncData(next);
+    await IconSetStore.instance.write(next);
+  }
+}

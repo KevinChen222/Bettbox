@@ -14,7 +14,7 @@ categories:
   - Network
 
 startup_notify: true
-startup_wm_class: com.appshub.bettbox
+startup_wm_class: com.kevinchen222.bettbox.smart
 
 include: []
 extra_files:

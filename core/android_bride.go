@@ -4,6 +4,32 @@ package main
 
 /*
 #include <stdlib.h>
+#include <malloc.h>
+
+#ifndef M_PURGE
+#define M_PURGE (-101)
+#endif
+#ifndef M_PURGE_ALL
+#define M_PURGE_ALL (-104)
+#endif
+
+#if defined(__ANDROID_API__) && __ANDROID_API__ < 26
+extern int mallopt(int __option, int __value) __attribute__((weak));
+#else
+extern int mallopt(int __option, int __value);
+#endif
+
+static void purge_memory(void) {
+#if defined(__ANDROID_API__) && __ANDROID_API__ < 26
+    if (mallopt == NULL) {
+        return;
+    }
+#endif
+    if (mallopt(M_PURGE_ALL, 0) == 1) {
+        return;
+    }
+    mallopt(M_PURGE, 0);
+}
 
 typedef void (*release_object_func)(void *obj);
 
@@ -42,6 +68,10 @@ var (
 		resolveProcessFunc C.resolve_process_func
 	}
 )
+
+func purgeNativeMemory() {
+	C.purge_memory()
+}
 
 func Protect(callback unsafe.Pointer, fd int) {
 	if globalCallbacks.protectFunc != nil {

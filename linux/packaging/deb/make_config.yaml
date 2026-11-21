@@ -42,7 +42,7 @@ categories:
   - Network
 
 startup_notify: true
-startup_wm_class: com.appshub.bettbox
+startup_wm_class: com.kevinchen222.bettbox.smart
 
 extra_files:
   linux/packaging/polkit/90-bettbox.rules: usr/share/polkit-1/rules.d/90-bettbox.rules

@@ -39,18 +39,19 @@ type HealthCheck struct {
 	lastTouch      atomic.TypedValue[time.Time]
 	singleDo       *singledo.Single[struct{}]
 	timeout        time.Duration
+	cursors        map[string]int
 }
 
 func (hc *HealthCheck) process() {
 	ticker := time.NewTicker(hc.interval)
-	go hc.check()
+	go hc.checkWith(hc.periodicReuse())
 	for {
 		select {
 		case <-ticker.C:
 			lastTouch := hc.lastTouch.Load()
 			since := time.Since(lastTouch)
 			if !hc.lazy || since < hc.interval {
-				hc.check()
+				hc.checkWith(hc.periodicReuse())
 			} else {
 				log.Debugln("Skip once health check because we are lazy")
 			}
@@ -120,7 +121,7 @@ func (hc *HealthCheck) touch() {
 	hc.lastTouch.Store(time.Now())
 }
 
-func (hc *HealthCheck) check() {
+func (hc *HealthCheck) checkWith(reuse time.Duration) {
 	if len(hc.proxies) == 0 {
 		return
 	}
@@ -129,16 +130,16 @@ func (hc *HealthCheck) check() {
 		id := utils.NewUUIDV4().String()
 		log.Debugln("Start New Health Checking {%s}", id)
 		b := new(errgroup.Group)
-		b.SetLimit(10)
+		b.SetLimit(16)
 
 		// execute default health check
 		option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
-		hc.execute(b, hc.url, id, option)
+		hc.execute(b, hc.url, id, option, reuse)
 
 		// execute extra health check
 		if len(hc.extra) != 0 {
 			for url, option := range hc.extra {
-				hc.execute(b, url, id, option)
+				hc.execute(b, url, id, option, reuse)
 			}
 		}
 		_ = b.Wait()
@@ -147,7 +148,7 @@ func (hc *HealthCheck) check() {
 	})
 }
 
-func (hc *HealthCheck) execute(b *errgroup.Group, url, uid string, option *extraOption) {
+func (hc *HealthCheck) execute(b *errgroup.Group, url, uid string, option *extraOption, reuse time.Duration) {
 	url = strings.TrimSpace(url)
 	if len(url) == 0 {
 		log.Debugln("Health Check has been skipped due to testUrl is empty, {%s}", uid)
@@ -158,30 +159,14 @@ func (hc *HealthCheck) execute(b *errgroup.Group, url, uid string, option *extra
 	var expectedStatus utils.IntRanges[uint16]
 	if option != nil {
 		expectedStatus = option.expectedStatus
-		if len(option.filters) != 0 {
-			filters := make([]string, 0, len(option.filters))
-			for filter := range option.filters {
-				filters = append(filters, filter)
-			}
-
-			filterReg = regexp2.MustCompile(strings.Join(filters, "|"), regexp2.None)
-		}
+		filterReg = hc.compileOptionFilter(option)
 	}
 
-	for _, proxy := range hc.proxies {
-		// skip proxies that do not require health check
-		if filterReg != nil {
-			if match, _ := filterReg.MatchString(proxy.Name()); !match {
-				continue
-			}
-		}
-
+	for _, proxy := range hc.selectBatch(url, filterReg, reuse) {
 		p := proxy
 		b.Go(func() error {
-			ctx, cancel := context.WithTimeout(hc.ctx, hc.timeout)
-			defer cancel()
 			log.Debugln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
-			_, _ = p.URLTest(ctx, url, expectedStatus)
+			hc.urlTest(p, url, expectedStatus, reuse)
 			log.Debugln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, p.AliveForTestUrl(url), p.LastDelayForTestUrl(url), uid)
 			return nil
 		})

@@ -75,12 +75,26 @@ class _MediaUnlockSmallState extends ConsumerState<MediaUnlockSmall> {
                   ? MediaUnlockStatus.testing
                   : MediaUnlockStatus.unknown));
     final color = status.statusColor(context.colorScheme);
+    final isError =
+        status == MediaUnlockStatus.blocked ||
+        status == MediaUnlockStatus.failed;
+    final latency = result?.latency;
+    final String statusDisplay;
+    if (status == MediaUnlockStatus.unknown) {
+      statusDisplay = '-';
+    } else if (isError) {
+      statusDisplay = appLocalizations.checkFailed;
+    } else if (latency != null) {
+      statusDisplay = '${latency}ms';
+    } else {
+      statusDisplay = '-';
+    }
 
     final iconSize = platform.iconSize;
     final Widget icon;
     if (platform.isMonochrome) {
       icon = SvgPicture.asset(
-        'assets/images/platforms/${platform.name}.svg',
+        'assets/svg/${platform.icon}',
         width: iconSize.width.ap,
         height: iconSize.height.ap,
         fit: BoxFit.contain,
@@ -91,7 +105,7 @@ class _MediaUnlockSmallState extends ConsumerState<MediaUnlockSmall> {
       );
     } else if (colorfulIcons) {
       icon = SvgPicture.asset(
-        'assets/images/platforms/${platform.name}.svg',
+        'assets/svg/${platform.icon}',
         width: iconSize.width.ap,
         height: iconSize.height.ap,
         fit: BoxFit.contain,
@@ -100,7 +114,7 @@ class _MediaUnlockSmallState extends ConsumerState<MediaUnlockSmall> {
       icon = ColorFiltered(
         colorFilter: monochromeColorFilter,
         child: SvgPicture.asset(
-          'assets/images/platforms/${platform.name}.svg',
+          'assets/svg/${platform.icon}',
           width: iconSize.width.ap,
           height: iconSize.height.ap,
           fit: BoxFit.contain,
@@ -133,35 +147,33 @@ class _MediaUnlockSmallState extends ConsumerState<MediaUnlockSmall> {
             ),
           ),
           SizedBox(width: 8.ap),
-          SizedBox(
-            width: 12.ap,
-            height: 12.ap,
-            child: Center(
-              child: status == MediaUnlockStatus.testing
-                  ? RepaintBoundary(
-                      child: SizedBox(
-                        width: 10.ap,
-                        height: 10.ap,
-                        child: SyncedLoading(
-                          size: 10.ap,
-                          child: SpinKitRing(
-                            color: context.colorScheme.primary,
-                            lineWidth: 1.5,
-                            size: 10.ap,
-                          ),
-                        ),
-                      ),
-                    )
-                  : Container(
-                      width: 7.ap,
-                      height: 7.ap,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
+          if (status == MediaUnlockStatus.testing)
+            RepaintBoundary(
+              child: SizedBox(
+                width: 12.ap,
+                height: 12.ap,
+                child: SyncedLoading(
+                  size: 12.ap,
+                  child: SpinKitRing(
+                    color: context.colorScheme.primary,
+                    lineWidth: 1.5,
+                    size: 12.ap,
+                  ),
+                ),
+              ),
+            )
+          else
+            Text(
+              statusDisplay,
+              textAlign: TextAlign.right,
+              style: context.textTheme.labelSmall?.copyWith(
+                fontSize: 10.5.ap,
+                fontWeight: FontWeight.w400,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                color: color,
+              ),
+              maxLines: 1,
             ),
-          ),
         ],
       ),
     );
@@ -213,72 +225,48 @@ class _MediaUnlockSmallState extends ConsumerState<MediaUnlockSmall> {
             },
             child: Column(
               children: [
-                Padding(
-                  padding: EdgeInsets.fromLTRB(16.ap, 10.ap, 8.ap, 6.ap),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.link_rounded,
-                        size: 18.ap,
-                        color: context.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          appLocalizations.mediaUnlock,
-                          style: context.textTheme.titleSmall?.copyWith(
-                            color: context.colorScheme.onSurfaceVariant,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      SizedBox(
-                        width: 24.ap,
-                        height: 24.ap,
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          onPressed: isWidgetLoading
-                              ? null
-                              : () => mediaUnlockState.checkPlatforms(
-                                  displayedPlatforms,
-                                  force: true,
-                                ),
-                          icon: isWidgetLoading
-                              ? RepaintBoundary(
-                                  child: SizedBox(
-                                    width: 13.ap,
-                                    height: 13.ap,
-                                    child: SpinKitRing(
-                                      color: context.colorScheme.primary,
-                                      lineWidth: 1.5,
-                                      size: 13.ap,
-                                    ),
+                InfoHeader(
+                  padding: baseInfoEdgeInsets.copyWith(bottom: 0),
+                  info: Info(
+                    label: appLocalizations.mediaUnlock,
+                    iconData: Icons.link_rounded,
+                  ),
+                  actions: [
+                    SizedBox(
+                      width: 24.ap,
+                      height: 24.ap,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: isWidgetLoading
+                            ? null
+                            : () => mediaUnlockState.checkPlatforms(
+                                displayedPlatforms,
+                                force: true,
+                              ),
+                        icon: isWidgetLoading
+                            ? RepaintBoundary(
+                                child: SizedBox(
+                                  width: 13.ap,
+                                  height: 13.ap,
+                                  child: SpinKitRing(
+                                    color: context.colorScheme.primary,
+                                    lineWidth: 1.5,
+                                    size: 13.ap,
                                   ),
-                                )
-                              : Icon(
-                                  Icons.sync,
-                                  size: 16.ap,
-                                  color: context.colorScheme.onSurfaceVariant,
                                 ),
-                        ),
+                              )
+                            : AppIcon(
+                                Icons.sync,
+                                size: 16.ap,
+                                color: context.colorScheme.onSurfaceVariant,
+                              ),
                       ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16.ap),
-                  child: Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: context.colorScheme.outlineVariant.withValues(
-                      alpha: 0.2,
                     ),
-                  ),
+                  ],
                 ),
                 Expanded(
                   child: Padding(
-                    padding: EdgeInsets.fromLTRB(16.ap, 6.ap, 16.ap, 8.ap),
+                    padding: EdgeInsets.fromLTRB(16.ap, 8.ap, 16.ap, 12.ap),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [

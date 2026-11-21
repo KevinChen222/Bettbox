@@ -1,14 +1,38 @@
-#ifdef LIBCLASH
+#include <dlfcn.h>
 #include <jni.h>
+#include <malloc.h>
+
+#ifndef M_PURGE
+#define M_PURGE (-101)
+#endif
+#ifndef M_PURGE_ALL
+#define M_PURGE_ALL (-104)
+#endif
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_appshub_bettbox_core_Core_purgeMemory(JNIEnv *, jobject, jboolean all) {
+    using MalloptFn = int (*)(int, int);
+    static const auto mallopt_fn = reinterpret_cast<MalloptFn>(dlsym(RTLD_DEFAULT, "mallopt"));
+    if (!mallopt_fn) {
+        return;
+    }
+    if (all && mallopt_fn(M_PURGE_ALL, 0) == 1) {
+        return;
+    }
+    mallopt_fn(M_PURGE, 0);
+}
+
+#ifdef LIBCLASH
 #include <cstring>
 #include "jni_helper.h"
 #include "libmeta.h"
 
 extern "C"
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_com_appshub_bettbox_core_Core_startTun(JNIEnv *env, jobject, const jint fd, jobject cb) {
     const auto interface = new_global(cb);
-    startTUN(fd, interface);
+    return startTUN(fd, interface) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C"
@@ -21,6 +45,27 @@ extern "C"
 JNIEXPORT void JNICALL
 Java_com_appshub_bettbox_core_Core_suspend(JNIEnv *, jobject, jint suspended) {
     suspend(suspended);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_appshub_bettbox_core_Core_setScreenState(JNIEnv *, jobject, jint on) {
+    setScreenState(on);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_appshub_bettbox_core_Core_networkChanged(JNIEnv *, jobject) {
+    networkChanged();
+}
+
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_com_appshub_bettbox_core_Core_getTraffic(JNIEnv *env, jobject) {
+    char *traffic = getTraffic();
+    const auto result = new_string(traffic != nullptr ? traffic : "");
+    freeCString(traffic);
+    return result;
 }
 
 

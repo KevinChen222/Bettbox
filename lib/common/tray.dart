@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:bett_box/state.dart';
@@ -49,7 +50,7 @@ class Tray {
     _loadingTimer?.cancel();
   }
 
-  Future _updateSystemTray({
+  Future<void> _updateSystemTray({
     required Brightness? brightness,
     required bool isStart,
     bool force = false,
@@ -323,7 +324,7 @@ class Tray {
       final menu = Menu(items: menuItems);
       await trayManager.setContextMenu(
         menu,
-        keepMenuOpen: silent,
+        keepMenuOpen: silent || system.isWindows,
         brightness: trayState.brightness,
       );
       if (Platform.isLinux) {
@@ -547,9 +548,12 @@ class Tray {
         testableProxies,
         testUrl: group.testUrl,
         groupName: group.name,
-        onDelayUpdated: system.isMacOS
-            ? () => appController.updateTray(false, true)
-            : null,
+        onDelayUpdated: system.isLinux
+            ? null
+            : () async {
+                if (!trayManager.isMenuOpen) return;
+                await appController.updateTray(false, true);
+              },
       );
     } catch (e) {
       commonPrint.warn('Delay test error: $e');

@@ -41,13 +41,13 @@ class _TrayContainerState extends ConsumerState<TrayManager> with TrayListener {
         // ignore: deprecated_member_use
         await trayManager.popUpContextMenu(bringAppToFront: true);
       } else {
-        window?.show();
+        unawaited(window?.show());
       }
       return;
     }
     if (system.isLinux) {
       if (!isRightClick) {
-        window?.show();
+        unawaited(window?.show());
       }
       return;
     }
@@ -71,7 +71,7 @@ class _TrayContainerState extends ConsumerState<TrayManager> with TrayListener {
       await trayManager.popUpContextMenu(bringAppToFront: true);
       return;
     }
-    window?.show();
+    unawaited(window?.show());
   }
 
   @override
@@ -86,7 +86,7 @@ class _TrayContainerState extends ConsumerState<TrayManager> with TrayListener {
 
   @override
   void onTrayMenuItemClick(MenuItem menuItem) {
-    if (menuItem.submenu != null) return;
+    if (menuItem.submenu != null || trayManager.isMenuOpen) return;
     if (globalState.backgroundMode.value) {
       globalState.appController.updateTray(false, false, true);
     }
@@ -94,9 +94,15 @@ class _TrayContainerState extends ConsumerState<TrayManager> with TrayListener {
 
   @override
   void onTrayMenuClose() {
-    if (!tray.showHiddenGroups || trayManager.isMenuOpen) return;
-    tray.showHiddenGroups = false;
-    globalState.appController.updateTray(false, false, true);
+    if (trayManager.isMenuOpen) return;
+    if (tray.showHiddenGroups) {
+      tray.showHiddenGroups = false;
+      globalState.appController.updateTray(false, false, true);
+      return;
+    }
+    if (trayManager.isMenuOutdated) {
+      globalState.appController.updateTray();
+    }
   }
 
   @override

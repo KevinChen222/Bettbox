@@ -4,7 +4,7 @@ version: 0.0.1
 homepage:
 
 environment:
-  sdk: '>=3.4.4 <4.0.0'
+  sdk: '>=3.14.0 <4.0.0'
   flutter: '>=3.3.0'
 
 dependencies:
@@ -37,6 +37,8 @@ flutter:
       windows:
         pluginClass: WindowExtPluginCApi
       macos:
+        pluginClass: WindowExtPlugin
+      linux:
         pluginClass: WindowExtPlugin
 
   # To add assets to your plugin package, add an assets section, like this:

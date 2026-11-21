@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:bett_box/common/common.dart';
@@ -6,6 +7,7 @@ import 'package:bett_box/models/models.dart';
 import 'package:bett_box/pages/editor.dart';
 import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
+import 'package:bett_box/views/profiles/managed_options.dart';
 import 'package:bett_box/widgets/card.dart';
 import 'package:bett_box/widgets/dialog.dart';
 import 'package:bett_box/widgets/fade_box.dart';
@@ -20,11 +22,26 @@ import 'package:bett_box/widgets/scroll.dart';
 import 'package:bett_box/widgets/sheet.dart';
 import 'package:bett_box/widgets/text.dart';
 import 'package:bett_box/widgets/delay_animation_dialog.dart';
+import 'package:code_forge/code_forge.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/svg.dart';
 
 const Duration _kMinLoadingDuration = Duration(seconds: 1);
+
+const _optionIcons = {
+  '极简国内外分流模式': Icons.looks_one_outlined,
+  '生成地区自动选择组': Icons.auto_mode,
+  '隐藏地区手动选择组': Icons.visibility_off,
+  '分流组添加所有节点': Icons.playlist_add,
+  '生成高低倍率组': Icons.leaderboard_outlined,
+  '过滤低倍率节点': Icons.trending_down,
+  '过滤高倍率节点': Icons.trending_up,
+  '过滤非地区节点': Icons.public_off,
+  '禁用内核QUIC流量': Icons.block,
+  '优先国内DNS加速': Icons.dns_outlined,
+  '优先连接IPv6节点': Icons.looks_6_outlined,
+};
 
 bool _isValidIconUrl(String? url) {
   if (url == null || url.isEmpty) return false;
@@ -39,7 +56,7 @@ bool _isValidIconUrl(String? url) {
   Map<String, String> icons,
   Set<String> policyGroupOptions,
 })
-_processScriptData(Map<String, dynamic> data, Script script) {
+processScriptOptions(Map<String, dynamic> data, Script script) {
   final rawOptions = data['options'];
   final rawIcons = data['icons'];
 
@@ -51,7 +68,9 @@ _processScriptData(Map<String, dynamic> data, Script script) {
   }
   if (script.customOptions != null) {
     script.customOptions!.forEach((k, v) {
-      if (options.containsKey(k)) {
+      if (k == '屏蔽内核QUIC流量' && options.containsKey('禁用内核QUIC流量')) {
+        options['禁用内核QUIC流量'] = v;
+      } else if (options.containsKey(k)) {
         options[k] = v;
       }
     });
@@ -85,11 +104,35 @@ _processScriptData(Map<String, dynamic> data, Script script) {
 Future<void> showScriptCustomOptions(
   BuildContext context, {
   required Script script,
+  Future<void> Function(Map<String, bool> options)? onSave,
 }) async {
   await showExtend(
     context,
     builder: (_, type) {
-      return _ScriptCustomOptionsSheet(type: type, script: script);
+      return _ScriptCustomOptionsSheet(
+        type: type,
+        script: script,
+        onSave: onSave,
+      );
+    },
+  );
+}
+
+Future<void> showScriptOtherOptions(
+  BuildContext context, {
+  required Map<String, bool> values,
+  required Map<String, String> icons,
+  required Future<void> Function(Map<String, bool> values) onSave,
+}) async {
+  await showSheet(
+    context: context,
+    builder: (_, type) {
+      return _ScriptOtherOptionsSheet(
+        type: type,
+        values: values,
+        icons: icons,
+        onSave: onSave,
+      );
     },
   );
 }
@@ -102,6 +145,14 @@ class ScriptsView extends ConsumerStatefulWidget {
 }
 
 class _ScriptsViewState extends ConsumerState<ScriptsView> {
+  final _managedMenuOpen = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _managedMenuOpen.dispose();
+    super.dispose();
+  }
+
   Future<void> _handleDelScript(String label) async {
     final res = await globalState.showMessage(
       message: TextSpan(
@@ -111,7 +162,19 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
     if (res != true) {
       return;
     }
+    final id = ref
+        .read(scriptStateProvider)
+        .scripts
+        .where((script) => script.label == label)
+        .firstOrNull
+        ?.id;
     ref.read(scriptStateProvider.notifier).del(label);
+    if (id == null) return;
+    final profiles = ref.read(profilesProvider.notifier);
+    for (final profile in ref.read(profilesProvider)) {
+      if (profile.scriptId != id) continue;
+      profiles.updateProfile(profile.id, (p) => p.copyWith(scriptId: null));
+    }
   }
 
   Future<void> _handleSyncScript(String id) async {
@@ -142,7 +205,7 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
       title: appLocalizations.tip,
     );
     if (res == true && mounted) {
-      context.showNotifier(appLocalizations.exportSuccess);
+      unawaited(context.showNotifier(appLocalizations.exportSuccess));
     }
   }
 
@@ -165,7 +228,7 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: context.colorScheme.primary),
+          AppIcon(icon, size: 12, color: context.colorScheme.primary),
           const SizedBox(width: 3),
           Text(
             label,
@@ -179,45 +242,277 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
     );
   }
 
+  Future<Script?> _loadManaged() {
+    final props = ref.read(managedSettingProvider);
+    return globalState.appController.safeRun(
+      () => ManagedScript.script(props),
+      needLoading: true,
+      title: appLocalizations.tip,
+    );
+  }
+
+  Future<void> _handleExportManaged() async {
+    final script = await _loadManaged();
+    if (script == null || !mounted) return;
+    await _handleExportFile(
+      script.copyWith(label: appLocalizations.managedMode),
+    );
+  }
+
+  Future<void> _handleViewManaged() async {
+    final script = await _loadManaged();
+    if (script == null || !mounted) return;
+    unawaited(
+      BaseNavigator.push(
+        context,
+        EditorPage(
+          title: appLocalizations.managedMode,
+          content: script.content,
+          languages: const [Language.javaScript],
+          readOnly: true,
+        ),
+        maintainState: false,
+      ),
+    );
+  }
+
+  Future<bool> _handleManagedEditorSave(
+    BuildContext editorContext,
+    String content,
+  ) async {
+    final props = ref.read(managedSettingProvider);
+    final res = await globalState.appController
+        .safeRun<({String? syncedVersion})>(
+          () async {
+            final candidate = await ManagedScript.script(props, raw: content);
+            await globalState.validateScript(candidate, managed: true);
+            return (syncedVersion: await ManagedScript.save(content));
+          },
+          needLoading: true,
+          silence: false,
+        );
+    if (res == null || !mounted) return false;
+    globalState.appController.updateManagedSetting(
+      (state) => state.copyWith(syncedVersion: res.syncedVersion),
+    );
+    if (editorContext.mounted) {
+      Navigator.of(editorContext).pop();
+    }
+    return true;
+  }
+
+  Future<void> _handleEditManaged() async {
+    final props = ref.read(managedSettingProvider);
+    final data = await globalState.appController
+        .safeRun<({String raw, String bundled})>(
+          () async {
+            final (raw, bundled) = await (
+              ManagedScript.read(props),
+              ManagedScript.readBundled(),
+            ).wait;
+            return (raw: raw, bundled: bundled);
+          },
+          needLoading: true,
+          title: appLocalizations.tip,
+        );
+    if (data == null || !mounted) return;
+    var savedContent = CodeForgeController.normalizeLineBreaks(data.raw);
+    final bundledContent = CodeForgeController.normalizeLineBreaks(
+      data.bundled,
+    );
+    unawaited(
+      BaseNavigator.push(
+        context,
+        EditorPage(
+          title: appLocalizations.managedMode,
+          content: savedContent,
+          defaultContent: bundledContent,
+          languages: const [Language.javaScript],
+          onReset: (_) async {
+            final res = await globalState.showMessage(
+              title: appLocalizations.restoreBundled,
+              message: TextSpan(text: appLocalizations.resetTip),
+            );
+            if (res != true || !mounted) return false;
+            final restored = await globalState.appController.safeRun<bool>(
+              () async {
+                await ManagedScript.restore();
+                return true;
+              },
+              silence: false,
+            );
+            if (restored != true || !mounted) return false;
+            savedContent = bundledContent;
+            if (ref.read(managedSettingProvider).syncedVersion != null) {
+              globalState.appController.updateManagedSetting(
+                (state) => state.copyWith(syncedVersion: null),
+              );
+            }
+            globalState.showNotifier(appLocalizations.success);
+            return true;
+          },
+          onSave: (editorContext, _, content) {
+            _handleManagedEditorSave(editorContext, content);
+          },
+          onPop: (editorContext, _, content) async {
+            if (content == savedContent) {
+              return true;
+            }
+            final res = await globalState.showMessage(
+              message: TextSpan(text: appLocalizations.saveChanges),
+            );
+            if (res == true && editorContext.mounted) {
+              await _handleManagedEditorSave(editorContext, content);
+            } else {
+              return true;
+            }
+            return false;
+          },
+        ),
+        maintainState: false,
+      ),
+    );
+  }
+
+  Widget _buildManagedCard({required bool inUse}) {
+    return CommonCard(
+      key: const ValueKey(managedScriptId),
+      elevated: false,
+      radius: 16,
+      type: CommonCardType.filled,
+      onPressed: () => showManagedOptions(context),
+      onLongPress: _handleEditManaged,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 68),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 36,
+              height: 40,
+              child: AppIcon(
+                Icons.auto_awesome_outlined,
+                size: 28,
+                color: context.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    appLocalizations.managedMode,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.textTheme.titleMedium,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        if (inUse)
+                          _buildScriptTag(
+                            icon: Icons.check_circle_outline,
+                            label: appLocalizations.inUse,
+                          ),
+                        _buildScriptTag(
+                          icon: Icons.inventory_2_outlined,
+                          label: appLocalizations.builtIn,
+                        ),
+                        _buildScriptTag(
+                          icon: Icons.tune,
+                          label: appLocalizations.custom,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            CommonPopupBox(
+              targetBuilder: (open) => IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                onPressed: () async {
+                  _managedMenuOpen.value = true;
+                  await open();
+                  if (!mounted) return;
+                  _managedMenuOpen.value = false;
+                },
+                tooltip: appLocalizations.more,
+                color: context.colorScheme.onSurfaceVariant,
+                icon: ValueListenableBuilder<bool>(
+                  valueListenable: _managedMenuOpen,
+                  builder: (_, isOpen, _) => MenuDotsIcon(isOpen: isOpen),
+                ),
+              ),
+              popup: CommonPopupMenu(
+                items: [
+                  PopupMenuItemData(
+                    icon: Icons.visibility_outlined,
+                    label: appLocalizations.view,
+                    onPressed: _handleViewManaged,
+                  ),
+                  PopupMenuItemData(
+                    icon: Icons.tune,
+                    label: appLocalizations.custom,
+                    onPressed: () => showManagedOptions(context),
+                  ),
+                  PopupMenuItemData(
+                    icon: Icons.file_copy_outlined,
+                    label: appLocalizations.exportFile,
+                    onPressed: _handleExportManaged,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildContent() {
     return Consumer(
       builder: (_, ref, _) {
-        final vm2 = ref.watch(
-          scriptStateProvider.select(
-            (state) => VM2(a: state.currentId, b: state.scripts),
+        final scripts = ref.watch(
+          scriptStateProvider.select((state) => state.scripts),
+        );
+        final managedInUse = ref.watch(
+          currentProfileProvider.select(
+            (profile) => profile?.isManaged ?? false,
           ),
         );
-        final currentId = vm2.a;
-        final scripts = vm2.b;
-        if (scripts.isEmpty) {
-          return NullStatus(
-            label: appLocalizations.nullTip(appLocalizations.script),
-          );
-        }
+        final inUseId = ref.watch(
+          currentProfileScriptProvider.select((script) => script?.id),
+        );
         return ScrollEdgeRise(
           builder: (_, rise) => CommonScrollBar(
             controller: null,
             child: ListView.separated(
-              padding: const EdgeInsets.all(
-                16,
-              ).copyWith(top: 16 + rise, bottom: 16 + 64),
-              itemCount: scripts.length,
+              padding: const EdgeInsets.all(16)
+                  .copyWith(top: 16 + rise, bottom: 16 + 64),
+              itemCount: scripts.length + 1,
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
-                final script = scripts[index];
-                final isSelected = script.id == currentId;
+                if (index == 0) {
+                  return _buildManagedCard(inUse: managedInUse);
+                }
+                final script = scripts[index - 1];
+                final inUse = script.id == inUseId;
                 final hasRemote = script.url?.isNotEmpty ?? false;
                 final hasCustom = script.compatible;
-                final hasTags = hasRemote || hasCustom;
+                final hasTags = inUse || hasRemote || hasCustom;
                 return CommonCard(
                   key: ValueKey(script.id),
                   elevated: false,
-                  isSelected: isSelected,
                   radius: 16,
                   type: CommonCardType.filled,
-                  onPressed: () {
-                    ref.read(scriptStateProvider.notifier).setId(script.id);
-                  },
                   child: Container(
                     constraints: BoxConstraints(minHeight: hasTags ? 68 : 60),
                     padding: const EdgeInsets.symmetric(
@@ -226,15 +521,14 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
                     ),
                     child: Row(
                       children: [
-                        Switch(
-                          value: isSelected,
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                          onChanged: (_) {
-                            ref
-                                .read(scriptStateProvider.notifier)
-                                .setId(script.id);
-                          },
+                        SizedBox(
+                          width: 36,
+                          height: 40,
+                          child: AppIcon(
+                            Icons.terminal_outlined,
+                            size: 28,
+                            color: context.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -246,11 +540,7 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
                                 script.label,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: context.textTheme.titleMedium?.copyWith(
-                                  fontWeight: isSelected
-                                      ? FontWeight.w600
-                                      : FontWeight.normal,
-                                ),
+                                style: context.textTheme.titleMedium,
                               ),
                               if (hasTags)
                                 Padding(
@@ -259,6 +549,11 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
                                     spacing: 6,
                                     runSpacing: 4,
                                     children: [
+                                      if (inUse)
+                                        _buildScriptTag(
+                                          icon: Icons.check_circle_outline,
+                                          label: appLocalizations.inUse,
+                                        ),
                                       if (hasRemote)
                                         _buildScriptTag(
                                           icon: Icons.sync,
@@ -288,7 +583,8 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
                                 open();
                               },
                               tooltip: appLocalizations.more,
-                              icon: const Icon(Icons.more_vert, size: 20),
+                              color: context.colorScheme.onSurfaceVariant,
+                              icon: const AppIcon(Icons.more_vert, size: 20),
                             );
                           },
                           popup: CommonPopupMenu(
@@ -366,18 +662,31 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
           .read(scriptStateProvider.notifier)
           .isExits(draft.label);
       if (isExits) {
-        globalState.showMessage(
-          message: TextSpan(
-            text: appLocalizations.existsTip(appLocalizations.name),
+        unawaited(
+          globalState.showMessage(
+            message: TextSpan(
+              text: appLocalizations.existsTip(appLocalizations.name),
+            ),
+            cancelable: false,
           ),
-          cancelable: false,
         );
         return;
       }
     }
     final newScript = await globalState.appController.safeRun(
+      needLoading: true,
       silence: false,
-      () => draft.writeContent(content),
+      () async {
+        await globalState.validateScript(
+          draft.copyWith(
+            content: content,
+            digest: content.toMd5(),
+            volatile: volatileScriptPattern.hasMatch(content),
+          ),
+          managed: false,
+        );
+        return draft.writeContent(content);
+      },
     );
     if (newScript == null || !mounted) return;
     ref.read(scriptStateProvider.notifier).setScript(newScript);
@@ -398,12 +707,14 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
       message: TextSpan(text: appLocalizations.saveChanges),
     );
     if (res == true && mounted) {
-      _handleEditorSave(
-        context,
-        title,
-        content,
-        script: script,
-        url: script?.url,
+      unawaited(
+        _handleEditorSave(
+          context,
+          title,
+          content,
+          script: script,
+          url: script?.url,
+        ),
       );
     } else {
       return true;
@@ -421,39 +732,47 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
     final raw = initialContent ?? await script?.readContent() ?? scriptTemplate;
     if (!mounted) return;
     String? importedUrl = url ?? script?.url;
-    BaseNavigator.push(
-      context,
-      EditorPage(
-        titleEditable: true,
-        title: title,
-        supportRemoteDownload: true,
-        delayedFocus: delayedFocus,
-        onUrlImport: (downloadedUrl) {
-          importedUrl = downloadedUrl;
-        },
-        onSave: (context, title, content) {
-          final scriptToSave = script != null
-              ? script.copyWith(url: importedUrl)
-              : null;
-          _handleEditorSave(
-            context,
-            title,
-            content,
-            script: scriptToSave,
-            url: importedUrl,
-          );
-        },
-        onPop: (context, title, content) {
-          return _handleEditorPop(context, title, content, raw, script: script);
-        },
-        languages: const [Language.javaScript],
-        content: raw,
+    unawaited(
+      BaseNavigator.push(
+        context,
+        EditorPage(
+          titleEditable: true,
+          title: title,
+          supportRemoteDownload: true,
+          delayedFocus: delayedFocus,
+          onUrlImport: (downloadedUrl) {
+            importedUrl = downloadedUrl;
+          },
+          onSave: (context, title, content) {
+            final scriptToSave = script != null
+                ? script.copyWith(url: importedUrl)
+                : null;
+            _handleEditorSave(
+              context,
+              title,
+              content,
+              script: scriptToSave,
+              url: importedUrl,
+            );
+          },
+          onPop: (context, title, content) {
+            return _handleEditorPop(
+              context,
+              title,
+              content,
+              raw,
+              script: script,
+            );
+          },
+          languages: const [Language.javaScript],
+          content: raw,
+        ),
       ),
     );
   }
 
   Future<void> _handleImport() async {
-    final option = await globalState.showCommonDialog<ImportOption>(
+    final option = await globalState.showAdaptiveSheet<ImportOption>(
       child: const _ScriptImportOptionsDialog(),
     );
     if (option == null) {
@@ -462,7 +781,7 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
 
     switch (option) {
       case ImportOption.code:
-        _handleToEditor(delayedFocus: true);
+        unawaited(_handleToEditor(delayedFocus: true));
       case ImportOption.url:
         await _handleUrlImport();
       case ImportOption.file:
@@ -495,12 +814,16 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
     try {
       final res = await request.getTextResponseForUrl(url);
       if (mounted) {
-        _handleToEditor(initialContent: res.data, url: url);
+        unawaited(
+          _handleToEditor(initialContent: res.data as String?, url: url),
+        );
       }
     } catch (e) {
-      globalState.showMessage(
-        message: TextSpan(text: '${appLocalizations.importFailed}: $e'),
-        cancelable: false,
+      unawaited(
+        globalState.showMessage(
+          message: TextSpan(text: '${appLocalizations.importFailed}: $e'),
+          cancelable: false,
+        ),
       );
     }
   }
@@ -516,7 +839,7 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
     }
     final content = utf8.decode(bytes);
     if (mounted) {
-      _handleToEditor(initialContent: content);
+      unawaited(_handleToEditor(initialContent: content));
     }
   }
 
@@ -527,13 +850,13 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
         onPressed: () {
           _handleImport();
         },
-        child: Icon(Icons.add),
+        child: AppIcon(Icons.add),
       ),
       actions: [
         IconButton(
           onPressed: _handleShowScriptSettings,
           tooltip: appLocalizations.settings,
-          icon: Icon(Icons.settings),
+          icon: AppIcon(Icons.settings),
         ),
       ],
       body: _buildContent(),
@@ -542,54 +865,93 @@ class _ScriptsViewState extends ConsumerState<ScriptsView> {
   }
 }
 
+const _noScript = '.none';
+
 class _ScriptSettingsSheet extends ConsumerWidget {
   final SheetType type;
 
   const _ScriptSettingsSheet({required this.type});
 
+  String _valueOf(Profile profile, ScriptProps props) {
+    if (profile.isManaged) return managedScriptId;
+    return props.findScript(profile.scriptId)?.id ?? _noScript;
+  }
+
+  String _labelOf(String value, ScriptProps props) => switch (value) {
+    _noScript => appLocalizations.none,
+    managedScriptId => appLocalizations.managedMode,
+    _ => props.findScript(value)?.label ?? value,
+  };
+
+  void _handleChanged(WidgetRef ref, Profile profile, String? value) {
+    if (value == null) return;
+    ref
+        .read(profilesProvider.notifier)
+        .updateProfile(
+          profile.id,
+          (p) => p.copyWith(
+            managed: value == managedScriptId,
+            scriptId: value == managedScriptId || value == _noScript
+                ? null
+                : value,
+          ),
+        );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profiles = ref.watch(profilesProvider);
-    final currentProfileId = ref.watch(currentProfileIdProvider);
+    final props = ref.watch(scriptStateProvider);
+    final options = [
+      managedScriptId,
+      for (final script in props.scripts) script.id,
+      _noScript,
+    ];
     return AdaptiveSheetScaffold(
       type: type,
       body: profiles.isEmpty
           ? NullStatus(label: appLocalizations.nullProfileDesc)
           : ScrollEdgeRise(
               builder: (_, rise) => ListView.builder(
-                padding: EdgeInsets.fromLTRB(12, 16 + rise, 12, 16),
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  16 + rise,
+                  12,
+                  16 + MediaQuery.paddingOf(context).bottom,
+                ),
                 itemCount: profiles.length,
                 itemBuilder: (_, index) {
                   final profile = profiles[index];
-                  final isCurrentProfile = profile.id == currentProfileId;
+                  final label = profile.label ?? profile.id;
+                  final value = _valueOf(profile, props);
+                  final subtitle = Text(
+                    _labelOf(value, props),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  );
                   return Container(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: CommonCard(
                       elevated: false,
                       type: CommonCardType.filled,
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.only(
-                          left: 16,
-                          right: 16,
-                        ),
-                        title: EmojiText(profile.label ?? profile.id),
-                        trailing: Switch(
-                          value: profile.useScriptOverride,
-                          onChanged: (value) async {
-                            ref
-                                .read(profilesProvider.notifier)
-                                .updateProfile(
-                                  profile.id,
-                                  (p) => p.copyWith(useScriptOverride: value),
-                                );
-                            if (isCurrentProfile) {
-                              await globalState.appController.applyProfile(
-                                silence: true,
-                              );
-                            }
-                          },
-                        ),
-                      ),
+                      child: profile.bundle != null
+                          ? ListItem(
+                              title: EmojiText(label),
+                              subtitle: subtitle,
+                            )
+                          : ListItem<String>.options(
+                              title: EmojiText(label),
+                              subtitle: subtitle,
+                              trailing: const AppIcon(Icons.expand_more),
+                              delegate: OptionsDelegate(
+                                title: label,
+                                options: options,
+                                value: value,
+                                textBuilder: (value) => _labelOf(value, props),
+                                onChanged: (value) =>
+                                    _handleChanged(ref, profile, value),
+                              ),
+                            ),
                     ),
                   );
                 },
@@ -607,28 +969,28 @@ class _ScriptImportOptionsDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return CommonDialog(
       title: appLocalizations.import,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Wrap(
         children: [
           ListItem(
             onTap: () {
               Navigator.of(context).pop(ImportOption.code);
             },
-            leading: const Icon(Icons.code),
+            leading: const AppIcon(Icons.code),
             title: Text(appLocalizations.importFromCode),
           ),
           ListItem(
             onTap: () {
               Navigator.of(context).pop(ImportOption.url);
             },
-            leading: const Icon(Icons.link),
+            leading: const AppIcon(Icons.link),
             title: Text(appLocalizations.importUrl),
           ),
           ListItem(
             onTap: () {
               Navigator.of(context).pop(ImportOption.file);
             },
-            leading: const Icon(Icons.file_open),
+            leading: const AppIcon(Icons.file_open),
             title: Text(appLocalizations.importFile),
           ),
         ],
@@ -640,8 +1002,13 @@ class _ScriptImportOptionsDialog extends StatelessWidget {
 class _ScriptCustomOptionsSheet extends ConsumerStatefulWidget {
   final SheetType type;
   final Script script;
+  final Future<void> Function(Map<String, bool> options)? onSave;
 
-  const _ScriptCustomOptionsSheet({required this.type, required this.script});
+  const _ScriptCustomOptionsSheet({
+    required this.type,
+    required this.script,
+    this.onSave,
+  });
 
   @override
   ConsumerState<_ScriptCustomOptionsSheet> createState() =>
@@ -672,7 +1039,7 @@ class __ScriptCustomOptionsSheetState
   }
 
   void _applyData(Map<String, dynamic> data) {
-    final (:options, :icons, :policyGroupOptions) = _processScriptData(
+    final (:options, :icons, :policyGroupOptions) = processScriptOptions(
       data,
       widget.script,
     );
@@ -700,23 +1067,26 @@ class __ScriptCustomOptionsSheetState
 
   Future<void> _handleSave({bool popSheet = true}) async {
     if (_isSaving) return;
-    final scripts = ref.read(scriptStateProvider).scripts;
-    final index = scripts.indexWhere((item) => item.id == widget.script.id);
-    if (index == -1) {
-      _dirty = false;
-      if (mounted) setState(() {});
-      return;
+    final onSave = widget.onSave;
+    if (onSave == null) {
+      final scripts = ref.read(scriptStateProvider).scripts;
+      final index = scripts.indexWhere((item) => item.id == widget.script.id);
+      if (index == -1) {
+        _dirty = false;
+        if (mounted) setState(() {});
+        return;
+      }
+      final updatedScript = scripts[index].copyWith(
+        customOptions: Map<String, bool>.from(_options),
+      );
+      ref.read(scriptStateProvider.notifier).setScript(updatedScript);
     }
-    final currentScript = scripts[index];
-    final updatedScript = currentScript.copyWith(
-      customOptions: Map<String, bool>.from(_options),
-    );
-    ref.read(scriptStateProvider.notifier).setScript(updatedScript);
     _dirty = false;
     if (mounted) setState(() => _isSaving = true);
     try {
-      final applyFuture =
-          ref.read(scriptStateProvider).currentId == widget.script.id
+      final applyFuture = onSave != null
+          ? onSave(Map<String, bool>.from(_options))
+          : ref.read(currentProfileScriptProvider)?.id == widget.script.id
           ? globalState.appController.applyProfile(silence: true)
           : Future.value();
       await Future.wait([applyFuture, Future.delayed(_kMinLoadingDuration)]);
@@ -740,16 +1110,11 @@ class __ScriptCustomOptionsSheetState
   }
 
   Future<void> _handleOpenOtherOptions(List<String> keys) async {
-    await showExtend(
+    await showScriptOtherOptions(
       context,
-      builder: (_, type) {
-        return _ScriptOtherOptionsSheet(
-          type: type,
-          values: {for (final key in keys) key: _options[key] ?? true},
-          icons: _icons,
-          onSave: _handleSaveOtherOptions,
-        );
-      },
+      values: {for (final key in keys) key: _options[key] ?? true},
+      icons: _icons,
+      onSave: _handleSaveOtherOptions,
     );
   }
 
@@ -763,7 +1128,7 @@ class __ScriptCustomOptionsSheetState
   Future<bool> _confirmDiscard() async {
     if (_isSaving) return false;
     if (!_hasUnsavedChanges) return true;
-    return _showSaveChangesDialog(onSave: _handleSave);
+    return showSaveChangesDialog(onSave: _handleSave);
   }
 
   ({List<String> groups, List<String> others, bool split}) _splitOptions() {
@@ -798,7 +1163,7 @@ class __ScriptCustomOptionsSheetState
           actions: [
             IconButton(
               onPressed: (_dirty && !_isSaving) ? _handleSave : null,
-              icon: const Icon(Icons.save),
+              icon: const AppIcon(Icons.save),
               tooltip: appLocalizations.save,
             ),
           ],
@@ -910,7 +1275,7 @@ class _ScriptOtherOptionsSheetState extends State<_ScriptOtherOptionsSheet> {
   Future<bool> _confirmDiscard() async {
     if (_isSaving) return false;
     if (!_dirty) return true;
-    return _showSaveChangesDialog(onSave: _handleSave);
+    return showSaveChangesDialog(onSave: _handleSave);
   }
 
   @override
@@ -926,7 +1291,7 @@ class _ScriptOtherOptionsSheetState extends State<_ScriptOtherOptionsSheet> {
           actions: [
             IconButton(
               onPressed: (_dirty && !_isSaving) ? _handleSave : null,
-              icon: const Icon(Icons.save),
+              icon: const AppIcon(Icons.save),
               tooltip: appLocalizations.save,
             ),
           ],
@@ -997,8 +1362,10 @@ class _ScriptOptionTile extends StatelessWidget {
           contentPadding: const EdgeInsets.only(left: 16, right: 16),
           leading: _isValidIconUrl(iconUrl)
               ? CommonTargetIcon(src: iconUrl!, size: 24)
-              : const Icon(Icons.alt_route),
-          title: Text(label),
+              : Icon(
+                  context.resolveIcon(_optionIcons[label] ?? Icons.alt_route),
+                ),
+          title: EmojiText(label),
           trailing: Switch(value: value, onChanged: onChanged),
         ),
       ),
@@ -1035,7 +1402,7 @@ class _ScriptNavTile extends StatelessWidget {
             ),
           ),
           title: Text(label),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const AppIcon(Icons.chevron_right),
           onTap: onTap,
         ),
       ),
@@ -1043,7 +1410,7 @@ class _ScriptNavTile extends StatelessWidget {
   }
 }
 
-Future<bool> _showSaveChangesDialog({
+Future<bool> showSaveChangesDialog({
   required Future<void> Function() onSave,
 }) async {
   final res = await globalState.showCommonDialog<bool>(
@@ -1117,7 +1484,7 @@ class _GroupSwitchOptionsSheetState
     if (!mounted) return;
     final rawConfig = await globalState.appController.safeRun(
       silence: false,
-      () => globalState.getProfileConfig(widget.profileId),
+      () => globalState.getProfileSnippet(widget.profileId),
     );
     if (!mounted) return;
     if (rawConfig == null) {
@@ -1282,7 +1649,7 @@ class _GroupSwitchOptionsSheetState
           actions: [
             IconButton(
               onPressed: (_dirty && !_isSaving) ? _handleSave : null,
-              icon: const Icon(Icons.save),
+              icon: const AppIcon(Icons.save),
               tooltip: appLocalizations.save,
             ),
           ],
@@ -1328,8 +1695,8 @@ class _GroupSwitchOptionsSheetState
                                         left: 16,
                                         right: 16,
                                       ),
-                                      leading: const Icon(Icons.alt_route),
-                                      title: Text(key),
+                                      leading: const AppIcon(Icons.alt_route),
+                                      title: EmojiText(key),
                                       trailing: Switch(
                                         value: val,
                                         onChanged: locked

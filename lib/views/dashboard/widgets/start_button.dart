@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:bett_box/providers/providers.dart';
@@ -8,9 +9,16 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:bett_box/views/profiles/add_profile.dart';
+import 'package:bett_box/enum/enum.dart';
+import 'package:intl/intl.dart' show Intl;
+
+import 'tile.dart';
+import 'quick_options.dart';
 
 class StartButton extends ConsumerStatefulWidget {
-  const StartButton({super.key});
+  final DashboardTileSize? size;
+
+  const StartButton({super.key, this.size});
 
   @override
   ConsumerState<StartButton> createState() => _StartButtonState();
@@ -22,8 +30,8 @@ class _StartButtonState extends ConsumerState<StartButton> {
 
   void _handleStart() async {
     if (_isDisabled) return;
-    final isStart = ref.read(runTimeProvider) != null;
-    final newState = !isStart;
+    final newState =
+        ref.read(isSmartStoppedProvider) || ref.read(runTimeProvider) == null;
     setState(() {
       _isDisabled = true;
       _optimisticStart = newState;
@@ -47,25 +55,9 @@ class _StartButtonState extends ConsumerState<StartButton> {
     final isStart = ref.read(runTimeProvider) != null;
     if (!isStart) return;
 
-    final result = await globalState.showCommonDialog<bool>(
-      child: CommonDialog(
-        title: appLocalizations.restartCoreTitle,
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context, rootNavigator: true).pop(false);
-            },
-            child: Text(appLocalizations.cancel),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context, rootNavigator: true).pop(true);
-            },
-            child: Text(appLocalizations.confirm),
-          ),
-        ],
-        child: Text(appLocalizations.restartCoreDesc),
-      ),
+    final result = await globalState.showMessage(
+      title: appLocalizations.restartCoreTitle,
+      message: TextSpan(text: appLocalizations.restartCoreDesc),
     );
 
     if (result == true) {
@@ -87,12 +79,248 @@ class _StartButtonState extends ConsumerState<StartButton> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
+  List<Widget> _buildChips() {
+    final mode = ref.watch(patchClashConfigProvider.select((s) => s.mode));
+    final tun = ref.watch(patchClashConfigProvider.select((s) => s.tun.enable));
+    final systemProxy = ref.watch(
+      networkSettingProvider.select((s) => s.systemProxy),
+    );
+    return [
+      DashboardChip(
+        icon: switch (mode) {
+          Mode.rule => Icons.alt_route_rounded,
+          Mode.global => Icons.language_rounded,
+          Mode.direct => Icons.east_rounded,
+        },
+        label: Intl.message(mode.name),
+        onTap: () => showOutboundModeSheet(context),
+      ),
+      if (system.isDesktop && tun)
+        DashboardChip(
+          icon: Icons.vpn_lock_rounded,
+          label: appLocalizations.tun,
+          onTap: () => showTunSheet(context),
+        )
+      else if (system.isDesktop && systemProxy)
+        DashboardChip(
+          icon: Icons.settings_ethernet_rounded,
+          label: appLocalizations.systemProxy,
+          onTap: () => showSystemProxySheet(context),
+        ),
+    ];
+  }
+
+  Widget _buildStatus(
+    BuildContext context,
+    StartButtonSelectorState state,
+    bool isStart,
+    bool isRestarting,
+    bool isSmartStopped,
+  ) {
+    final colorScheme = context.colorScheme;
+    final textStyle = context.textTheme.bodyMedium?.toLight.adjustSize(1);
+    if (isSmartStopped) {
+      return Text(
+        appLocalizations.coreSuspended,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: textStyle?.copyWith(color: colorScheme.outline),
+      );
+    }
+    if (!state.isInit || _isDisabled || isRestarting) {
+      return SpinKitThreeBounce(color: colorScheme.primary, size: 16);
+    }
+    if (!state.hasProfile) {
+      return Text(
+        appLocalizations.checkOrAddProfile,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: textStyle,
+      );
+    }
+    if (!isStart) {
+      return Text(
+        appLocalizations.serviceReady,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: textStyle,
+      );
+    }
+    return ValueListenableBuilder<int>(
+      valueListenable: dashboardRefreshManager.tick1s,
+      builder: (_, _, _) => Text(
+        _formatRunTime(ref.read(runTimeProvider)),
+        maxLines: 1,
+        style: context.textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+          height: 1,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTile(BuildContext context, DashboardTileSize size) {
     final state = ref.watch(startButtonSelectorStateProvider);
     final isSmartStopped = ref.watch(isSmartStoppedProvider);
-    final canPress =
-        state.isInit && state.hasProfile && !_isDisabled && !isSmartStopped;
+    final isRestarting = ref.watch(isRestartingCoreProvider);
+    final isStart = ref.watch(runTimeProvider.select((time) => time != null));
+    final displayStart = isSmartStopped ? false : (_optimisticStart ?? isStart);
+    final canPress = state.isInit && state.hasProfile && !_isDisabled;
+    final hasNoProfile =
+        state.isInit && !state.hasProfile && !_isDisabled && !isSmartStopped;
+    final colorScheme = context.colorScheme;
+    final isTall = size == DashboardTileSize.tall;
+    final chips = isStart && !isSmartStopped ? _buildChips() : const <Widget>[];
+    final status = _buildStatus(
+      context,
+      state,
+      isStart,
+      isRestarting,
+      isSmartStopped,
+    );
+    final icon = displayStart ? Icons.pause_rounded : Icons.play_arrow_rounded;
+    final onPressed = canPress
+        ? _handleStart
+        : hasNoProfile
+        ? _handleShowAddProfile
+        : null;
+    final onLongPress = canPress && !isSmartStopped ? _handleLongPress : null;
+    return DashboardTileCard(
+      size: size,
+      info: Info(
+        label: isSmartStopped
+            ? appLocalizations.coreSuspended
+            : isRestarting
+            ? appLocalizations.restartCoreTitle
+            : displayStart
+            ? appLocalizations.runTime
+            : appLocalizations.powerSwitch,
+        iconData: Icons.power_settings_new,
+      ),
+      mark: DashboardDecor.icon(context, Icons.power_settings_new, 80),
+      markBottom: !isTall,
+      markAngle: isTall ? -0.08 : 0.1,
+      onPressed: null,
+      onLongPress: null,
+      child: isTall
+          ? Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 12, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: midDuration,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: colorScheme.primary.withValues(
+                            alpha: displayStart ? 0.14 : 0.08,
+                          ),
+                        ),
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: onPressed,
+                            onLongPress: onLongPress,
+                            child: SizedBox.square(
+                              dimension: 56,
+                              child: Icon(
+                                context.resolveIcon(icon),
+                                size: 30,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    height: 28,
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: FittedBox(fit: BoxFit.scaleDown, child: status),
+                    ),
+                  ),
+                  if (chips.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        for (final (index, chip) in chips.indexed) ...[
+                          if (index > 0) const SizedBox(width: 6),
+                          Flexible(child: chip),
+                        ],
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.only(right: 72),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Material(
+                    type: MaterialType.transparency,
+                    child: InkWell(
+                      customBorder: const _IconCapsuleBorder(),
+                      onTap: onPressed,
+                      onLongPress: onLongPress,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 14, 19),
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          widthFactor: 1,
+                          child: AppIcon(
+                            icon,
+                            size: 22,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 32),
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: status,
+                                ),
+                              ),
+                              for (final chip in chips) ...[
+                                const SizedBox(width: 12),
+                                Flexible(child: chip),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.size case final size?) return _buildTile(context, size);
+    final state = ref.watch(startButtonSelectorStateProvider);
+    final isSmartStopped = ref.watch(isSmartStoppedProvider);
+    final canPress = state.isInit && state.hasProfile && !_isDisabled;
     final hasNoProfile =
         state.isInit && !state.hasProfile && !_isDisabled && !isSmartStopped;
     final isRestarting = ref.watch(isRestartingCoreProvider);
@@ -117,7 +345,7 @@ class _StartButtonState extends ConsumerState<StartButton> {
             : hasNoProfile
             ? _handleShowAddProfile
             : null,
-        onLongPress: canPress ? _handleLongPress : null,
+        onLongPress: canPress && !isSmartStopped ? _handleLongPress : null,
         child: Container(
           padding: baseInfoEdgeInsets.copyWith(top: 0),
           child: Column(
@@ -159,7 +387,7 @@ class _StartButtonState extends ConsumerState<StartButton> {
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
           Icon(
-            Icons.pause_circle_outline,
+            context.resolveIcon(Icons.pause_circle_outline),
             size: 20,
             color: context.colorScheme.outline,
           ),
@@ -207,7 +435,11 @@ class _StartButtonState extends ConsumerState<StartButton> {
       return Row(
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          Icon(Icons.play_arrow, size: 16, color: context.colorScheme.primary),
+          Icon(
+            context.resolveIcon(Icons.play_arrow),
+            size: 16,
+            color: context.colorScheme.primary,
+          ),
           SizedBox(width: 4),
           Expanded(
             child: Text(
@@ -224,7 +456,11 @@ class _StartButtonState extends ConsumerState<StartButton> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.start,
       children: [
-        Icon(Icons.pause, size: 16, color: context.colorScheme.primary),
+        Icon(
+          context.resolveIcon(Icons.pause),
+          size: 16,
+          color: context.colorScheme.primary,
+        ),
         const SizedBox(width: 4),
         Text('  ', style: context.textTheme.bodyMedium?.toLight.adjustSize(1)),
         Expanded(
@@ -268,4 +504,35 @@ class _StartButtonState extends ConsumerState<StartButton> {
 
     return '$hourStr:${inMinutes.toString().padLeft(2, '0')}:${inSeconds.toString().padLeft(2, '0')}';
   }
+}
+
+class _IconCapsuleBorder extends ShapeBorder {
+  const _IconCapsuleBorder();
+
+  Path _path(Rect rect) => Path()
+    ..addRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: rect.bottomLeft + const Offset(27, -30),
+          width: 40,
+          height: 28,
+        ),
+        const Radius.circular(14),
+      ),
+    );
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) => _path(rect);
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) => _path(rect);
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {}
+
+  @override
+  ShapeBorder scale(double t) => this;
 }

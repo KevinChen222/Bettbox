@@ -10,11 +10,19 @@ part 'generated/core.g.dart';
 abstract mixin class AppMessageListener {
   void onLog(Log log) {}
 
-  void onDelay(Delay delay) {}
+  void onDelays(List<Delay> delays) {}
+
+  void onGroupsChanged() {}
 
   void onRequest(TrackerInfo connection) {}
 
-  void onLoaded(String providerName) {}
+  void onSpeedTest(SpeedTestState state) {}
+
+  void onStunTest(StunTestState state) {}
+
+  void onIperf(IperfState state) {}
+
+  void onLocalPing(LocalPingState state) {}
 }
 
 // abstract mixin class ServiceMessageListener {
@@ -28,7 +36,6 @@ abstract class SetupParams with _$SetupParams {
   const factory SetupParams({
     @JsonKey(name: 'selected-map') required Map<String, String> selectedMap,
     @JsonKey(name: 'test-url') required String testUrl,
-    @JsonKey(name: 'override-test-url') @Default(true) bool overrideTestUrl,
     @JsonKey(name: 'profile-path') @Default('') String profilePath,
     @JsonKey(name: 'age-secret-key') @Default('') String ageSecretKey,
     @JsonKey(name: 'scripted-config') @Default('') String scriptedConfig,
@@ -69,8 +76,7 @@ abstract class UpdateParams with _$UpdateParams {
     @JsonKey(name: 'log-level') required LogLevel logLevel,
     required bool ipv6,
     @JsonKey(name: 'tcp-concurrent') required bool tcpConcurrent,
-    @JsonKey(name: 'external-controller')
-    required ExternalControllerStatus externalController,
+    @JsonKey(name: 'external-controller') required String externalController,
     @JsonKey(name: 'unified-delay') required bool unifiedDelay,
   }) = _UpdateParams;
 
@@ -85,6 +91,7 @@ abstract class CoreState with _$CoreState {
     @JsonKey(name: 'only-statistics-proxy') required bool onlyStatisticsProxy,
     @JsonKey(name: 'current-profile-name') required String currentProfileName,
     @JsonKey(name: 'bypass-domain') @Default([]) List<String> bypassDomain,
+    @JsonKey(name: 'traffic-stats') required TrafficStatsOptions trafficStats,
   }) = _CoreState;
 
   factory CoreState.fromJson(Map<String, Object?> json) =>
@@ -233,9 +240,10 @@ abstract class ExternalProvider with _$ExternalProvider {
     @JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore)
     SubscriptionInfo? subscriptionInfo,
     @Default(false) bool isUpdating,
+    @Default(false) bool expanded,
+    @Default(0) int interval,
     @JsonKey(name: 'vehicle-type') required String vehicleType,
     @JsonKey(name: 'update-at') required DateTime updateAt,
-    List<dynamic>? proxies,
   }) = _ExternalProvider;
 
   factory ExternalProvider.fromJson(Map<String, Object?> json) =>
@@ -267,13 +275,26 @@ abstract class ActionResult with _$ActionResult {
 }
 
 extension ActionResultExt on ActionResult {
-  Result get toResult {
+  Result<dynamic> get toResult {
     if (code == ResultType.success) {
       return Result.success(data);
     } else {
-      return Result.error(data);
+      return Result.error(data as String);
     }
   }
+}
+
+@freezed
+abstract class ConnectionsSummary with _$ConnectionsSummary {
+  const factory ConnectionsSummary({
+    @Default(0) int total,
+    @Default(0) int tcp,
+    @Default(0) int udp,
+    @JsonKey(name: 'fcm-start') @Default(0) int fcmStart,
+  }) = _ConnectionsSummary;
+
+  factory ConnectionsSummary.fromJson(Map<String, Object?> json) =>
+      _$ConnectionsSummaryFromJson(json);
 }
 
 @freezed

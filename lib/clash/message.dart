@@ -5,26 +5,52 @@ import 'package:bett_box/models/models.dart';
 import 'package:flutter/foundation.dart';
 
 class ClashMessage {
+  // ignore: close_sinks
   final controller = StreamController<Map<String, Object?>>.broadcast();
 
   ClashMessage._() {
     controller.stream.listen((message) {
       if (message.isEmpty) return;
       final m = AppMessage.fromJson(message);
+      List<Delay>? delays;
       for (final AppMessageListener listener in _listeners) {
         switch (m.type) {
           case AppMessageType.log:
-            listener.onLog(Log.core(m.data));
-          case AppMessageType.delay:
-            listener.onDelay(Delay.fromJson(m.data));
+            listener.onLog(Log.core(m.data as Map<String, Object?>));
+          case AppMessageType.delays:
+            listener.onDelays(delays ??= _decodeDelays(m.data));
+          case AppMessageType.groupsChanged:
+            listener.onGroupsChanged();
           case AppMessageType.request:
-            listener.onRequest(TrackerInfo.fromJson(m.data));
-          case AppMessageType.loaded:
-            listener.onLoaded(m.data);
+            listener.onRequest(
+              TrackerInfo.fromJson(m.data as Map<String, Object?>),
+            );
+          case AppMessageType.speedTest:
+            listener.onSpeedTest(
+              SpeedTestState.fromJson(m.data as Map<String, Object?>),
+            );
+          case AppMessageType.stunTest:
+            listener.onStunTest(
+              StunTestState.fromJson(m.data as Map<String, Object?>),
+            );
+          case AppMessageType.iperf:
+            listener.onIperf(
+              IperfState.fromJson(m.data as Map<String, Object?>),
+            );
+          case AppMessageType.localPing:
+            listener.onLocalPing(
+              LocalPingState.fromJson(m.data as Map<String, Object?>),
+            );
         }
       }
     });
   }
+
+  static List<Delay> _decodeDelays(Object? data) => [
+    if (data is List)
+      for (final item in data)
+        if (item is Map) Delay.fromJson(Map<String, Object?>.from(item)),
+  ];
 
   static final ClashMessage instance = ClashMessage._();
 

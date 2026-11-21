@@ -78,6 +78,13 @@ begin
 
   if IsProcessRunning('{{CORE_EXECUTABLE_NAME}}') then
     Exec('taskkill', '/f /im {{CORE_EXECUTABLE_NAME}}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  WaitCount := 0;
+  while (WaitCount < 4) and (IsProcessRunning('{{EXECUTABLE_NAME}}') or IsProcessRunning('{{CORE_EXECUTABLE_NAME}}')) do
+  begin
+    Sleep(500);
+    WaitCount := WaitCount + 1;
+  end;
 end;
 
 procedure CleanWintunDevices;
@@ -118,6 +125,11 @@ begin
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   
   DeleteFile(TempScriptPath);
+end;
+
+function ShouldRelaunch: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:relaunch|0}') = '1');
 end;
 
 function GenerateAuthKey: String;
@@ -195,6 +207,26 @@ begin
   
   Exec('sc', 'stop ' + ServiceName, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('sc', 'delete ' + ServiceName, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+function CoreFirewallRuleArgs: String;
+begin
+  Result := 'name="{{DISPLAY_NAME}} Core" program="' + ExpandConstant('{app}\{{CORE_EXECUTABLE_NAME}}') + '"';
+end;
+
+procedure UnregisterCoreFirewallRule;
+var
+  ResultCode: Integer;
+begin
+  Exec('netsh', 'advfirewall firewall delete rule ' + CoreFirewallRuleArgs, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+procedure RegisterCoreFirewallRule;
+var
+  ResultCode: Integer;
+begin
+  UnregisterCoreFirewallRule;
+  Exec('netsh', 'advfirewall firewall add rule ' + CoreFirewallRuleArgs + ' dir=in action=allow enable=yes profile=any', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 procedure UnregisterTaskScheduler;
@@ -285,6 +317,7 @@ begin
   if CurStep = ssPostInstall then
   begin
     RegisterHelperService;
+    RegisterCoreFirewallRule;
   end;
 end;
 
@@ -299,6 +332,7 @@ begin
   if CurUninstallStep = usPostUninstall then
   begin
     UnregisterHelperService;
+    UnregisterCoreFirewallRule;
     
     UnregisterTaskScheduler;
     
@@ -343,3 +377,4 @@ Name: "{autoprograms}\\{{DISPLAY_NAME}}"; Filename: "{app}\\{{EXECUTABLE_NAME}}"
 Name: "{autodesktop}\\{{DISPLAY_NAME}}"; Filename: "{app}\\{{EXECUTABLE_NAME}}"; Tasks: desktopicon
 [Run]
 Filename: "{app}\\{{EXECUTABLE_NAME}}"; Description: "{cm:LaunchProgram,{{DISPLAY_NAME}}}"; Flags: {% if PRIVILEGES_REQUIRED == 'admin' %}runascurrentuser{% endif %} nowait postinstall skipifsilent
+Filename: "{app}\\{{EXECUTABLE_NAME}}"; Flags: {% if PRIVILEGES_REQUIRED == 'admin' %}runascurrentuser{% endif %} nowait; Check: ShouldRelaunch

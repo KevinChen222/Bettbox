@@ -45,11 +45,16 @@ abstract class Metadata with _$Metadata {
   const factory Metadata({
     @Default(0) int uid,
     @Default('') String network,
+    @Default('') String type,
     @Default('') String sourceIP,
     @Default('') String sourcePort,
     @Default('') String destinationIP,
     @Default('') String destinationPort,
     @Default('') String host,
+    @Default('') String sniffHost,
+    @Default('') String inboundName,
+    @Default('') String inboundPort,
+    @Default('') String inboundUser,
     DnsMode? dnsMode,
     @Default('') String process,
     @Default('') String processPath,
@@ -272,6 +277,7 @@ abstract class DAV with _$DAV {
     required String user,
     required String password,
     @Default(defaultDavFileName) String fileName,
+    @Default(false) bool autoBackup,
   }) = _DAV;
 
   factory DAV.fromJson(Map<String, Object?> json) => _$DAVFromJson(json);
@@ -303,6 +309,17 @@ abstract class NetworkInfo with _$NetworkInfo {
 }
 
 @freezed
+abstract class CoreInterface with _$CoreInterface {
+  const factory CoreInterface({
+    required String name,
+    @Default([]) List<String> addresses,
+  }) = _CoreInterface;
+
+  factory CoreInterface.fromJson(Map<String, Object?> json) =>
+      _$CoreInterfaceFromJson(json);
+}
+
+@freezed
 abstract class VersionInfo with _$VersionInfo {
   const factory VersionInfo({
     @Default('') String clashName,
@@ -326,7 +343,7 @@ class Traffic {
   num get speed => up.value + down.value;
 
   factory Traffic.fromMap(Map<String, dynamic> map) {
-    return Traffic(up: map['up'], down: map['down']);
+    return Traffic(up: map['up'] as int?, down: map['down'] as int?);
   }
 
   String toSpeedText() {
@@ -529,6 +546,70 @@ extension ColorSchemesExt on ColorSchemes {
   }
 }
 
+@freezed
+abstract class IpRiskCheck with _$IpRiskCheck {
+  const factory IpRiskCheck({
+    required IpRiskGroup group,
+    required String name,
+    bool? hit,
+  }) = _IpRiskCheck;
+
+  factory IpRiskCheck.fromJson(Map<String, Object?> json) =>
+      _$IpRiskCheckFromJson(json);
+}
+
+@freezed
+abstract class IpRiskNote with _$IpRiskNote {
+  const factory IpRiskNote({
+    bool? direct,
+    @Default('') String isp,
+    IpRiskAmount? amount,
+    IpRiskShare? share,
+    @Default('') String operatorName,
+    IpRiskLevel? operatorLevel,
+    @Default('') String ownerName,
+    IpRiskLevel? ownerLevel,
+    IpRiskConnection? connection,
+    IpRiskLevel? warning,
+  }) = _IpRiskNote;
+
+  factory IpRiskNote.fromJson(Map<String, Object?> json) =>
+      _$IpRiskNoteFromJson(json);
+}
+
+@freezed
+abstract class IpRisk with _$IpRisk {
+  const factory IpRisk({
+    required String ip,
+    required int score,
+    required IpRiskLevel level,
+    @Default('') String hostname,
+    @Default('') String asn,
+    @Default('') String isp,
+    @Default('') String organization,
+    @Default('') String country,
+    @Default('') String countryCode,
+    @Default('') String region,
+    @Default('') String city,
+    @Default([]) List<IpRiskCheck> checks,
+    IpRiskNote? note,
+  }) = _IpRisk;
+
+  factory IpRisk.fromJson(Map<String, Object?> json) => _$IpRiskFromJson(json);
+}
+
+extension IpRiskExt on IpRisk {
+  bool get isHomeBroadband =>
+      checks.isNotEmpty &&
+      checks.any((check) => check.group == IpRiskGroup.datacenter) &&
+      checks.every((check) => check.hit != true);
+
+  int get displayScore => !isHomeBroadband && score == 0 ? 1 : score;
+
+  IpRisk get normalized =>
+      !isHomeBroadband && score == 0 ? copyWith(score: 1) : this;
+}
+
 class IpInfo {
   final String ip;
   final String countryCode;
@@ -544,7 +625,7 @@ class IpInfo {
 
   IpInfo({
     required this.ip,
-    required this.countryCode,
+    required String countryCode,
     String? country,
     this.province,
     this.city,
@@ -554,16 +635,163 @@ class IpInfo {
     this.asDomain,
     this.continent,
     this.continentCode,
-  }) : country = _normalizeCountry(country);
+  }) : countryCode = normalizeCountryCode(countryCode, country, province),
+       country = normalizeCountry(
+         country,
+         normalizeCountryCode(countryCode, country, province),
+         province,
+       );
 
-  static String? _normalizeCountry(String? country) {
-    if (country == null) return null;
+  static bool _isTaiwan(String? text) {
+    if (text == null || text.isEmpty) return false;
+    final trimmed = text.trim();
+    final lower = trimmed.toLowerCase();
+    if (lower == 'tw' ||
+        lower == 'twn' ||
+        lower == 'taiwan' ||
+        lower == 'taiwan (china)' ||
+        lower == 'taiwan, china' ||
+        lower == 'taiwan, province of china' ||
+        lower == 'republic of china' ||
+        lower == 'republic of china (taiwan)' ||
+        lower == 'taiwan (roc)' ||
+        lower == 'taiwan, roc' ||
+        lower == 'roc') {
+      return true;
+    }
+    if (trimmed == '台湾' ||
+        trimmed == '台灣' ||
+        trimmed == '臺灣' ||
+        trimmed == '台湾省' ||
+        trimmed == '臺灣省' ||
+        trimmed == '台湾 (中国)' ||
+        trimmed == '台灣 (中国)' ||
+        trimmed == '臺灣 (中国)' ||
+        trimmed == '中国台湾' ||
+        trimmed == '中國台灣' ||
+        trimmed == '中國臺灣' ||
+        trimmed == '中华民国' ||
+        trimmed == '中華民國') {
+      return true;
+    }
+    if (trimmed.contains('中华民国') ||
+        trimmed.contains('中華民國') ||
+        trimmed.contains('台湾') ||
+        trimmed.contains('台灣') ||
+        trimmed.contains('臺灣')) {
+      return true;
+    }
+    return false;
+  }
+
+  static String normalizeCountryCode(
+    String countryCode, [
+    String? country,
+    String? province,
+  ]) {
+    final clean = countryCode.trim().toUpperCase();
+    if (clean.length == 2 && RegExp(r'^[A-Z]{2}$').hasMatch(clean)) {
+      if (clean == 'CN') {
+        if (_isTaiwan(province) || _isTaiwan(country)) {
+          return 'TW';
+        }
+        if (province == '香港' || country == '香港') return 'HK';
+        if (province == '澳门' ||
+            province == '澳門' ||
+            country == '澳门' ||
+            country == '澳門') {
+          return 'MO';
+        }
+      }
+      return clean;
+    }
+    if (_isTaiwan(clean) || _isTaiwan(country) || _isTaiwan(province)) {
+      return 'TW';
+    }
+    if (clean == 'HK' ||
+        clean == 'HKG' ||
+        country == '香港' ||
+        province == '香港') {
+      return 'HK';
+    }
+    if (clean == 'MO' ||
+        clean == 'MAC' ||
+        clean == 'MFM' ||
+        country == '澳门' ||
+        country == '澳門' ||
+        province == '澳门' ||
+        province == '澳門') {
+      return 'MO';
+    }
+    return clean;
+  }
+
+  static String? normalizeCountry(
+    String? country, [
+    String? countryCode,
+    String? province,
+  ]) {
+    final effectiveCode = countryCode?.trim().toUpperCase();
+    if (country == null || country.trim().isEmpty) {
+      if (effectiveCode == 'TW' || _isTaiwan(province)) {
+        return '台湾 (中国)';
+      }
+      return null;
+    }
     final trimmed = country.trim();
-    if (trimmed.toLowerCase() == 'taiwan') {
+    if (trimmed == '台湾 (中国)' ||
+        trimmed == '台灣 (中国)' ||
+        trimmed == '臺灣 (中国)' ||
+        trimmed == 'Taiwan (China)' ||
+        trimmed == '中国台湾' ||
+        trimmed == '中國台灣' ||
+        trimmed == '中國臺灣') {
+      return trimmed;
+    }
+    if (trimmed.endsWith('(中国)') ||
+        trimmed.endsWith('（中国）') ||
+        trimmed.endsWith('(China)') ||
+        trimmed.endsWith('（China）') ||
+        trimmed.endsWith('(中國)') ||
+        trimmed.endsWith('（中國）')) {
+      return trimmed;
+    }
+    final lower = trimmed.toLowerCase();
+    if (lower == 'taiwan' ||
+        lower == 'republic of china' ||
+        lower == 'republic of china (taiwan)' ||
+        lower == 'taiwan (roc)' ||
+        lower == 'taiwan, roc' ||
+        lower == 'roc' ||
+        lower == 'taiwan, province of china' ||
+        lower == 'taiwan, china') {
       return 'Taiwan (China)';
     }
-    if (trimmed == '台湾' || trimmed == '台灣') {
-      return '$trimmed (中国)';
+    if (trimmed == '中華民國' ||
+        trimmed.contains('中華民國') ||
+        trimmed == '台灣' ||
+        trimmed == '臺灣') {
+      return '台灣 (中国)';
+    }
+    if (trimmed == '中华民国' || trimmed.contains('中华民国') || trimmed == '台湾') {
+      return '台湾 (中国)';
+    }
+    if (trimmed == '台湾省') {
+      return '台湾省 (中国)';
+    }
+    if (trimmed == '台灣省' || trimmed == '臺灣省') {
+      return '台灣省 (中国)';
+    }
+    if (effectiveCode == 'TW' || _isTaiwan(province)) {
+      if (trimmed == '中国' || trimmed == '中國') {
+        if (province != null &&
+            (province.contains('中華民國') ||
+                province.contains('台灣') ||
+                province.contains('臺灣'))) {
+          return '台灣 (中国)';
+        }
+        return '台湾 (中国)';
+      }
     }
     return country;
   }
@@ -616,6 +844,35 @@ class IpInfo {
     }
 
     final ip = json['ip']?.toString() ?? '';
+    if (json['region'] is String && json.containsKey('llc')) {
+      final region = (json['region'] as String)
+          .split(RegExp(r'\s+'))
+          .where((item) => item.isNotEmpty)
+          .toList();
+      final country = region.firstOrNull;
+      final llc = json['llc']?.toString() ?? '';
+      final isp = llc.isNotEmpty ? llc : json['isp']?.toString();
+      final rawAsn = json['asn']?.toString().trim().toUpperCase() ?? '';
+      if (ip.isNotEmpty) {
+        return IpInfo(
+          ip: ip,
+          countryCode: country == '中国'
+              ? switch (region.elementAtOrNull(1)) {
+                  '台湾' => 'TW',
+                  '香港' => 'HK',
+                  '澳门' => 'MO',
+                  _ => 'CN',
+                }
+              : '',
+          country: country,
+          province: region.elementAtOrNull(1),
+          city: region.elementAtOrNull(2),
+          isp: isp,
+          asName: isp,
+          asn: rawAsn.isEmpty ? null : rawAsn,
+        );
+      }
+    }
     if (json['location'] is Map) {
       final loc = json['location'] as Map;
       final countryCode = loc['country_code']?.toString() ?? '';
@@ -916,12 +1173,16 @@ class PopupMenuItemData {
   const PopupMenuItemData({
     this.icon,
     required this.label,
-    required this.onPressed,
+    this.onPressed,
+    this.trailing,
+    this.children,
   });
 
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
+  final Widget? trailing;
+  final List<PopupMenuItemData>? children;
 }
 
 @freezed
@@ -962,7 +1223,7 @@ abstract class Result<T> with _$Result<T> {
       Result(data: null, type: ResultType.error, message: message);
 }
 
-extension ResultExt on Result {
+extension ResultExt on Result<dynamic> {
   bool get isError => type == ResultType.error;
 
   bool get isSuccess => type == ResultType.success;
@@ -989,6 +1250,71 @@ abstract class Script with _$Script {
 }
 
 final volatileScriptPattern = RegExp(r'\bDate\b|Math\s*\.\s*random');
+
+@freezed
+abstract class RouteRuleSet with _$RouteRuleSet {
+  const factory RouteRuleSet({
+    required String tag,
+    @Default('geosite') String type,
+    String? name,
+    String? icon,
+    int? count,
+  }) = _RouteRuleSet;
+
+  factory RouteRuleSet.fromJson(Map<String, Object?> json) =>
+      _$RouteRuleSetFromJson(json);
+}
+
+extension RouteRuleSetExt on RouteRuleSet {
+  String get key => '$type:$tag';
+
+  String get label => name ?? tag;
+}
+
+@freezed
+abstract class RouteService with _$RouteService {
+  const factory RouteService({
+    required String name,
+    String? icon,
+    @Default([]) List<String> sets,
+    @Default([]) List<String> keywords,
+    @Default([]) List<String> groups,
+    @JsonKey(unknownEnumValue: RouteCategory.other)
+    @Default(RouteCategory.other)
+    RouteCategory category,
+  }) = _RouteService;
+
+  factory RouteService.fromJson(Map<String, Object?> json) =>
+      _$RouteServiceFromJson(json);
+}
+
+@freezed
+abstract class RouteRegion with _$RouteRegion {
+  const factory RouteRegion({
+    required String name,
+    String? icon,
+    @JsonKey(name: 'default') @Default(false) bool preset,
+  }) = _RouteRegion;
+
+  factory RouteRegion.fromJson(Map<String, Object?> json) =>
+      _$RouteRegionFromJson(json);
+}
+
+@freezed
+abstract class RouteCatalog with _$RouteCatalog {
+  const factory RouteCatalog({
+    @Default([]) List<String> targets,
+    @Default([]) List<String> reserved,
+    @Default([]) List<RouteRegion> regions,
+    @Default({}) Map<String, RouteCategory> groupCategories,
+    @Default([]) List<String> icons,
+    @Default([]) List<RouteService> services,
+    @Default([]) List<RouteRuleSet> sets,
+  }) = _RouteCatalog;
+
+  factory RouteCatalog.fromJson(Map<String, Object?> json) =>
+      _$RouteCatalogFromJson(json);
+}
 
 extension ScriptExt on Script {
   Future<String> readContent() async {
@@ -1019,4 +1345,27 @@ extension ScriptExt on Script {
       await file.delete();
     }
   }
+}
+
+@freezed
+abstract class IconSetIcon with _$IconSetIcon {
+  const factory IconSetIcon({required String name, required String url}) =
+      _IconSetIcon;
+
+  factory IconSetIcon.fromJson(Map<String, Object?> json) =>
+      _$IconSetIconFromJson(json);
+}
+
+@freezed
+abstract class IconSet with _$IconSet {
+  const factory IconSet({
+    required String id,
+    required String name,
+    @Default('') String url,
+    @Default([]) List<IconSetIcon> icons,
+    DateTime? lastUpdateTime,
+  }) = _IconSet;
+
+  factory IconSet.fromJson(Map<String, Object?> json) =>
+      _$IconSetFromJson(json);
 }

@@ -1,8 +1,8 @@
 diff --git a/adapter/adapter.go b/adapter/adapter.go
-index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..6fce80ff8ed615abdb7ce63661b6c5c80a3037f2 100644
+index a604b23f9edf341993dc014d0270b62de4bde67c..516664b4e794a15257eca180341781da120f10b1 100644
 --- a/adapter/adapter.go
 +++ b/adapter/adapter.go
-@@ -3,17 +3,23 @@ package adapter
+@@ -3,15 +3,21 @@ package adapter
  import (
  	"context"
  	"encoding/json"
@@ -16,9 +16,7 @@ index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..6fce80ff8ed615abdb7ce63661b6c5c8
  
  	"github.com/metacubex/mihomo/common/atomic"
 +	"github.com/metacubex/mihomo/common/convert"
- 	"github.com/metacubex/mihomo/common/queue"
  	"github.com/metacubex/mihomo/common/utils"
- 	"github.com/metacubex/mihomo/common/xsync"
  	"github.com/metacubex/mihomo/component/ca"
 +	"github.com/metacubex/mihomo/component/mmdb"
 +	"github.com/metacubex/mihomo/component/smart"
@@ -26,7 +24,7 @@ index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..6fce80ff8ed615abdb7ce63661b6c5c8
  	C "github.com/metacubex/mihomo/constant"
  	"github.com/metacubex/mihomo/log"
  
-@@ -22,6 +28,18 @@ import (
+@@ -20,6 +26,18 @@ import (
  
  var UnifiedDelay = atomic.NewBool(false)
  
@@ -45,19 +43,7 @@ index eeb33fe0df1f037145cf6d8922f7e2d804aaf1cb..6fce80ff8ed615abdb7ce63661b6c5c8
  const (
  	defaultHistoriesNum = 10
  )
-@@ -279,6 +297,11 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
- 
- 	satisfied = resp != nil && (expectedStatus == nil || expectedStatus.Check(uint16(resp.StatusCode)))
- 	t = uint16(time.Since(start) / time.Millisecond)
-+	if t == 0 {
-+		// a zero delay means a failed test to callers, so report a test
-+		// that completed in under a millisecond as 1 ms
-+		t = 1
-+	}
- 	return
- }
- 
-@@ -312,3 +335,268 @@ func urlToMetadata(rawURL string) (addr C.Metadata, err error) {
+@@ -313,3 +331,268 @@ func urlToMetadata(rawURL string) (addr C.Metadata, err error) {
  	err = addr.SetRemoteAddress(net.JoinHostPort(u.Hostname(), port))
  	return
  }
@@ -339,7 +325,7 @@ index 2d487da5f6193d5ffbb4ade0af49714a78f47b69..b4232df88652541f0007459ade65d83b
  	backendInitOnce sync.Once
  	backendInitCh   chan struct{}
 diff --git a/adapter/outboundgroup/groupbase.go b/adapter/outboundgroup/groupbase.go
-index eed45e0d610ed46b23edfadb25022b440eeb4f38..5dac4a555a7796c97c090994eb6593bccbcc0808 100644
+index c0b48d5fbbbe4197f88b2eaa80f651690c4167bc..68b167af17677367b07a91fd5ba974f6f87ac90c 100644
 --- a/adapter/outboundgroup/groupbase.go
 +++ b/adapter/outboundgroup/groupbase.go
 @@ -277,9 +277,8 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
@@ -410,10 +396,10 @@ index eed45e0d610ed46b23edfadb25022b440eeb4f38..5dac4a555a7796c97c090994eb6593bc
 +	gb.failedTestMux.Unlock()
  }
 diff --git a/adapter/outboundgroup/parser.go b/adapter/outboundgroup/parser.go
-index e97f8da04b9f321e0a637837beabc1b3749d3b63..eb6e3d3303eb12fab24846b46a7c4655d17ef316 100644
+index 74995a5acca140ac29c72c149a51b145c324a313..c3c8281f6668cea688f7921b895bba5a1e5a06f1 100644
 --- a/adapter/outboundgroup/parser.go
 +++ b/adapter/outboundgroup/parser.go
-@@ -215,6 +215,13 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide
+@@ -199,6 +199,13 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide
  		return NewLoadBalance(groupOption, opt, emptyFallback, providers)
  	case "relay":
  		return nil, fmt.Errorf("%w: The group [%s] with relay type was removed, please using dialer-proxy instead", errType, groupName)
@@ -3065,7 +3051,7 @@ index 1f3306a62b3626f372a4b821994a2cd24c137630..d7434a6e216e9779e8f8d98951faa27e
 +	return nodes, nil
 +}
 diff --git a/adapter/provider/provider.go b/adapter/provider/provider.go
-index fa7d56bc21af615c715ac09737449fa45559b809..a7f8137f4dac831b1f72a6421c2278da02d8ebdf 100644
+index c665908c9af9cc89a1ac26b0d5d59be348d8f45c..80ca05da5f67abd4c3b753efdd917d6be46db722 100644
 --- a/adapter/provider/provider.go
 +++ b/adapter/provider/provider.go
 @@ -341,6 +341,10 @@ func (cp *CompatibleProvider) Close() error {
@@ -4023,11 +4009,310 @@ index ad5860800a0bf2aa5379e49893ad8600bb260644..cce62da8e1fa8600635eed325c6f9167
  // It is safe to use plain stores here because the destination bucket must be
  // either locked or exclusively written to by the helper during resize.
  func appendToBucket[K comparable, V any](h2 uint8, e *entry[K, V], b *bucketPadded) {
+diff --git a/component/geodata/memconservative/decode.go b/component/geodata/decode.go
+similarity index 68%
+rename from component/geodata/memconservative/decode.go
+rename to component/geodata/decode.go
+index 7c0c2427aa5897cf687ece6497cbb505df43b119..8e158151d51bef13ed01a2aac7823273a62abe6e 100644
+--- a/component/geodata/memconservative/decode.go
++++ b/component/geodata/decode.go
+@@ -1,7 +1,8 @@
+-package memconservative
++package geodata
+ 
+ import (
+ 	"bufio"
++	"bytes"
+ 	"errors"
+ 	"fmt"
+ 	"io"
+@@ -12,23 +13,43 @@ import (
+ )
+ 
+ var (
+-	errFailedToReadBytes            = errors.New("failed to read bytes")
+-	errFailedToReadExpectedLenBytes = errors.New("failed to read expected length of bytes")
+-	errInvalidGeodataFile           = errors.New("invalid geodata file")
+-	errInvalidGeodataVarintLength   = errors.New("invalid geodata varint length")
+-	errCodeNotFound                 = errors.New("code not found")
++	ErrFailedToReadBytes            = errors.New("failed to read bytes")
++	ErrFailedToReadExpectedLenBytes = errors.New("failed to read expected length of bytes")
++	ErrInvalidGeodataFile           = errors.New("invalid geodata file")
++	ErrInvalidGeodataVarintLength   = errors.New("invalid geodata varint length")
++	ErrCodeNotFound                 = errors.New("code not found")
+ )
+ 
+-func emitBytes(f io.ReadSeeker, code string) ([]byte, error) {
++func Decode(filename, code string) ([]byte, error) {
++	f, err := os.Open(filename)
++	if err != nil {
++		return nil, fmt.Errorf("failed to open file: %s, base error: %s", filename, err.Error())
++	}
++	defer func(f *os.File) {
++		_ = f.Close()
++	}(f)
++
++	return DecodeReader(f, code)
++}
++
++func DecodeReader(f io.ReadSeeker, code string) ([]byte, error) {
++	return decode(f, code)
++}
++
++func DecodeBytes(data []byte, code string) ([]byte, error) {
++	return decode(bytes.NewReader(data), code)
++}
++
++func decode(f io.ReadSeeker, code string) ([]byte, error) {
+ 	reader := bufio.NewReaderSize(f, 16*1024)
+ 	readError := func(err error) error {
+ 		switch err {
+ 		case io.EOF:
+-			return errCodeNotFound
++			return ErrCodeNotFound
+ 		case io.ErrUnexpectedEOF:
+-			return errFailedToReadExpectedLenBytes
++			return ErrFailedToReadExpectedLenBytes
+ 		default:
+-			return errFailedToReadBytes
++			return ErrFailedToReadBytes
+ 		}
+ 	}
+ 	var lengthBytes []byte
+@@ -43,7 +64,7 @@ func emitBytes(f io.ReadSeeker, code string) ([]byte, error) {
+ 			if b < 128 {
+ 				n, size := protowire.ConsumeVarint(lengthBytes)
+ 				if size < 0 {
+-					return 0, errInvalidGeodataVarintLength
++					return 0, ErrInvalidGeodataVarintLength
+ 				}
+ 				return n, nil
+ 			}
+@@ -55,7 +76,7 @@ func emitBytes(f io.ReadSeeker, code string) ([]byte, error) {
+ 			return nil, readError(err)
+ 		}
+ 		if b != 10 {
+-			return nil, errInvalidGeodataFile
++			return nil, ErrInvalidGeodataFile
+ 		}
+ 		length, err := readLength()
+ 		if err != nil {
+@@ -66,7 +87,7 @@ func emitBytes(f io.ReadSeeker, code string) ([]byte, error) {
+ 			return nil, readError(err)
+ 		}
+ 		if b != 10 {
+-			return nil, errInvalidGeodataFile
++			return nil, ErrInvalidGeodataFile
+ 		}
+ 		codeLength, err := readLength()
+ 		if err != nil {
+@@ -84,7 +105,7 @@ func emitBytes(f io.ReadSeeker, code string) ([]byte, error) {
+ 			n += copy(result[n:], name)
+ 			if _, err := io.ReadFull(reader, result[n:]); err != nil {
+ 				if err == io.EOF {
+-					return nil, errFailedToReadExpectedLenBytes
++					return nil, ErrFailedToReadExpectedLenBytes
+ 				}
+ 				return nil, readError(err)
+ 			}
+@@ -98,23 +119,7 @@ func emitBytes(f io.ReadSeeker, code string) ([]byte, error) {
+ 			reader.Reset(f)
+ 		}
+ 		if err != nil {
+-			return nil, errFailedToReadBytes
++			return nil, ErrFailedToReadBytes
+ 		}
+ 	}
+ }
+-
+-func Decode(filename, code string) ([]byte, error) {
+-	f, err := os.Open(filename)
+-	if err != nil {
+-		return nil, fmt.Errorf("failed to open file: %s, base error: %s", filename, err.Error())
+-	}
+-	defer func(f *os.File) {
+-		_ = f.Close()
+-	}(f)
+-
+-	geoBytes, err := emitBytes(f, code)
+-	if err != nil {
+-		return nil, err
+-	}
+-	return geoBytes, nil
+-}
+diff --git a/component/geodata/memconservative/cache.go b/component/geodata/memconservative/cache.go
+index ef76a42c70659ca7b8cc4262725c99cc016863a4..16fe8403813f8a4fa96e1683192a3487a54e0bfe 100644
+--- a/component/geodata/memconservative/cache.go
++++ b/component/geodata/memconservative/cache.go
+@@ -5,6 +5,7 @@ import (
+ 	"os"
+ 	"strings"
+ 
++	"github.com/metacubex/mihomo/component/geodata"
+ 	"github.com/metacubex/mihomo/component/geodata/router"
+ 	C "github.com/metacubex/mihomo/constant"
+ 	"github.com/metacubex/mihomo/log"
+@@ -38,7 +39,7 @@ func (g GeoIPCache) Unmarshal(filename, code string) (*router.GeoIP, error) {
+ 		return g.Get(idx), nil
+ 	}
+ 
+-	geoipBytes, err := Decode(asset, code)
++	geoipBytes, err := geodata.Decode(asset, code)
+ 	switch err {
+ 	case nil:
+ 		var geoip router.GeoIP
+@@ -48,11 +49,11 @@ func (g GeoIPCache) Unmarshal(filename, code string) (*router.GeoIP, error) {
+ 		g.Set(idx, &geoip)
+ 		return &geoip, nil
+ 
+-	case errCodeNotFound:
++	case geodata.ErrCodeNotFound:
+ 		return nil, fmt.Errorf("country code %s%s%s", code, " not found in ", filename)
+ 
+-	case errFailedToReadBytes, errFailedToReadExpectedLenBytes,
+-		errInvalidGeodataFile, errInvalidGeodataVarintLength:
++	case geodata.ErrFailedToReadBytes, geodata.ErrFailedToReadExpectedLenBytes,
++		geodata.ErrInvalidGeodataFile, geodata.ErrInvalidGeodataVarintLength:
+ 		log.Warnln("failed to decode geoip file: %s%s", filename, ", fallback to the original ReadFile method")
+ 		geoipBytes, err = os.ReadFile(asset)
+ 		if err != nil {
+@@ -103,7 +104,7 @@ func (g GeoSiteCache) Unmarshal(filename, code string) (*router.GeoSite, error)
+ 		return g.Get(idx), nil
+ 	}
+ 
+-	geositeBytes, err := Decode(asset, code)
++	geositeBytes, err := geodata.Decode(asset, code)
+ 	switch err {
+ 	case nil:
+ 		var geosite router.GeoSite
+@@ -113,11 +114,11 @@ func (g GeoSiteCache) Unmarshal(filename, code string) (*router.GeoSite, error)
+ 		g.Set(idx, &geosite)
+ 		return &geosite, nil
+ 
+-	case errCodeNotFound:
++	case geodata.ErrCodeNotFound:
+ 		return nil, fmt.Errorf("list %s%s%s", code, " not found in ", filename)
+ 
+-	case errFailedToReadBytes, errFailedToReadExpectedLenBytes,
+-		errInvalidGeodataFile, errInvalidGeodataVarintLength:
++	case geodata.ErrFailedToReadBytes, geodata.ErrFailedToReadExpectedLenBytes,
++		geodata.ErrInvalidGeodataFile, geodata.ErrInvalidGeodataVarintLength:
+ 		log.Warnln("failed to decode geosite file: %s%s", filename, ", fallback to the original ReadFile method")
+ 		geositeBytes, err = os.ReadFile(asset)
+ 		if err != nil {
+diff --git a/component/geodata/standard/standard.go b/component/geodata/standard/standard.go
+index bfaae5ece7a4ed2260e6d6cce908b57b3458e438..b704dc6e04f441db2752b1e5f2e19ab74066219a 100644
+--- a/component/geodata/standard/standard.go
++++ b/component/geodata/standard/standard.go
+@@ -1,6 +1,7 @@
+ package standard
+ 
+ import (
++	"errors"
+ 	"fmt"
+ 	"io"
+ 	"os"
+@@ -9,6 +10,7 @@ import (
+ 	"github.com/metacubex/mihomo/component/geodata"
+ 	"github.com/metacubex/mihomo/component/geodata/router"
+ 	C "github.com/metacubex/mihomo/constant"
++	"github.com/metacubex/mihomo/log"
+ 
+ 	"google.golang.org/protobuf/proto"
+ )
+@@ -59,9 +61,39 @@ func loadSite(geositeBytes []byte, list string) ([]*router.Domain, error) {
+ 	return nil, fmt.Errorf("list %s not found", list)
+ }
+ 
++func loadIPEntry(entryBytes []byte) ([]*router.CIDR, error) {
++	var geoip router.GeoIP
++	if err := proto.Unmarshal(entryBytes, &geoip); err != nil {
++		return nil, err
++	}
++	return geoip.Cidr, nil
++}
++
++func loadSiteEntry(entryBytes []byte) ([]*router.Domain, error) {
++	var geosite router.GeoSite
++	if err := proto.Unmarshal(entryBytes, &geosite); err != nil {
++		return nil, err
++	}
++	return geosite.Domain, nil
++}
++
+ type standardLoader struct{}
+ 
+ func (d standardLoader) LoadSiteByPath(filename, list string) ([]*router.Domain, error) {
++	path := C.Path.GetAssetLocation(filename)
++	f, err := os.Open(path)
++	if err != nil {
++		return nil, fmt.Errorf("failed to open file: %s, base error: %s", filename, err.Error())
++	}
++	entryBytes, decodeErr := geodata.DecodeReader(f, list)
++	_ = f.Close()
++	if decodeErr == nil {
++		return loadSiteEntry(entryBytes)
++	}
++	if errors.Is(decodeErr, geodata.ErrCodeNotFound) {
++		return nil, fmt.Errorf("list %s not found", list)
++	}
++	log.Warnln("failed to decode geosite file: %s%s", filename, ", fallback to the original ReadFile method")
+ 	geositeBytes, err := ReadAsset(filename)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("failed to open file: %s, base error: %s", filename, err.Error())
+@@ -70,10 +102,32 @@ func (d standardLoader) LoadSiteByPath(filename, list string) ([]*router.Domain,
+ }
+ 
+ func (d standardLoader) LoadSiteByBytes(geositeBytes []byte, list string) ([]*router.Domain, error) {
++	entryBytes, err := geodata.DecodeBytes(geositeBytes, list)
++	if err == nil {
++		return loadSiteEntry(entryBytes)
++	}
++	if errors.Is(err, geodata.ErrCodeNotFound) {
++		return nil, fmt.Errorf("list %s not found", list)
++	}
++	log.Warnln("failed to decode geosite data, fallback to the original method")
+ 	return loadSite(geositeBytes, list)
+ }
+ 
+ func (d standardLoader) LoadIPByPath(filename, country string) ([]*router.CIDR, error) {
++	path := C.Path.GetAssetLocation(filename)
++	f, err := os.Open(path)
++	if err != nil {
++		return nil, fmt.Errorf("failed to open file: %s, base error: %s", filename, err.Error())
++	}
++	entryBytes, decodeErr := geodata.DecodeReader(f, country)
++	_ = f.Close()
++	if decodeErr == nil {
++		return loadIPEntry(entryBytes)
++	}
++	if errors.Is(decodeErr, geodata.ErrCodeNotFound) {
++		return nil, fmt.Errorf("country %s not found", country)
++	}
++	log.Warnln("failed to decode geoip file: %s%s", filename, ", fallback to the original ReadFile method")
+ 	geoipBytes, err := ReadAsset(filename)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("failed to open file: %s, base error: %s", filename, err.Error())
+@@ -82,6 +136,14 @@ func (d standardLoader) LoadIPByPath(filename, country string) ([]*router.CIDR,
+ }
+ 
+ func (d standardLoader) LoadIPByBytes(geoipBytes []byte, country string) ([]*router.CIDR, error) {
++	entryBytes, err := geodata.DecodeBytes(geoipBytes, country)
++	if err == nil {
++		return loadIPEntry(entryBytes)
++	}
++	if errors.Is(err, geodata.ErrCodeNotFound) {
++		return nil, fmt.Errorf("country %s not found", country)
++	}
++	log.Warnln("failed to decode geoip data, fallback to the original method")
+ 	return loadIP(geoipBytes, country)
+ }
+ 
 diff --git a/component/geodata/utils.go b/component/geodata/utils.go
-index ee7946a66f778c9d9e151d294e535db5c395c472..64b3ff66528f05388afc5fdf6ba35b3dffa38ee9 100644
+index 683d820be73767c86fc55171d2bdf95c342c59a4..16a2178279407494d0063913a6356329b26ca0c3 100644
 --- a/component/geodata/utils.go
 +++ b/component/geodata/utils.go
-@@ -1,7 +1,13 @@
+@@ -1,7 +1,14 @@
  package geodata
  
  import (
@@ -4038,10 +4323,21 @@ index ee7946a66f778c9d9e151d294e535db5c395c472..64b3ff66528f05388afc5fdf6ba35b3d
 +	"io"
 +	"math"
 +	"os"
++	"runtime"
  	"strings"
  
  	"github.com/metacubex/mihomo/common/singleflight"
-@@ -50,14 +56,60 @@ func SetSiteMatcher(newMatcher string) {
+@@ -10,6 +17,9 @@ import (
+ 	"github.com/metacubex/mihomo/log"
+ )
+ 
++// Limits concurrent cold geodata parses so provider preloading cannot multiply the peak.
++const geodataLoadConcurrency = 2
++
+ var (
+ 	geoMode        bool
+ 	geoLoaderName  = "memconservative"
+@@ -50,20 +60,70 @@ func SetSiteMatcher(newMatcher string) {
  	}
  }
  
@@ -4096,9 +4392,7 @@ index ee7946a66f778c9d9e151d294e535db5c395c472..64b3ff66528f05388afc5fdf6ba35b3d
  func Verify(name string) error {
  	switch name {
  	case C.GeositeName:
--		_, err := LoadGeoSiteMatcher("CN")
--		return err
-+		return verifyGeodataFile(C.Path.GeoSite())
+ 		return verifyGeoSite()
  	case C.GeoipName:
 -		_, err := LoadGeoIPMatcher("CN")
 -		return err
@@ -4106,6 +4400,91 @@ index ee7946a66f778c9d9e151d294e535db5c395c472..64b3ff66528f05388afc5fdf6ba35b3d
  	default:
  		return fmt.Errorf("not support name")
  	}
+ }
+ 
+-var loadGeoSiteMatcherListSF = singleflight.Group[[]*router.Domain]{}
+-var loadGeoSiteMatcherSF = singleflight.Group[router.DomainMatcher]{StoreResult: true}
++var (
++	loadGeoSiteMatcherListSF = singleflight.Group[[]*router.Domain]{}
++	loadGeoSiteMatcherSF     = singleflight.Group[router.DomainMatcher]{StoreResult: true}
++	geoLoadSem               = make(chan struct{}, geodataLoadConcurrency)
++)
+ 
+ func LoadGeoSiteMatcher(countryCode string) (router.DomainMatcher, error) {
+ 	if countryCode == "" {
+@@ -99,17 +159,22 @@ func LoadGeoSiteMatcher(countryCode string) (router.DomainMatcher, error) {
+ 		if cached := cache.load(); cached != nil {
+ 			return cached, nil
+ 		}
+-		domains, err, shared := loadGeoSiteMatcherListSF.Do(listName, func() ([]*router.Domain, error) {
++		geoLoadSem <- struct{}{}
++		defer func() { <-geoLoadSem }()
++		domains, err, _ := loadGeoSiteMatcherListSF.Do(listName, func() ([]*router.Domain, error) {
+ 			geoLoader, err := GetGeoDataLoader(geoLoaderName)
+ 			if err != nil {
+ 				return nil, err
+ 			}
+-			return geoLoader.LoadGeoSite(listName)
++			domains, err := geoLoader.LoadGeoSite(listName)
++			if err != nil {
++				return nil, err
++			}
++			geoLoader = nil
++			runtime.GC() // drop loader temporaries; domains stay live
++			return domains, nil
+ 		})
+ 		if err != nil {
+-			if !shared {
+-				loadGeoSiteMatcherListSF.Forget(listName) // don't store the error result
+-			}
+ 			return nil, err
+ 		}
+ 
+@@ -137,11 +202,17 @@ func LoadGeoSiteMatcher(countryCode string) (router.DomainMatcher, error) {
+ 		matcher, err := router.NewDomainMatcher(domains)
+ 		mph：minimal perfect hash algorithm
+ 		*/
++		var matcher router.DomainMatcher
+ 		if geoSiteMatcher == "mph" {
+-			return router.NewMphMatcherGroup(domains)
++			matcher, err = router.NewMphMatcherGroup(domains)
+ 		} else {
+-			return cache.build(domains)
++			matcher, err = cache.build(domains)
++		}
++		domains = nil
++		if err == nil {
++			runtime.GC() // drop raw domains; only the matcher stays cached
+ 		}
++		return matcher, err
+ 	})
+ 	if err != nil {
+ 		if !shared {
+@@ -172,6 +243,8 @@ func LoadGeoIPMatcher(country string) (router.IPMatcher, error) {
+ 
+ 	matcher, err, shared := loadGeoIPMatcherSF.Do(country, func() (router.IPMatcher, error) {
+ 		log.Infoln("Load GeoIP rule: %s", country)
++		geoLoadSem <- struct{}{}
++		defer func() { <-geoLoadSem }()
+ 		geoLoader, err := GetGeoDataLoader(geoLoaderName)
+ 		if err != nil {
+ 			return nil, err
+@@ -180,7 +253,14 @@ func LoadGeoIPMatcher(country string) (router.IPMatcher, error) {
+ 		if err != nil {
+ 			return nil, err
+ 		}
+-		return router.NewGeoIPMatcher(cidrList)
++		geoLoader = nil
++		runtime.GC() // drop loader temporaries; cidrList stays live
++		matcher, err := router.NewGeoIPMatcher(cidrList)
++		cidrList = nil
++		if err == nil {
++			runtime.GC() // drop raw CIDRs; only the matcher stays cached
++		}
++		return matcher, err
+ 	})
+ 	if err != nil {
+ 		if !shared {
 diff --git a/component/profile/cachefile/cache.go b/component/profile/cachefile/cache.go
 index 89ce19170097af5ea8c031ab7893c873146120d2..a1905c103a7e99c3de2679d174af031f734f744e 100644
 --- a/component/profile/cachefile/cache.go
@@ -13569,7 +13948,7 @@ index 0000000000000000000000000000000000000000..0bd68a895677e79e76fd4d7877a2ce19
 +	}()
 +}
 diff --git a/config/config.go b/config/config.go
-index c7c96566e18803b8372178cc785bda930991e70c..a638ef20c2988c2b2e1f2025530ba5bf7d0196db 100644
+index 78ef64136f6239ec75d3b58ec7431af8e985b6bb..1ca3110fc402469aef2288f5fa57ab932b9a6e4f 100644
 --- a/config/config.go
 +++ b/config/config.go
 @@ -25,6 +25,7 @@ import (
@@ -13631,7 +14010,7 @@ index c7c96566e18803b8372178cc785bda930991e70c..a638ef20c2988c2b2e1f2025530ba5bf
  }
  
  // Inbound config
-@@ -177,8 +182,9 @@ type DNS struct {
+@@ -178,8 +183,9 @@ type DNS struct {
  
  // Profile config
  type Profile struct {
@@ -13643,7 +14022,7 @@ index c7c96566e18803b8372178cc785bda930991e70c..a638ef20c2988c2b2e1f2025530ba5bf
  }
  
  // TLS config
-@@ -360,8 +366,9 @@ type RawExperimental struct {
+@@ -363,8 +369,9 @@ type RawExperimental struct {
  }
  
  type RawProfile struct {
@@ -13655,7 +14034,7 @@ index c7c96566e18803b8372178cc785bda930991e70c..a638ef20c2988c2b2e1f2025530ba5bf
  }
  
  type RawGeoXUrl struct {
-@@ -447,6 +454,9 @@ type RawConfig struct {
+@@ -450,6 +457,9 @@ type RawConfig struct {
  	KeepAliveIdle                 int                     `yaml:"keep-alive-idle" json:"keep-alive-idle"`
  	KeepAliveInterval             int                     `yaml:"keep-alive-interval" json:"keep-alive-interval"`
  	DisableKeepAlive              bool                    `yaml:"disable-keep-alive" json:"disable-keep-alive"`
@@ -13665,7 +14044,7 @@ index c7c96566e18803b8372178cc785bda930991e70c..a638ef20c2988c2b2e1f2025530ba5bf
  
  	ProxyProvider map[string]map[string]any `yaml:"proxy-providers" json:"proxy-providers"`
  	RuleProvider  map[string]map[string]any `yaml:"rule-providers" json:"rule-providers"`
-@@ -482,26 +492,29 @@ func Parse(buf []byte) (*Config, error) {
+@@ -485,26 +495,29 @@ func Parse(buf []byte) (*Config, error) {
  
  func DefaultRawConfig() *RawConfig {
  	return &RawConfig{
@@ -13715,7 +14094,7 @@ index c7c96566e18803b8372178cc785bda930991e70c..a638ef20c2988c2b2e1f2025530ba5bf
  		DNS: RawDNS{
  			Enable:         false,
  			IPv6:           false,
-@@ -578,7 +591,8 @@ func DefaultRawConfig() *RawConfig {
+@@ -581,7 +594,8 @@ func DefaultRawConfig() *RawConfig {
  			QUICGoDisableECN: true,
  		},
  		Profile: RawProfile{
@@ -13725,7 +14104,7 @@ index c7c96566e18803b8372178cc785bda930991e70c..a638ef20c2988c2b2e1f2025530ba5bf
  		},
  		GeoXUrl: RawGeoXUrl{
  			Mmdb:    "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb",
-@@ -790,18 +804,22 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
+@@ -793,18 +807,22 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
  			ASN:     cfg.GeoXUrl.ASN,
  			GeoSite: cfg.GeoXUrl.GeoSite,
  		},
@@ -13760,7 +14139,7 @@ index c7c96566e18803b8372178cc785bda930991e70c..a638ef20c2988c2b2e1f2025530ba5bf
  	}, nil
  }
  
-@@ -860,8 +878,9 @@ func parseNTP(cfg *RawConfig) (*NTP, error) {
+@@ -863,8 +881,9 @@ func parseNTP(cfg *RawConfig) (*NTP, error) {
  
  func parseProfile(cfg *RawConfig) (*Profile, error) {
  	return &Profile{
@@ -13772,234 +14151,6 @@ index c7c96566e18803b8372178cc785bda930991e70c..a638ef20c2988c2b2e1f2025530ba5bf
  	}, nil
  }
  
-diff --git a/config/utils.go b/config/utils.go
-index 7b413847fd040b7f524eab59223d90f91f1ebb4d..ed4605146cc8d5b3d6dc96d5e9b786cd68389fa2 100644
---- a/config/utils.go
-+++ b/config/utils.go
-@@ -163,43 +163,26 @@ func validateDialerProxies(proxies map[string]C.Proxy) error {
- 		}
- 	}
- 
--	// perform depth-first search to detect cycles for each proxy
-+	// every proxy has at most one dialer-proxy, so walk each chain once: reaching a proxy
-+	// of the current walk means a cycle, reaching one an earlier walk finished does not
-+	const onPath, acyclic = 1, 2
-+	state := make(map[string]uint8, len(graph))
-+	var path []string
- 	for name := range graph {
--		visited := make(map[string]bool, len(graph))
--		path := make([]string, 0, len(graph))
--		if validateDialerProxiesHasCycle(name, graph, visited, path) {
--			return fmt.Errorf("proxy [%s] has circular dialer-proxy dependency", name)
--		}
--	}
--
--	return nil
--}
--
--// validateDialerProxiesHasCycle performs DFS to detect if there's a cycle starting from current proxy
--func validateDialerProxiesHasCycle(current string, graph map[string]string, visited map[string]bool, path []string) bool {
--	// check if current is already in path (cycle detected)
--	for _, p := range path {
--		if p == current {
--			return true
-+		path = path[:0]
-+		for current, ok := name, true; ok && state[current] != acyclic; current, ok = graph[current] {
-+			if state[current] == onPath {
-+				return fmt.Errorf("proxy [%s] has circular dialer-proxy dependency", name)
-+			}
-+			state[current] = onPath
-+			path = append(path, current)
- 		}
--	}
--
--	// already visited and no cycle
--	if visited[current] {
--		return false
--	}
--
--	visited[current] = true
--	path = append(path, current)
--
--	// check dialer-proxy of current proxy
--	if dialerProxy, exists := graph[current]; exists {
--		if validateDialerProxiesHasCycle(dialerProxy, graph, visited, path) {
--			return true
-+		for _, p := range path {
-+			state[p] = acyclic
- 		}
- 	}
- 
--	return false
-+	return nil
- }
- 
- func verifyIP6() bool {
-diff --git a/config/utils_test.go b/config/utils_test.go
-index 542c23300404f7af0dada8a9da518e610d07ce1d..aba0ddc673176650d384e428870dc846d2435a23 100644
---- a/config/utils_test.go
-+++ b/config/utils_test.go
-@@ -8,9 +8,11 @@ import (
- 
- func TestValidateDialerProxies(t *testing.T) {
- 	testCases := []struct {
--		testName    string
--		proxy       []map[string]any
--		errContains string
-+		testName string
-+		proxy    []map[string]any
-+		// the proxy named in a cycle error depends on map iteration order,
-+		// so any of these errors is accepted; nil means no error
-+		errs []string
- 	}{
- 		{
- 			testName: "ValidReference",
-@@ -18,61 +20,129 @@ func TestValidateDialerProxies(t *testing.T) {
- 				{"name": "base-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1080},
- 				{"name": "proxy-with-dialer", "type": "socks5", "server": "127.0.0.1", "port": 1081, "dialer-proxy": "base-proxy"},
- 			},
--			errContains: "",
- 		},
- 		{
- 			testName: "NotFoundReference",
- 			proxy: []map[string]any{ // create proxy with non-existent dialer-proxy reference
-+				{"name": "base-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1080},
-+				{"name": "valid-proxy-with-dialer", "type": "socks5", "server": "127.0.0.1", "port": 1081, "dialer-proxy": "base-proxy"},
- 				{"name": "proxy-with-dialer", "type": "socks5", "server": "127.0.0.1", "port": 1081, "dialer-proxy": "non-existent-proxy"},
- 			},
--			errContains: "not found",
-+			errs: []string{"proxy [proxy-with-dialer] dialer-proxy [non-existent-proxy] not found"},
- 		},
- 		{
- 			testName: "CircularDependency",
--			proxy: []map[string]any{
--				// create proxy A that references B
-+			proxy: []map[string]any{ // proxy-b -> proxy-a <-> proxy-c
- 				{"name": "proxy-a", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "proxy-c"},
--				// create proxy B that references C
- 				{"name": "proxy-b", "type": "socks5", "server": "127.0.0.1", "port": 1081, "dialer-proxy": "proxy-a"},
--				// create proxy C that references A (creates cycle)
- 				{"name": "proxy-c", "type": "socks5", "server": "127.0.0.1", "port": 1082, "dialer-proxy": "proxy-a"},
- 			},
--			errContains: "circular",
-+			errs: []string{
-+				"proxy [proxy-a] has circular dialer-proxy dependency",
-+				"proxy [proxy-b] has circular dialer-proxy dependency",
-+				"proxy [proxy-c] has circular dialer-proxy dependency",
-+			},
- 		},
- 		{
- 			testName: "ComplexChain",
--			proxy: []map[string]any{ // create a valid chain: proxy-d -> proxy-c -> proxy-b -> proxy-a
-+			proxy: []map[string]any{ // proxy-d, proxy-e and proxy-f share the chain proxy-c -> proxy-b -> proxy-a
- 				{"name": "proxy-a", "type": "socks5", "server": "127.0.0.1", "port": 1080},
- 				{"name": "proxy-b", "type": "socks5", "server": "127.0.0.1", "port": 1081, "dialer-proxy": "proxy-a"},
- 				{"name": "proxy-c", "type": "socks5", "server": "127.0.0.1", "port": 1082, "dialer-proxy": "proxy-b"},
- 				{"name": "proxy-d", "type": "socks5", "server": "127.0.0.1", "port": 1083, "dialer-proxy": "proxy-c"},
-+				{"name": "proxy-e", "type": "socks5", "server": "127.0.0.1", "port": 1084, "dialer-proxy": "proxy-c"},
-+				{"name": "proxy-f", "type": "socks5", "server": "127.0.0.1", "port": 1085, "dialer-proxy": "proxy-c"},
- 			},
--			errContains: "",
- 		},
- 		{
- 			testName: "EmptyDialerProxy",
- 			proxy: []map[string]any{ // create proxy without dialer-proxy
- 				{"name": "simple-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1080},
-+				{"name": "another-simple-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1081},
- 			},
--			errContains: "",
- 		},
- 		{
- 			testName: "SelfReference",
- 			proxy: []map[string]any{ // create proxy that references itself
-+				{"name": "base-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1080},
- 				{"name": "self-proxy", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "self-proxy"},
- 			},
--			errContains: "circular",
-+			errs: []string{"proxy [self-proxy] has circular dialer-proxy dependency"},
-+		},
-+		{
-+			testName: "NotFoundBeforeCycle",
-+			proxy: []map[string]any{
-+				{"name": "a", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "b"},
-+				{"name": "b", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "a"},
-+				{"name": "c", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "missing"},
-+			},
-+			errs: []string{"proxy [c] dialer-proxy [missing] not found"},
-+		},
-+		{
-+			testName: "TwoProxyCycle",
-+			proxy: []map[string]any{
-+				{"name": "a", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "b"},
-+				{"name": "b", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "a"},
-+				{"name": "c", "type": "socks5", "server": "127.0.0.1", "port": 1080},
-+			},
-+			errs: []string{
-+				"proxy [a] has circular dialer-proxy dependency",
-+				"proxy [b] has circular dialer-proxy dependency",
-+			},
-+		},
-+		{
-+			testName: "LongChainIntoCycle",
-+			// x -> a -> b -> c -> d -> e -> c, beside an acyclic chain y -> z, w -> z
-+			proxy: []map[string]any{
-+				{"name": "x", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "a"},
-+				{"name": "a", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "b"},
-+				{"name": "b", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "c"},
-+				{"name": "c", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "d"},
-+				{"name": "d", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "e"},
-+				{"name": "e", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "c"},
-+				{"name": "y", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "z"},
-+				{"name": "z", "type": "socks5", "server": "127.0.0.1", "port": 1080},
-+				{"name": "w", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "z"},
-+			},
-+			errs: []string{
-+				"proxy [x] has circular dialer-proxy dependency",
-+				"proxy [a] has circular dialer-proxy dependency",
-+				"proxy [b] has circular dialer-proxy dependency",
-+				"proxy [c] has circular dialer-proxy dependency",
-+				"proxy [d] has circular dialer-proxy dependency",
-+				"proxy [e] has circular dialer-proxy dependency",
-+			},
-+		},
-+		{
-+			testName: "SharedRelayBesideCycle",
-+			// p and q share an acyclic relay, t leads into the cycle r <-> s
-+			proxy: []map[string]any{
-+				{"name": "p", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "relay"},
-+				{"name": "q", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "relay"},
-+				{"name": "relay", "type": "socks5", "server": "127.0.0.1", "port": 1080},
-+				{"name": "r", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "s"},
-+				{"name": "s", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "r"},
-+				{"name": "t", "type": "socks5", "server": "127.0.0.1", "port": 1080, "dialer-proxy": "s"},
-+			},
-+			errs: []string{
-+				"proxy [r] has circular dialer-proxy dependency",
-+				"proxy [s] has circular dialer-proxy dependency",
-+				"proxy [t] has circular dialer-proxy dependency",
-+			},
- 		},
- 	}
- 
- 	for _, testCase := range testCases {
- 		t.Run(testCase.testName, func(t *testing.T) {
- 			config := RawConfig{Proxy: testCase.proxy}
--			_, _, err := parseProxies(&config)
--			if testCase.errContains == "" {
--				assert.NoError(t, err, testCase.testName)
--			} else {
--				assert.ErrorContains(t, err, testCase.errContains, testCase.testName)
-+			// repeat so that different map iteration orders are covered
-+			for i := 0; i < 20; i++ {
-+				_, _, err := parseProxies(&config)
-+				if testCase.errs == nil {
-+					assert.NoError(t, err)
-+				} else if assert.Error(t, err) {
-+					assert.Contains(t, testCase.errs, err.Error())
-+				}
- 			}
- 		})
- 	}
 diff --git a/constant/adapters.go b/constant/adapters.go
 index a44b2cdfab8df4e8192b46882a869bb57c67fee1..cbef425bf4e1f8ad8520abb8d4badddace2bf01d 100644
 --- a/constant/adapters.go
@@ -14171,7 +14322,7 @@ index 05ea8ebd32f444ca49f94f7e794aedc93e114bfd..2f58ad56d67ab24e899bbfbad5508c82
  	switch rt {
  	case Domain:
 diff --git a/go.mod b/go.mod
-index 7709291311c5363c559151f5680ece5e2afd069a..ca4c8424d58d654c40bbbb75dd44b2f2af74298d 100644
+index 89b1858f66b157811ea4b0263aa80920a8e492a8..a61687d7fea0e0754b011ebe8f3c34fff8793747 100644
 --- a/go.mod
 +++ b/go.mod
 @@ -56,6 +56,7 @@ require (
@@ -14183,7 +14334,7 @@ index 7709291311c5363c559151f5680ece5e2afd069a..ca4c8424d58d654c40bbbb75dd44b2f2
  	github.com/yosida95/uritemplate/v3 v3.0.2
  	gitlab.com/go-extension/aes-ccm v0.0.0-20230221065045-e58665ef23c7
 diff --git a/go.sum b/go.sum
-index ae217175c904516cf5ab318b4d778ab1f13d4d15..3abb1cd46051e455d3326a64553d191dd114b9ac 100644
+index 5f671046f1edbf3188b337c1dc5141be3974fdd8..a755e34e6d195e4045e69ab57f97c2fbf66c4a8b 100644
 --- a/go.sum
 +++ b/go.sum
 @@ -255,6 +255,8 @@ github.com/tailscale/peercred v0.0.0-20250107143737-35a0c7bd7edc h1:24heQPtnFR+y
@@ -14196,7 +14347,7 @@ index ae217175c904516cf5ab318b4d778ab1f13d4d15..3abb1cd46051e455d3326a64553d191d
  github.com/ulikunitz/xz v0.5.15/go.mod h1:nbz6k7qbPmH4IRqmfOplQw/tblSgqTqBwxkY0oWt/14=
  github.com/vishvananda/netlink v1.1.0/go.mod h1:cTgwzPIzzgDAYoQrMm0EdrjRUBkTqKYppBueQtXaqoE=
 diff --git a/hub/executor/executor.go b/hub/executor/executor.go
-index d848bbcc741a4acd4ac5b53c7caad59ba80909d5..f99a0cfb4cc8b68a9e2260482c41c8da5379b1ec 100644
+index 43c71135a05198f3ff0b55d2b882a19b4367ab64..5252b56cb9632b42807c105cf254d90702815dae 100644
 --- a/hub/executor/executor.go
 +++ b/hub/executor/executor.go
 @@ -25,6 +25,7 @@ import (
@@ -14251,7 +14402,7 @@ index d848bbcc741a4acd4ac5b53c7caad59ba80909d5..f99a0cfb4cc8b68a9e2260482c41c8da
  	}
  
  	return general
-@@ -376,6 +381,9 @@ func updateUpdater(cfg *config.Config) {
+@@ -377,6 +382,9 @@ func updateUpdater(cfg *config.Config) {
  	updater.SetGeoAutoUpdate(general.GeoAutoUpdate)
  	updater.SetGeoUpdateInterval(general.GeoUpdateInterval)
  
@@ -14261,7 +14412,7 @@ index d848bbcc741a4acd4ac5b53c7caad59ba80909d5..f99a0cfb4cc8b68a9e2260482c41c8da
  	controller := cfg.Controller
  	updater.DefaultUiUpdater = updater.NewUiUpdater(controller.ExternalUI, controller.ExternalUIURL, controller.ExternalUIName)
  	updater.DefaultUiUpdater.AutoDownloadUI()
-@@ -424,6 +432,8 @@ func updateGeneral(general *config.General, logging bool) {
+@@ -425,6 +433,8 @@ func updateGeneral(general *config.General, logging bool) {
  	geodata.SetGeoSiteUrl(general.GeoXUrl.GeoSite)
  	geodata.SetMmdbUrl(general.GeoXUrl.Mmdb)
  	geodata.SetASNUrl(general.GeoXUrl.ASN)
@@ -14270,7 +14421,7 @@ index d848bbcc741a4acd4ac5b53c7caad59ba80909d5..f99a0cfb4cc8b68a9e2260482c41c8da
  	mihomoHttp.SetUA(general.GlobalUA)
  	resource.SetETag(general.ETagSupport)
  }
-@@ -535,10 +545,23 @@ func updateIPTables(cfg *config.Config) {
+@@ -536,10 +546,23 @@ func updateIPTables(cfg *config.Config) {
  	log.Infoln("[IPTABLES] Setting iptables completed")
  }
  
@@ -14673,7 +14824,7 @@ index 2f6c18a8966e7384dec12d069ffddf0bea393eb8..dd1bc8233d735121c433d67f84c5d593
  	q.lock.Lock()
  	defer q.lock.Unlock()
 diff --git a/tunnel/statistic/manager.go b/tunnel/statistic/manager.go
-index f3d3ba2645773f601cf6ae1a41142d6cad832a68..ffcb9cb77d830fda8a964c025173e23b5c69e0c4 100644
+index 8b678577a759f956f53d6c7bde148f8886fef00e..c1750c4f5c18fcdb8ef8595ab9f697c7a3ce2c94 100644
 --- a/tunnel/statistic/manager.go
 +++ b/tunnel/statistic/manager.go
 @@ -35,6 +35,7 @@ func init() {
@@ -14697,35 +14848,10 @@ index f3d3ba2645773f601cf6ae1a41142d6cad832a68..ffcb9cb77d830fda8a964c025173e23b
  	if DefaultRequestNotify != nil {
  		DefaultRequestNotify(c)
  	}
-@@ -140,10 +143,10 @@ func (m *Manager) handle() {
+@@ -170,3 +173,49 @@ type Snapshot struct {
+ 	Connections   []*TrackerInfo `json:"connections"`
+ 	Memory        uint64         `json:"memory"`
  }
- 
- type Snapshot struct {
--	DownloadTotal   int64         `json:"downloadTotal"`
--	UploadTotal     int64         `json:"uploadTotal"`
--	Connections     []TrackerInfo `json:"connections"`
--	Memory          uint64        `json:"memory"`
-+	DownloadTotal int64         `json:"downloadTotal"`
-+	UploadTotal   int64         `json:"uploadTotal"`
-+	Connections   []TrackerInfo `json:"connections"`
-+	Memory        uint64        `json:"memory"`
- }
- 
- func (m *Manager) Snapshot() *Snapshot {
-@@ -156,9 +159,55 @@ func (m *Manager) Snapshot() *Snapshot {
- 	})
- 
- 	return &Snapshot{
--		DownloadTotal:   m.downloadTotal.Load(),
--		UploadTotal:     m.uploadTotal.Load(),
--		Connections:     connections,
--		Memory:          m.memory,
-+		DownloadTotal: m.downloadTotal.Load(),
-+		UploadTotal:   m.uploadTotal.Load(),
-+		Connections:   connections,
-+		Memory:        m.memory,
-+	}
-+}
 +
 +func (m *Manager) joinSmartTarget(c Tracker) {
 +	info := c.Info()
@@ -14770,8 +14896,8 @@ index f3d3ba2645773f601cf6ae1a41142d6cad832a68..ffcb9cb77d830fda8a964c025173e23b
 +		result.Range(func(id string, _ bool) bool {
 +			return fn(id)
 +		})
- 	}
- }
++	}
++}
 diff --git a/tunnel/statistic/tracker.go b/tunnel/statistic/tracker.go
 index b44ce29521a838a495be140a06c3fa29464ccf97..f693865ebb380b1f128b832ee4c2d8cee43fd848 100644
 --- a/tunnel/statistic/tracker.go
@@ -15249,7 +15375,7 @@ index 0000000000000000000000000000000000000000..4f68eb70afd26c15bf8f55503de64c36
 +	manager.RangeSmartTarget("close-test", func(string) bool { t.Error("Smart target membership remains"); return true })
 +}
 diff --git a/tunnel/tunnel.go b/tunnel/tunnel.go
-index 2350f50465f679a4885373ae04e5011a0571076e..58750a11dcb87cd468f0d4b1801f23e9efc6a4d4 100644
+index e165b258364bc5e6c841bb104c5cac5093829303..ea03a8e9e725ba62db398471aeceef4c171a554a 100644
 --- a/tunnel/tunnel.go
 +++ b/tunnel/tunnel.go
 @@ -7,6 +7,7 @@ import (
@@ -15269,7 +15395,7 @@ index 2350f50465f679a4885373ae04e5011a0571076e..58750a11dcb87cd468f0d4b1801f23e9
  )
  
  type tunnel struct{}
-@@ -502,7 +505,10 @@ func handleUDPConn(packet C.PacketAdapter) {
+@@ -510,7 +513,10 @@ func handleUDPConn(packet C.PacketAdapter) {
  			}
  			logMetadata(metadata, rule, rawPc)
  
@@ -15281,7 +15407,7 @@ index 2350f50465f679a4885373ae04e5011a0571076e..58750a11dcb87cd468f0d4b1801f23e9
  
  			sender.AddMapping(originMetadata, dialMetadata)
  			oAddrPort := dialMetadata.AddrPort()
-@@ -638,7 +644,10 @@ func handleTCPConn(connCtx C.ConnContext) {
+@@ -646,7 +652,10 @@ func handleTCPConn(connCtx C.ConnContext) {
  	}
  	logMetadata(metadata, rule, remoteConn)
  
@@ -15293,7 +15419,7 @@ index 2350f50465f679a4885373ae04e5011a0571076e..58750a11dcb87cd468f0d4b1801f23e9
  	defer func(remoteConn C.Conn) {
  		_ = remoteConn.Close()
  	}(remoteConn)
-@@ -713,8 +722,20 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
+@@ -701,8 +710,20 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
  					continue
  				}
  
@@ -15314,7 +15440,7 @@ index 2350f50465f679a4885373ae04e5011a0571076e..58750a11dcb87cd468f0d4b1801f23e9
  					if adapter.Type() == C.Pass {
  						log.Debugln("%s match Pass rule", adapter.Name())
  						continue GetRules
-@@ -727,6 +748,12 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
+@@ -715,6 +736,12 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
  					}
  				}
  
@@ -15327,7 +15453,7 @@ index 2350f50465f679a4885373ae04e5011a0571076e..58750a11dcb87cd468f0d4b1801f23e9
  				if metadata.NetWork == C.UDP && !adapter.SupportUDP() {
  					log.Debugln("%s UDP is not supported", adapter.Name())
  					continue
-@@ -766,7 +793,7 @@ func getRules(metadata *C.Metadata) []C.Rule {
+@@ -754,7 +781,7 @@ func getRules(metadata *C.Metadata) []C.Rule {
  	}
  }
  
@@ -15336,7 +15462,7 @@ index 2350f50465f679a4885373ae04e5011a0571076e..58750a11dcb87cd468f0d4b1801f23e9
  	if errors.Is(err, resolver.ErrIPNotFound) {
  		return true
  	}
-@@ -790,7 +817,7 @@ func retry[T any](ctx context.Context, ft func(context.Context) (T, error), fe f
+@@ -778,7 +805,7 @@ func retry[T any](ctx context.Context, ft func(context.Context) (T, error), fe f
  			if fe != nil {
  				fe(err)
  			}
@@ -15345,7 +15471,7 @@ index 2350f50465f679a4885373ae04e5011a0571076e..58750a11dcb87cd468f0d4b1801f23e9
  				return
  			}
  			if s.Wait(ctx) == nil {
-@@ -804,3 +831,7 @@ func retry[T any](ctx context.Context, ft func(context.Context) (T, error), fe f
+@@ -792,3 +819,7 @@ func retry[T any](ctx context.Context, ft func(context.Context) (T, error), fe f
  	}
  	return
  }

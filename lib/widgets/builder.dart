@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:bett_box/common/common.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/rendering.dart';
 
 class RouteScrollCacheBuilder extends StatefulWidget {
   final Widget Function(BuildContext context, ScrollCacheExtent? cacheExtent)
@@ -68,6 +67,31 @@ class _IdleFocusBuilderState extends State<IdleFocusBuilder> {
   @override
   Widget build(BuildContext context) {
     return widget.builder(context, _focusNode);
+  }
+}
+
+class FocusStateBuilder extends StatefulWidget {
+  final Widget Function(BuildContext context, bool focused) builder;
+
+  const FocusStateBuilder({super.key, required this.builder});
+
+  @override
+  State<FocusStateBuilder> createState() => _FocusStateBuilderState();
+}
+
+class _FocusStateBuilderState extends State<FocusStateBuilder> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onFocusChange: (focused) {
+        if (focused != _focused) setState(() => _focused = focused);
+      },
+      child: widget.builder(context, _focused),
+    );
   }
 }
 

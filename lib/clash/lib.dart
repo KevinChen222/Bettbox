@@ -41,8 +41,8 @@ class ClashLib extends ClashHandlerInterface with AndroidClashInterface {
           if (!_canSendCompleter.isCompleted) {
             _canSendCompleter.complete(true);
           }
-        } else {
-          handleResult(ActionResult.fromJson(json.decode(message)));
+        } else if (message is String) {
+          handleResultMessage(message);
         }
       });
     }
@@ -85,7 +85,7 @@ class ClashLib extends ClashHandlerInterface with AndroidClashInterface {
   }
 
   @override
-  destroy() async {
+  Future<bool> destroy() async {
     await service?.destroy();
     return true;
   }
@@ -98,7 +98,7 @@ class ClashLib extends ClashHandlerInterface with AndroidClashInterface {
   @override
   Future<bool> shutdown() async {
     await super.shutdown();
-    destroy();
+    unawaited(destroy());
     return true;
   }
 
@@ -136,7 +136,7 @@ class ClashLib extends ClashHandlerInterface with AndroidClashInterface {
   Future<AndroidVpnOptions?> getAndroidVpnOptions() async {
     final res = await invoke<String>(method: ActionMethod.getAndroidVpnOptions);
     if (res.isEmpty) return null;
-    return AndroidVpnOptions.fromJson(json.decode(res));
+    return AndroidVpnOptions.fromJson(json.decode(res) as Map<String, Object?>);
   }
 
   @override
@@ -180,7 +180,7 @@ class ClashLibHandler {
     final receiver = ReceivePort();
     receiver.listen((message) {
       if (!completer.isCompleted) {
-        completer.complete(message);
+        completer.complete(message as String);
         receiver.close();
       }
     });
@@ -190,10 +190,20 @@ class ClashLibHandler {
     return completer.future;
   }
 
+  Future<void> freeOSMemory() async {
+    final action = Action(
+      id: '${ActionMethod.forceGc.name}#${utils.id}',
+      method: ActionMethod.forceGc,
+      data: 'true',
+    );
+    await invokeAction(json.encode(action));
+  }
+
   Future<void> exportConfig(
     String id,
     String output, {
     String? ageSecretKey,
+    String? providersPath,
   }) async {
     final action = Action(
       id: '${ActionMethod.exportConfig.name}#${utils.id}',
@@ -202,11 +212,15 @@ class ClashLibHandler {
         'path': await appPath.getProfilePath(id),
         'age-secret-key': ageSecretKey ?? '',
         'output': output,
+        'expand-providers': providersPath != null,
+        'providers-path': providersPath ?? '',
       }),
     );
-    final result = ActionResult.fromJson(
-      json.decode(await invokeAction(json.encode(action))),
-    ).toResult;
+    final result = decodeActionResult(await invokeAction(json.encode(action)))
+        ?.toResult;
+    if (result == null) {
+      throw 'Invalid core result';
+    }
     if (result.isError) {
       throw result.message;
     }
@@ -239,7 +253,7 @@ class ClashLibHandler {
     final vpnOptionsRaw = clashFFI.getAndroidVpnOptions();
     final vpnOptions = json.decode(vpnOptionsRaw.cast<Utf8>().toDartString());
     clashFFI.freeCString(vpnOptionsRaw);
-    return AndroidVpnOptions.fromJson(vpnOptions);
+    return AndroidVpnOptions.fromJson(vpnOptions as Map<String, Object?>);
   }
 
   Traffic getTraffic() {
@@ -247,7 +261,7 @@ class ClashLibHandler {
     final trafficString = trafficRaw.cast<Utf8>().toDartString();
     clashFFI.freeCString(trafficRaw);
     if (trafficString.isEmpty) return Traffic();
-    return Traffic.fromMap(json.decode(trafficString));
+    return Traffic.fromMap(json.decode(trafficString) as Map<String, dynamic>);
   }
 
   Traffic getTotalTraffic(bool value) {
@@ -255,7 +269,7 @@ class ClashLibHandler {
     final trafficString = trafficRaw.cast<Utf8>().toDartString();
     clashFFI.freeCString(trafficRaw);
     if (trafficString.isEmpty) return Traffic();
-    return Traffic.fromMap(json.decode(trafficString));
+    return Traffic.fromMap(json.decode(trafficString) as Map<String, dynamic>);
   }
 
   Future<bool> startListener() async {
@@ -282,12 +296,14 @@ class ClashLibHandler {
     String id, {
     String? ageSecretKey,
     List<String> disabledGroups = const [],
+    bool snippet = false,
   }) async {
     final path = await appPath.getProfilePath(id);
     final params = {
       'path': path,
       'age-secret-key': ageSecretKey ?? '',
       'disabled-groups': disabledGroups,
+      'snippet': snippet,
     };
     return using((arena) {
       final pathChar = json
@@ -319,7 +335,7 @@ class ClashLibHandler {
       if (!completer.isCompleted) {
         dynamic data = message;
         try {
-          data = json.decode(message);
+          data = json.decode(message as String);
         } catch (_) {}
         completer.complete(SetupResult.fromData(data));
         receiver.close();

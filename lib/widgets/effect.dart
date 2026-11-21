@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:bett_box/common/common.dart';
 import 'package:material_ui/material_ui.dart';
 
 class EffectGestureDetector extends StatefulWidget {
@@ -121,7 +122,7 @@ class _CommonExpandIconState extends State<CommonExpandIcon>
     return RepaintBoundary(
       child: RotationTransition(
         turns: _iconTurns,
-        child: const Icon(Icons.expand_more),
+        child: const AppIcon(Icons.expand_more),
       ),
     );
   }
@@ -137,4 +138,45 @@ Widget proxyDecorator(Widget child, int index, Animation<double> animation) {
     },
     child: child,
   );
+}
+
+class PressScale extends StatefulWidget {
+  final Widget child;
+  final bool enabled;
+
+  const PressScale({super.key, required this.child, this.enabled = true});
+
+  @override
+  State<PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<PressScale> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = (widget.enabled && _isPressed) ? 0.92 : 1.0;
+    return Listener(
+      onPointerDown: (_) {
+        if (!widget.enabled) return;
+        setState(() => _isPressed = true);
+      },
+      onPointerUp: (_) {
+        if (_isPressed) {
+          setState(() => _isPressed = false);
+        }
+      },
+      onPointerCancel: (_) {
+        if (_isPressed) {
+          setState(() => _isPressed = false);
+        }
+      },
+      child: AnimatedScale(
+        scale: scale,
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOutCubic,
+        child: widget.child,
+      ),
+    );
+  }
 }

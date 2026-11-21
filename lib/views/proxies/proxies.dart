@@ -1,7 +1,7 @@
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/common.dart';
-import 'package:bett_box/models/config.dart';
+import 'package:bett_box/models/profile.dart';
 import 'package:bett_box/models/widget.dart';
 import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
@@ -11,6 +11,7 @@ import 'package:bett_box/widgets/widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../profiles/managed_options.dart' show showManagedOptions;
 import '../profiles/scripts.dart'
     show showGroupSwitchOptions, showScriptCustomOptions;
 import 'advanced_settings.dart';
@@ -26,27 +27,29 @@ class ProxiesView extends ConsumerStatefulWidget {
 
 class _ProxiesViewState extends ConsumerState<ProxiesView> {
   final GlobalKey<ProxiesTabViewState> _proxiesTabKey = GlobalKey();
+  final GlobalKey<ProxiesListViewState> _proxiesListKey = GlobalKey();
   bool _hasProviders = false;
   bool _isTab = false;
 
   List<Widget> _buildActions() {
-    final (autoStickyHeader, showHiddenItems) = ref.watch(
+    final (autoStickyHeader, showHiddenItems, hideTimeoutProxies) = ref.watch(
       proxiesStyleSettingProvider.select(
-        (state) => (state.autoStickyHeader, state.showHiddenItems),
-      ),
-    );
-    final (scriptOn, compatible) = ref.watch(
-      scriptStateProvider.select(
-        (s) => (
-          s.currentId != null,
-          s.currentScript?.compatible ?? false,
+        (state) => (
+          state.autoStickyHeader,
+          state.showHiddenItems,
+          state.hideTimeoutProxies,
         ),
       ),
     );
-    final profileOverride = ref.watch(
-      currentProfileProvider.select((p) => p?.useScriptOverride ?? false),
+    final compatible = ref.watch(
+      currentProfileScriptProvider.select(
+        (script) => script?.compatible ?? false,
+      ),
     );
-    final hasScriptCustom = scriptOn && compatible && profileOverride;
+    final managed = ref.watch(
+      currentProfileProvider.select((p) => p?.isManaged ?? false),
+    );
+    final hasScriptCustom = managed || compatible;
     final hasGroupCustom =
         !hasScriptCustom && ref.read(currentProfileIdProvider) != null;
     final hasCustom = hasScriptCustom || hasGroupCustom;
@@ -57,12 +60,12 @@ class _ProxiesViewState extends ConsumerState<ProxiesView> {
             _proxiesTabKey.currentState?.scrollToGroupSelected();
           },
           tooltip: appLocalizations.locate,
-          icon: const Icon(Icons.adjust, weight: 1),
+          icon: const AppIcon(Icons.adjust, weight: 1),
         ),
       if (hasCustom)
         IconButton(
           onPressed: _handleCustomOptions,
-          icon: const Icon(Icons.tune),
+          icon: const AppIcon(Icons.tune),
           tooltip: appLocalizations.custom,
         ),
       CommonPopupBox(
@@ -72,7 +75,7 @@ class _ProxiesViewState extends ConsumerState<ProxiesView> {
               open(offset: const Offset(0, 20));
             },
             tooltip: appLocalizations.more,
-            icon: const Icon(Icons.more_vert),
+            icon: const AppIcon(Icons.more_vert),
           );
         },
         popup: CommonPopupMenu(
@@ -152,6 +155,22 @@ class _ProxiesViewState extends ConsumerState<ProxiesView> {
                     );
               },
             ),
+            PopupMenuItemData(
+              icon: hideTimeoutProxies
+                  ? Icons.check_circle_rounded
+                  : Icons.circle_outlined,
+              label: appLocalizations.hideTimeoutProxies,
+              onPressed: () {
+                ref
+                    .read(proxiesStyleSettingProvider.notifier)
+                    .updateState(
+                      (state) => state.copyWith(
+                        hideTimeoutProxies: !hideTimeoutProxies,
+                      ),
+                    );
+                globalState.appController.addSortNum();
+              },
+            ),
           ],
         ),
       ),
@@ -183,15 +202,22 @@ class _ProxiesViewState extends ConsumerState<ProxiesView> {
     );
   }
 
+  void _collapseAllGroups() {
+    _proxiesListKey.currentState?.collapseAll();
+  }
+
   void _onSearch(String value) {
     ref.read(queryProvider.notifier).value = value;
   }
 
   Future<void> _handleCustomOptions() async {
-    final profileOverride =
-        ref.read(currentProfileProvider)?.useScriptOverride ?? false;
-    final script = ref.read(scriptStateProvider).currentScript;
-    if (script != null && script.compatible && profileOverride) {
+    final profile = ref.read(currentProfileProvider);
+    if (profile?.isManaged ?? false) {
+      await showManagedOptions(context);
+      return;
+    }
+    final script = ref.read(currentProfileScriptProvider);
+    if (script != null && script.compatible) {
       await showScriptCustomOptions(context, script: script);
       return;
     }
@@ -239,22 +265,37 @@ class _ProxiesViewState extends ConsumerState<ProxiesView> {
     final hasGroups = ref.watch(
       groupsProvider.select((state) => state.isNotEmpty),
     );
+    final isDirect = ref.watch(
+      patchClashConfigProvider.select((state) => state.mode == Mode.direct),
+    );
     ref.watch(appSettingProvider.select((state) => state.locale));
     return CommonScaffold(
       floatingActionButton: _buildFAB(),
       actions: _buildActions(),
-      title:
-          ref.watch(
-            appSettingProvider.select((state) => state.pageTitles['proxies']),
-          ) ??
-          appLocalizations.proxies,
+      title: appLocalizations.proxies,
       scrollEdgeFade: proxiesType == ProxiesType.list && !autoStickyHeader,
+      onAppBarDoubleTap: proxiesType == ProxiesType.list
+          ? _collapseAllGroups
+          : null,
       searchState: AppBarSearchState(onSearch: _onSearch),
       body: switch (hasGroups) {
-        false => NullStatus(label: appLocalizations.noProxy),
+        false => NullStatus(
+          label: appLocalizations.noProxy,
+          icon: Icons.cloud_off_outlined,
+          description: appLocalizations.noProxyDesc,
+          action: FilledButton.tonalIcon(
+            onPressed: globalState.appController.toProfiles,
+            icon: const AppIcon(Icons.add, size: 18),
+            label: Text(appLocalizations.addProfile),
+          ),
+        ),
+        true when isDirect => NullStatus(
+          label: appLocalizations.directModeNoProxy,
+          icon: Icons.cloud_off_outlined,
+        ),
         true => switch (proxiesType) {
           ProxiesType.tab => ProxiesTabView(key: _proxiesTabKey),
-          ProxiesType.list => const ProxiesListView(),
+          ProxiesType.list => ProxiesListView(key: _proxiesListKey),
         },
       },
     );

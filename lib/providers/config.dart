@@ -183,32 +183,6 @@ class AppDAVSetting extends _$AppDAVSetting with AutoDisposeNotifierMixin {
 }
 
 @riverpod
-class OverrideDns extends _$OverrideDns with AutoDisposeNotifierMixin {
-  @override
-  bool build() {
-    return globalState.config.overrideDns;
-  }
-
-  @override
-  onUpdate(value) {
-    globalState.config = globalState.config.copyWith(overrideDns: value);
-  }
-}
-
-@riverpod
-class OverrideTestUrl extends _$OverrideTestUrl with AutoDisposeNotifierMixin {
-  @override
-  bool build() {
-    return globalState.config.overrideTestUrl;
-  }
-
-  @override
-  onUpdate(value) {
-    globalState.config = globalState.config.copyWith(overrideTestUrl: value);
-  }
-}
-
-@riverpod
 class OverrideNtp extends _$OverrideNtp with AutoDisposeNotifierMixin {
   @override
   bool build() {
@@ -295,6 +269,26 @@ class ProxiesStyleSetting extends _$ProxiesStyleSetting
 }
 
 @riverpod
+class TrafficStatsSetting extends _$TrafficStatsSetting
+    with AutoDisposeNotifierMixin {
+  @override
+  TrafficStatsProps build() {
+    return globalState.config.trafficStatsProps;
+  }
+
+  @override
+  onUpdate(value) {
+    globalState.config = globalState.config.copyWith(trafficStatsProps: value);
+  }
+
+  void updateState(
+    TrafficStatsProps Function(TrafficStatsProps state) builder,
+  ) {
+    state = builder(state);
+  }
+}
+
+@riverpod
 class ScriptState extends _$ScriptState with AutoDisposeNotifierMixin {
   @override
   ScriptProps build() {
@@ -317,18 +311,13 @@ class ScriptState extends _$ScriptState with AutoDisposeNotifierMixin {
     state = state.copyWith(scripts: list);
   }
 
-  void setId(String id) {
-    state = state.copyWith(currentId: state.currentId != id ? id : null);
-  }
-
   void del(String id) {
     final list = List<Script>.from(state.scripts);
     final index = list.indexWhere((item) => item.label == id);
     if (index != -1) {
       unawaited(list.removeAt(index).deleteContent());
     }
-    final nextId = id == state.currentId ? null : state.currentId;
-    state = state.copyWith(scripts: list, currentId: nextId);
+    state = state.copyWith(scripts: list);
   }
 
   bool isExits(String label) {
@@ -351,7 +340,24 @@ class ScriptState extends _$ScriptState with AutoDisposeNotifierMixin {
     final url = script.url;
     if (url == null || url.isEmpty) return;
     final res = await request.getTextResponseForUrl(url);
-    setScript(await script.writeContent(res.data));
+    setScript(await script.writeContent(res.data as String));
+  }
+}
+
+@riverpod
+class ManagedSetting extends _$ManagedSetting with AutoDisposeNotifierMixin {
+  @override
+  ManagedProps build() {
+    return globalState.config.managedProps;
+  }
+
+  @override
+  onUpdate(value) {
+    globalState.config = globalState.config.copyWith(managedProps: value);
+  }
+
+  void updateState(ManagedProps Function(ManagedProps state) builder) {
+    state = builder(state);
   }
 }
 
@@ -374,6 +380,37 @@ class PatchClashConfig extends _$PatchClashConfig
   @override
   onUpdate(value) {
     globalState.config = globalState.config.copyWith(patchClashConfig: value);
+  }
+}
+
+@riverpod
+class Nodes extends _$Nodes with AutoDisposeNotifierMixin {
+  @override
+  List<ProxyNode> build() {
+    return globalState.config.nodes;
+  }
+
+  @override
+  onUpdate(value) {
+    globalState.config = globalState.config.copyWith(nodes: value);
+  }
+
+  void add(List<ProxyNode> nodes) {
+    state = [...state, ...nodes];
+  }
+
+  void setNode(ProxyNode node) {
+    state = [
+      for (final item in state)
+        if (item.id == node.id) node else item,
+    ];
+  }
+
+  void remove(String id) {
+    state = [
+      for (final item in state)
+        if (item.id != id) item,
+    ];
   }
 }
 

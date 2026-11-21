@@ -3,40 +3,43 @@
 </h4>
 
 <h1 align="center">⚡ Bettbox</h1>
+
+> این فورک برای استفادهٔ شخصی است. معرفی و سازگاری زیر مربوط به پروژهٔ اصلی Bettbox است. [شرایط استفاده و دریافت فورک](../README.md) · [راهنمای مهاجرت از نسخه‌های قدیمی (چینی)](Fork-Features.md#从旧版升级).
 <p align="center">
-  <strong>Another Better Mihomo Client</strong>
+  <strong>Another Better Network Toolbox</strong>
 </p>
 
-**برنامه Bettbox یک ابزار چندسکویی برای تفکیک ترافیک شبکه و عیب‌یابی DNS است که بر پایه هسته قدرتمند Mihomo به صورت عمیق توسعه یافته است. ما بر تجربه کاربری بی‌نظیر، امنیت و حریم خصوصی سخت‌گیرانه و بهینه‌سازی دقیق قابلیت‌ها تمرکز داریم و متعهد به ارائه تجربه کلاینت مدرن‌تر، سبک‌تر و روان‌تر هستیم که با کمترین مصرف منابع، عملکردی پایدار و طولانی‌مدت را ارائه دهد.**
+**Bettbox یک ابزار چندسکویی برای تفکیک ترافیک شبکه و عیب‌یابی DNS است که بر پایه هسته Mihomo ساخته شده است. تمرکز آن بر تجربه کاربری عالی است؛ برای اجرای پایدار و طولانی‌مدت طراحی شده، سبک و کم‌مصرف است و هیچ داده‌ای جمع‌آوری نمی‌کند.**
 
-با پایبندی به مفهوم طراحی **"Better Experience, Out of the box" (تجربه برتر، آماده استفاده)**، Bettbox پتانسیل‌های سیستم و سخت‌افزار را عمیقاً به کار می‌گیرد تا فریم‌ریت بالا و انیمیشن‌های روان در پیش‌زمینه را همراه با مصرف کم انرژی و اشغال حداقلی منابع در پس‌زمینه محقق کند. این پروژه پیشگام در گذراندن بازبینی دستی و منبع امنیتی بنیاد متن‌باز SignPath است و نسخه ویندوز به گواهی امضای دیجیتال معتبر OV مجهز شده است.
+نام Bettbox مخفف Better Network Toolbox است. این پروژه بازبینی دستی امنیتی بنیاد SignPath را گذرانده و نسخه ویندوز با گواهی امضای کد OV امضا شده است.
 
 [![Latest Release](https://img.shields.io/github/v/release/appshubcc/Bettbox?style=for-the-badge&logo=github&color=238636&label=Release)](https://github.com/appshubcc/Bettbox/releases/latest) [![Core](https://img.shields.io/github/v/release/MetaCubeX/mihomo?style=for-the-badge&logo=go&logoColor=white&color=8A2BE2&label=Mihomo)](https://github.com/MetaCubeX/mihomo/releases/latest)
 
 <p align="center">
-  <img src="../snapshots/home.png" alt="Bettbox" />
+  <img src="../snapshots/home.jpg" alt="Bettbox" />
 </p>
 
 ---
 ### ✈️ جامعه تلگرام
 
-[![Telegram Group](https://img.shields.io/badge/Bettbox-Chat-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/appshub_chat) [![Telegram Channel](https://img.shields.io/badge/Bettbox-Channel-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/appshub_channel)
+[![Telegram Group](https://img.shields.io/badge/Bettbox-Chat-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/bettbox_chat) [![Telegram Channel](https://img.shields.io/badge/Bettbox-Channel-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/appshub_channel)
 
 ---
 ## 🚀 ویژگی‌های اصلی
 
-* **آماده استفاده**: مدیریت کامل دسترسی‌ها و تجربه روان TUN / VPN با تنظیمات بهینه‌سازی‌شده پیش‌فرض، بلافاصله پس از نصب در بهترین وضعیت عملکردی قرار دارد.
-* **سبک و روان**: بهینه‌سازی عمیق سیستم و خط لوله رندرینگ، انیمیشن‌های با نرخ‌فریم بالا، مصرف بسیار کم باتری در موبایل و حداقل اشغال منابع در دسکتاپ.
-* **امن و قابل اعتماد**: هسته همگام با شاخه اصلی Mihomo، پیروی از اصل حداقل دسترسی در تمام پلتفرم‌ها، گذراندن ممیزی امنیتی SignPath و مجهز به امضای دیجیتال رسمی OV برای ویندوز.
-* **پایدار و مقاوم در برابر خطا**: بهینه‌سازی سناریوهای مرزی در شرایط شبکه چندسکویی پیچیده، سیستم بررسی دوگانه پیکربندی و مکانیزم‌های حفاظتی برای پایداری در سطح سازمانی.
-* **بهینه‌سازی معماری**: پشتیبانی عمیق نیتیو از پردازنده‌های ARM64 در دسکتاپ به همراه سطح‌بندی عملکرد سخت‌افزار، و نگهداری مداوم نسخه‌های Compatible برای دستگاه‌های قدیمی‌تر.
-* **دیمن هوشمند**: شروع/توقف هوشمند و نامحسوس در چند پلتفرم، سیاست‌های خواب کم‌مصرف در موبایل، غیرفعال‌سازی سریع QUIC با یک کلیک و کنترل‌های سریع در منوی تسک‌بار.
-* **تنظیمات بصری**: رابط کاربری غنی و عمیق برای تنظیم پارامترها با اعمال لحظه‌ای تغییرات و رهایی از تغییرات دستی خسته‌کننده فایل‌های پیکربندی.
-* **ویجت‌های صفحه اصلی**: مجموعه‌ای از ویجت‌های خوش‌ساخت برای نظارت آنی بر سرعت شبکه، اتصالات فعال و وضعیت کلی در صفحه اصلی.
-* **شخصی‌سازی**: تم‌های رنگی غنی، آیکون‌ها و عنوان‌های سفارشی، همراه با ۳۰ انیمیشن جذاب برای تست سرعت.
-* **اکوسیستم و توسعه**: پشتیبانی از تطبیق بصری رابط کاربری برای اسکریپت‌های بازنویسی JS و ویرایشگر پیشرفته و پرسرعت Code-forge.
-* **بدون ریسک حریم خصوصی**: کد کاملاً شفاف و متن‌باز، بدون تبلیغات، فرآیندهای خودکار CI/CD تحت بازبینی همه‌جانبه، و عدم جمع‌آوری داده‌های پس‌زمینه.
-* **جامعه‌محور**: ما بازخوردهای جامعه کاربری را به دقت بررسی می‌کنیم، به گزارش‌های باکیفیت به سرعت پاسخ می‌دهیم و همراه با کاربران فعال رشد می‌کنیم.
+* **آماده استفاده**: راهنمای مجوزها، TUN و حالت تفکیک مدیریت‌شده از پیش آماده شده‌اند و پس از نصب بلافاصله قابل استفاده‌اند.
+* **سبک و روان**: مصرف انرژی کم در موبایل، مصرف پس‌زمینه پایین در دسکتاپ و انیمیشن‌های روان رابط کاربری.
+* **امن و قابل اعتماد**: هسته همگام با شاخه اصلی Mihomo است و در هر پلتفرم فقط حداقل مجوزهای لازم درخواست می‌شود.
+* **پایدار و مقاوم در برابر خطا**: سناریوهای مرزی در شرایط سخت شبکه در پلتفرم‌های مختلف بهینه شده‌اند و اعتبارسنجی دوگانه پیکربندی برای اجرای طولانی‌مدت مناسب است.
+* **بهینه‌سازی معماری**: پشتیبانی بومی از ARM64 در دسکتاپ و نگهداری مداوم نسخه Compatible برای دستگاه‌های قدیمی.
+* **دیمن هوشمند**: شروع/توقف هوشمند در چند پلتفرم، سازگاری با حالت خواب Doze در موبایل و کنترل سریع از نوار سیستم در دسکتاپ.
+* **تنظیمات بصری**: تنظیم بصری پارامترها با اعمال فوری تغییرات؛ حتی کاربران تازه‌کار نیازی به ویرایش دستی پیکربندی ندارند.
+* **ویجت‌های صفحه اصلی**: چند ویجت داخلی خوش‌ساخت که از صفحه اصلی وضعیت کلی عملکرد را نشان می‌دهند.
+* **جعبه‌ابزار همه‌کاره**: ابزارهای حرفه‌ای داخلی برای عیب‌یابی شبکه و تفکیک DNS که وضعیت شبکه را یک‌نگاه قابل مشاهده می‌کنند.
+* **شخصی‌سازی**: تم‌های رنگی به سبک Material Design، آیکون‌های سفارشی و انیمیشن‌های تست سرعت.
+* **اکوسیستم و توسعه**: اسکریپت‌های بازنویسی JS خارجی با رابط گرافیکی سازگار می‌شوند و ویرایشگر پرسرعت Code-forge داخلی است.
+* **بدون ریسک حریم خصوصی**: کد متن‌باز و بدون تبلیغات، CI/CD کاملاً خودکار و قابل بازرسی عمومی، بدون هیچ جمع‌آوری داده در پس‌زمینه.
+* **جامعه‌محور**: بازخورد جامعه را جدی می‌گیریم، همراه با کاربران فعال رشد می‌کنیم و به Issueهای باکیفیت سریع پاسخ می‌دهیم.
 
 ---
 ## 🛠️ نصب و دانلود
@@ -48,19 +51,19 @@
   * **Linux Kernel 5.4+:** (x64 / arm64)
   * **macOS 12.0+:** (Intel / Apple Silicon)
 * **موبایل و سایرین**:
-  * **Android 8.0+:** (ARMv8 / ARMv7 / x86_64 / Universal)
+  * **Android 7.0+:** (ARMv8 / ARMv7 / x86_64 / Universal)
   * **Android TV:** سازگاری کامل با صفحه نمایش‌های بزرگ، نسخه اختیاری ARMv7 32-bit
   * **سیستم‌عامل HarmonyOS NEXT:** قابل استفاده پایدار همراه با برنامه [[ZhuoYiTong]](https://harmonyos.cool/android-app)
 
 **بسته‌های نگهداری‌شده جامعه لینوکس:**<br>
 * **ArchLinux:** <code>yay -S bettbox-bin</code> یا <code>paru -S bettbox-bin</code> (نگهداری توسط [lyj404](https://github.com/lyj404/bettbox-aur))<br>
-* **AMD64=v1 (سازگار با سخت‌افزارهای قدیمی):** <code>yay -S bettbox-compatible-bin</code> یا <code>paru -S bettbox-compatible-bin</code> (نگهداری توسط [VillagerTom](https://github.com/VillagerTom))
+* **AMD64=v1 (نسخه سازگار):** <code>yay -S bettbox-compatible-bin</code> یا <code>paru -S bettbox-compatible-bin</code> (نگهداری توسط [VillagerTom](https://github.com/VillagerTom))
 
 ---
 ## 💡 سوالات متداول
 
 1. **محیط نصب و نسخه‌های سازگار**:
-   - در دستگاه‌های اندروید، مطمئن شوید دسترسی کافی برای اجرای پس‌زمینه داده شده است؛ سیستم‌عامل باید حداقل Android 8.0+ باشد.
+   - در دستگاه‌های اندروید، مطمئن شوید دسترسی کافی برای اجرای پس‌زمینه داده شده است؛ سیستم‌عامل باید حداقل Android 7.0+ باشد.
    - برای سخت‌افزارهای قدیمی دسکتاپ، لطفاً نسخه Compatible مناسب با مجموعه دستورات پردازنده (CPU) را انتخاب کنید.
    - امنیت: فرآیند Bettbox کاملاً متن‌باز و شفاف است؛ کد برنامه ممیزی امنیتی معتبر SignPath را گذرانده و هیچ داده‌ای جمع‌آوری نمی‌شود.
 
@@ -86,7 +89,7 @@
 نمونه ساخت بر روی پلتفرم ویندوز:
 
 * نیازمندی‌های سیستم: ویندوز ۱۰ به بالا
-* پیش‌نیازها: Git, Visual Studio, Flutter 3.47.x, Golang, Inno Setup, Rust
+* پیش‌نیازها: Git, Visual Studio, Flutter 3.50.1, Golang, Inno Setup, Rust
 ```bash
 * flutter pub get (دریافت وابستگی‌ها)
 * dart .\setup.dart windows --arch amd64 --out core (تنها ساخت هسته Core)
@@ -148,6 +151,19 @@ const Compatible_With_Bettbox = {
 با تشکر از تمام [مشارکت‌کنندگان](https://github.com/appshubcc/Bettbox/graphs/contributors) که در این پروژه همکاری کرده‌اند، و همچنین پروژه‌های متن‌باز زیر به خاطر الهام‌بخشی و مراجع کاربردی:
 
 [Zashboard](https://github.com/Zephyruso/zashboard), [CMFA](https://github.com/MetaCubeX/ClashMetaForAndroid), [Sparkle](https://github.com/xishang0128/sparkle), [SFA](https://github.com/SagerNet/sing-box-for-android), [HUSI](https://github.com/xchacha20-poly1305/husi), [V2rayN](https://github.com/2dust/v2rayN), [Bett-rules](https://github.com/appshubcc/bett-rules)
+
+---
+## 📈 محبوبیت پروژه
+
+<p align="center">
+  <a href="https://www.star-history.com/?repos=appshubcc%2FBettbox&type=timeline&legend=top-left">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=appshubcc/Bettbox&type=date&theme=dark&legend=top-left" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=appshubcc/Bettbox&type=date&legend=top-left" />
+      <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=appshubcc/Bettbox&type=date&legend=top-left" />
+    </picture>
+  </a>
+</p>
 
 ---
 ## 📄 مجوز

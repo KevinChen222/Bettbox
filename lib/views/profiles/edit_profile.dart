@@ -5,18 +5,14 @@ import 'dart:io';
 import 'package:bett_box/clash/clash.dart';
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
-import 'package:bett_box/features/node_import/menu.dart';
-import 'package:bett_box/features/node_import/nodes.dart';
-import 'package:bett_box/features/node_import/view.dart';
-import 'package:bett_box/features/node_import/delete.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:bett_box/pages/editor.dart';
 import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
+import 'package:bett_box/views/profiles/managed_options.dart';
 import 'package:bett_box/widgets/widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:yaml/yaml.dart';
 
 class EditProfileView extends StatefulWidget {
   final Profile profile;
@@ -39,6 +35,7 @@ class EditProfileViewState extends State<EditProfileView> {
   late TextEditingController urlController;
   late TextEditingController autoUpdateDurationController;
   late bool autoUpdate;
+  late bool managed = widget.profile.managed;
   late TextEditingController ageSecretKeyController;
   FocusNode? urlFocusNode;
   bool _obscureAgeSecretKey = true;
@@ -46,13 +43,6 @@ class EditProfileViewState extends State<EditProfileView> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final fileInfoNotifier = ValueNotifier<FileInfo?>(null);
   Uint8List? fileData;
-  bool _hasUnretainedEdits = false;
-  late final _addedNodes = [
-    for (final node in profile.addedNodes) Map<String, dynamic>.from(node),
-  ];
-  late final _addedProviders = Map<String, Map<String, dynamic>>.from(
-    profile.addedProviders,
-  );
 
   Profile get profile => widget.profile;
 
@@ -73,7 +63,9 @@ class EditProfileViewState extends State<EditProfileView> {
       unawaited(focusNode.requestFocusWhenIdle());
     }
     appPath.getProfilePath(widget.profile.id).then((path) async {
-      fileInfoNotifier.value = await _getFileInfo(path);
+      final fileInfo = await _getFileInfo(path);
+      if (!mounted) return;
+      fileInfoNotifier.value = fileInfo;
     });
   }
 
@@ -84,6 +76,7 @@ class EditProfileViewState extends State<EditProfileView> {
     autoUpdateDurationController.dispose();
     ageSecretKeyController.dispose();
     urlFocusNode?.dispose();
+    fileInfoNotifier.dispose();
     super.dispose();
   }
 
@@ -99,11 +92,10 @@ class EditProfileViewState extends State<EditProfileView> {
           ? null
           : ageSecretKeyController.text.trim(),
       autoUpdate: autoUpdate,
+      managed: managed,
       autoUpdateDuration: Duration(
         minutes: int.parse(autoUpdateDurationController.text),
       ),
-      addedNodes: List.from(_addedNodes),
-      addedProviders: Map.from(_addedProviders),
     );
     if (widget.isNew) {
       final ref = appController.ref;
@@ -126,9 +118,7 @@ class EditProfileViewState extends State<EditProfileView> {
     } else {
       final hasUpdate = widget.profile.url != profile.url;
       if (fileData != null) {
-        if (profile.type == ProfileType.url &&
-            autoUpdate &&
-            _hasUnretainedEdits) {
+        if (profile.type == ProfileType.url && autoUpdate) {
           final res = await globalState.showMessage(
             title: appLocalizations.tip,
             message: TextSpan(text: appLocalizations.profileHasUpdate),
@@ -138,24 +128,6 @@ class EditProfileViewState extends State<EditProfileView> {
           }
         }
         try {
-          if (_addedNodes.isNotEmpty || _addedProviders.isNotEmpty) {
-            final config = loadYaml(utf8.decode(fileData!)) as Map;
-            profile = profile.copyWith(
-              addedNodes: [
-                for (final node in config['proxies'] as List? ?? [])
-                  if (_addedNodes.any((added) => added['name'] == node['name']))
-                    Map<String, dynamic>.from(node as Map),
-              ],
-              addedProviders: {
-                for (final entry
-                    in (config['proxy-providers'] as Map? ?? {}).entries)
-                  if (_addedProviders.containsKey(entry.key))
-                    entry.key as String: Map<String, dynamic>.from(
-                      entry.value as Map,
-                    ),
-              },
-            );
-          }
           final updatedProfile = await profile.saveFile(fileData!);
           appController.setProfileAndAutoApply(updatedProfile);
         } catch (e) {
@@ -226,10 +198,12 @@ class EditProfileViewState extends State<EditProfileView> {
       return patchedMessage.isEmpty ? '' : originalMessage;
     }, silence: false);
     if (message?.isNotEmpty == true) {
-      globalState.showMessage(
-        title: appLocalizations.tip,
-        message: TextSpan(text: message),
-        cancelable: false,
+      unawaited(
+        globalState.showMessage(
+          title: appLocalizations.tip,
+          message: TextSpan(text: message),
+          cancelable: false,
+        ),
       );
       return;
     }
@@ -263,7 +237,7 @@ class EditProfileViewState extends State<EditProfileView> {
           message: TextSpan(text: appLocalizations.hasCacheChange),
         );
         if (res == true && context.mounted) {
-          _handleSaveEdit(context, content);
+          unawaited(_handleSaveEdit(context, content));
         } else {
           return true;
         }
@@ -274,9 +248,9 @@ class EditProfileViewState extends State<EditProfileView> {
     if (data == null) {
       return;
     }
-    if (data != rawText) _hasUnretainedEdits = true;
     rawText = data;
     fileData = Uint8List.fromList(utf8.encode(data));
+    if (!mounted) return;
     fileInfoNotifier.value = fileInfoNotifier.value?.copyWith(
       size: fileData?.length ?? 0,
       lastModified: DateTime.now(),
@@ -290,89 +264,34 @@ class EditProfileViewState extends State<EditProfileView> {
     if (platformFile == null) return;
     final bytes = await platformFile.readAsBytes();
     if (bytes.isEmpty) return;
-    _hasUnretainedEdits = true;
     fileData = bytes;
-    rawText = utf8.decode(bytes);
+    if (!mounted) return;
     fileInfoNotifier.value = fileInfoNotifier.value?.copyWith(
       size: fileData?.length ?? 0,
       lastModified: DateTime.now(),
     );
   }
 
-  Future<void> _addNodes(BuildContext buttonContext) async {
-    try {
-      var content = fileData == null ? rawText : utf8.decode(fileData!);
-      if (content == null) {
-        final path = await appPath.getProfilePath(profile.id);
-        content = await File(path).readAsString();
-      }
-      final config = loadYaml(content);
-      if (config is! Map) throw const FormatException('Invalid YAML profile');
-      if (!buttonContext.mounted) return;
-      final method = await showNodeImportMenu(buttonContext);
-      if (method == null || !buttonContext.mounted) return;
-      String updated;
-      String notice;
-      List<Map<String, dynamic>> nodesToRetain = [];
-      Map<String, Map<String, dynamic>> providersToRetain = {};
-      if (method == NodeImportMethod.subscription) {
-        final subscription = await showSubscriptionImport(
-          buttonContext,
-          provider: true,
+  Future<void> _exportProfileFile() async {
+    final res = await globalState.appController.safeRun<bool>(
+      () async {
+        final bytes = fileData ?? await (await profile.getFile()).readAsBytes();
+        final rawName = (profile.label ?? profile.id).trim();
+        final fileName = (rawName.endsWith('.yaml') || rawName.endsWith('.yml'))
+            ? rawName
+            : '$rawName.yaml';
+        final value = await picker.saveFile(
+          fileName,
+          bytes,
+          allowedExtensions: ['yaml', 'yml'],
         );
-        if (subscription == null || !mounted) return;
-        final providers = config['proxy-providers'] as Map? ?? {};
-        final name = allocateSubscriptionName(subscription.name, {
-          ...nodeNames(config),
-          ...providers.keys.cast<String>(),
-        });
-        final provider = subscriptionProvider(
-          name,
-          subscription.url,
-          providers,
-        );
-        updated = addProviderToProfile(content, name, provider);
-        providersToRetain = {name: provider};
-        notice = nodeImportText(
-          context,
-          '已添加订阅 $name，保存后生效',
-          'Subscription $name added. Save to apply.',
-        );
-      } else {
-        final imported = await importExternalNodes(
-          buttonContext,
-          method: method,
-          reservedNames: nodeNames(config),
-        );
-        if (imported == null || !mounted) return;
-        updated = prependNodesToProfile(content, imported.nodes);
-        nodesToRetain = imported.nodes;
-        notice = nodeImportText(
-          context,
-          '已添加 ${imported.nodes.length} 个节点，保存后生效',
-          '${imported.nodes.length} nodes added. Save to apply.',
-        );
-      }
-      final message = await clashCore.validateConfig(
-        utils.patchValidateConfig(updated),
-        ageSecretKey: ageSecretKeyController.text.trim(),
-      );
-      if (message.isNotEmpty) throw FormatException(message);
-      if (!mounted) return;
-      setState(() {
-        _addedNodes.insertAll(0, nodesToRetain);
-        _addedProviders.addAll(providersToRetain);
-        rawText = updated;
-        fileData = Uint8List.fromList(utf8.encode(updated));
-        fileInfoNotifier.value = fileInfoNotifier.value?.copyWith(
-          size: fileData!.length,
-          lastModified: DateTime.now(),
-        );
-      });
-      context.showSnackBar(notice);
-    } catch (error) {
-      if (mounted) context.showSnackBar(error.toString());
-    }
+        return value != null;
+      },
+      needLoading: true,
+      title: appLocalizations.tip,
+    );
+    if (res != true || !mounted) return;
+    unawaited(context.showNotifier(appLocalizations.exportSuccess));
   }
 
   Future<void> _handleBack() async {
@@ -381,88 +300,11 @@ class EditProfileViewState extends State<EditProfileView> {
       message: TextSpan(text: appLocalizations.fileIsUpdate),
     );
     if (res == true) {
-      _handleConfirm();
+      unawaited(_handleConfirm());
     } else {
       if (mounted) {
         Navigator.of(context).pop();
       }
-    }
-  }
-
-  Future<void> _deleteNodes() async {
-    try {
-      var content = fileData == null ? rawText : utf8.decode(fileData!);
-      content ??= await File(
-        await appPath.getProfilePath(profile.id),
-      ).readAsString();
-      final config = loadYaml(content) as Map;
-      if (!mounted) return;
-      final selected = await selectNodesToDelete(
-        context,
-        [
-          for (final node in config['proxies'] as List? ?? [])
-            Map<String, dynamic>.from(node as Map),
-        ],
-        subscriptions: {
-          for (final name in (config['proxy-providers'] as Map? ?? {}).keys)
-            name as String: const [],
-        },
-        referenceMessage: nodeImportText(
-          context,
-          '同时移除策略组的订阅/节点引用及相关前置引用；没有其他成员的策略组保留 DIRECT。保存后生效。',
-          'Provider, group member and dialer references will also be removed. Empty groups retain DIRECT. Save to apply.',
-        ),
-      );
-      if (selected == null || !mounted) return;
-      var updated = content;
-      if (selected.subscriptions.isNotEmpty) {
-        updated = removeProvidersFromProfile(updated, selected.subscriptions);
-      }
-      if (selected.nodes.isNotEmpty) {
-        updated = removeNodesFromProfile(updated, selected.nodes);
-      }
-      final message = await clashCore.validateConfig(
-        utils.patchValidateConfig(updated),
-        ageSecretKey: ageSecretKeyController.text.trim(),
-      );
-      if (message.isNotEmpty) throw FormatException(message);
-      if (!mounted) return;
-      setState(() {
-        if (selected.nodes.any(
-              (name) => !_addedNodes.any((node) => node['name'] == name),
-            ) ||
-            selected.subscriptions.any(
-              (name) => !_addedProviders.containsKey(name),
-            )) {
-          _hasUnretainedEdits = true;
-        }
-        _addedNodes.removeWhere(
-          (node) => selected.nodes.contains(node['name']),
-        );
-        for (final node in _addedNodes) {
-          if (selected.nodes.contains(node['dialer-proxy'])) {
-            node.remove('dialer-proxy');
-          }
-        }
-        _addedProviders.removeWhere(
-          (name, _) => selected.subscriptions.contains(name),
-        );
-        rawText = updated;
-        fileData = Uint8List.fromList(utf8.encode(updated));
-        fileInfoNotifier.value = fileInfoNotifier.value?.copyWith(
-          size: fileData!.length,
-          lastModified: DateTime.now(),
-        );
-      });
-      context.showSnackBar(
-        nodeImportText(
-          context,
-          '已删除 ${selected.subscriptions.length} 个订阅、${selected.nodes.length} 个节点，保存后生效',
-          '${selected.subscriptions.length} subscriptions and ${selected.nodes.length} nodes deleted. Save to apply.',
-        ),
-      );
-    } catch (error) {
-      if (mounted) context.showSnackBar(error.toString());
     }
   }
 
@@ -524,7 +366,7 @@ class EditProfileViewState extends State<EditProfileView> {
               labelText: appLocalizations.ageSecretKeyOptional,
               hintText: 'AGE-SECRET-KEY-...',
               suffixIcon: IconButton(
-                icon: Icon(
+                icon: AppIcon(
                   _obscureAgeSecretKey
                       ? Icons.visibility
                       : Icons.visibility_off,
@@ -585,6 +427,41 @@ class EditProfileViewState extends State<EditProfileView> {
             ),
           ),
       ],
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: CommonCard(
+          type: CommonCardType.filled,
+          radius: 16,
+          child: ListItem.switchItem(
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(child: Text(appLocalizations.managedMode)),
+                const SizedBox(width: 2),
+                IconButton(
+                  onPressed: () => showManagedOptions(context),
+                  tooltip: appLocalizations.managedOptions,
+                  iconSize: 18,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 30,
+                    height: 30,
+                  ),
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const AppIcon(Icons.settings_outlined),
+                ),
+              ],
+            ),
+            subtitle: Text(appLocalizations.managedModeDesc),
+            delegate: SwitchDelegate<bool>(
+              value: managed,
+              onChanged: (value) => setState(() => managed = value),
+            ),
+          ),
+        ),
+      ),
       if (!widget.isNew)
         ValueListenableBuilder<FileInfo?>(
           valueListenable: fileInfoNotifier,
@@ -610,14 +487,19 @@ class EditProfileViewState extends State<EditProfileView> {
                                 spacing: 12,
                                 children: [
                                   CommonChip(
-                                    avatar: const Icon(Icons.edit),
+                                    avatar: const AppIcon(Icons.edit),
                                     label: appLocalizations.edit,
                                     onPressed: _editProfileFile,
                                   ),
                                   CommonChip(
-                                    avatar: const Icon(Icons.upload),
+                                    avatar: const AppIcon(Icons.upload),
                                     label: appLocalizations.upload,
                                     onPressed: _uploadProfileFile,
+                                  ),
+                                  CommonChip(
+                                    avatar: const AppIcon(Icons.download),
+                                    label: appLocalizations.exportFile,
+                                    onPressed: _exportProfileFile,
                                   ),
                                 ],
                               ),
@@ -641,73 +523,33 @@ class EditProfileViewState extends State<EditProfileView> {
         _handleBack();
         return false;
       },
-      child: Stack(
-        children: [
-          FloatLayout(
-            floatingWidget: FloatWrapper(
-              child: FloatingActionButton.extended(
-                heroTag: null,
-                onPressed: _handleConfirm,
-                label: Text(appLocalizations.save),
-                icon: const Icon(Icons.save),
+      child: FloatLayout(
+        floatingWidget: FloatWrapper(
+          child: FloatingActionButton.extended(
+            heroTag: null,
+            onPressed: _handleConfirm,
+            label: Text(appLocalizations.save),
+            icon: const AppIcon(Icons.save),
+          ),
+        ),
+        child: Form(
+          key: _formKey,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: ListView.separated(
+              padding: kMaterialListPadding.copyWith(
+                bottom: 72 + MediaQuery.viewPaddingOf(context).bottom,
               ),
-            ),
-            child: Form(
-              key: _formKey,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: ListView.separated(
-                  padding: kMaterialListPadding.copyWith(
-                    bottom: 144 + MediaQuery.viewPaddingOf(context).bottom,
-                  ),
-                  itemBuilder: (_, index) {
-                    return items[index];
-                  },
-                  separatorBuilder: (_, _) {
-                    return const SizedBox(height: 14);
-                  },
-                  itemCount: items.length,
-                ),
-              ),
+              itemBuilder: (_, index) {
+                return items[index];
+              },
+              separatorBuilder: (_, _) {
+                return const SizedBox(height: 14);
+              },
+              itemCount: items.length,
             ),
           ),
-          if (!widget.isNew)
-            Positioned(
-              left: 0,
-              bottom: 0,
-              child: SafeArea(
-                top: false,
-                right: false,
-                child: FloatWrapper(
-                  child: Builder(
-                    builder: (buttonContext) => Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        FloatingActionButton.extended(
-                          heroTag: null,
-                          onPressed: _deleteNodes,
-                          label: Text(
-                            nodeImportText(context, '删除节点', 'Delete nodes'),
-                          ),
-                          icon: const Icon(Icons.delete_outline),
-                        ),
-                        const SizedBox(height: 8),
-                        FloatingActionButton.extended(
-                          heroTag: null,
-                          onPressed: () => _addNodes(buttonContext),
-                          label: Text(
-                            nodeImportText(context, '添加节点', 'Add nodes'),
-                          ),
-                          icon: const Icon(Icons.add),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -764,6 +606,7 @@ class _AgeKeyGeneratorDialogState extends State<_AgeKeyGeneratorDialog> {
         final result = await clashCore.convertAgeSecretKeyToPublicKey(
           privateKey,
         );
+        if (!mounted) return;
         if (result.isSuccess &&
             result.data != null &&
             result.data!.isNotEmpty) {
@@ -777,13 +620,16 @@ class _AgeKeyGeneratorDialogState extends State<_AgeKeyGeneratorDialog> {
           });
         }
       } catch (e) {
+        if (!mounted) return;
         setState(() {
           _helperText = appLocalizations.agePrivateKeyRequired;
         });
       } finally {
-        setState(() {
-          _isGenerating = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isGenerating = false;
+          });
+        }
       }
     } else {
       setState(() {
@@ -792,6 +638,7 @@ class _AgeKeyGeneratorDialogState extends State<_AgeKeyGeneratorDialog> {
 
       try {
         final keyPair = await clashCore.generateAgeKeyPair();
+        if (!mounted) return;
         final secKey = keyPair['secret-key'] ?? '';
         final pubKey = keyPair['public-key'] ?? '';
 
@@ -803,13 +650,16 @@ class _AgeKeyGeneratorDialogState extends State<_AgeKeyGeneratorDialog> {
           });
         }
       } catch (e) {
+        if (!mounted) return;
         setState(() {
           _helperText = e.toString();
         });
       } finally {
-        setState(() {
-          _isGenerating = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isGenerating = false;
+          });
+        }
       }
     }
   }
@@ -818,7 +668,7 @@ class _AgeKeyGeneratorDialogState extends State<_AgeKeyGeneratorDialog> {
     if (text.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: text));
     if (mounted) {
-      context.showNotifier(appLocalizations.copySuccess);
+      unawaited(context.showNotifier(appLocalizations.copySuccess));
     }
   }
 
@@ -847,7 +697,7 @@ class _AgeKeyGeneratorDialogState extends State<_AgeKeyGeneratorDialog> {
               floatingLabelBehavior: FloatingLabelBehavior.always,
               labelText: appLocalizations.agePrivateKeyLabel,
               suffixIcon: IconButton(
-                icon: const Icon(Icons.copy),
+                icon: const AppIcon(Icons.copy),
                 onPressed: () => _copyToClipboard(_privateKeyController.text),
               ),
             ),
@@ -874,7 +724,7 @@ class _AgeKeyGeneratorDialogState extends State<_AgeKeyGeneratorDialog> {
                         ? TextStyle(color: context.colorScheme.primary)
                         : null),
               suffixIcon: IconButton(
-                icon: const Icon(Icons.copy),
+                icon: const AppIcon(Icons.copy),
                 onPressed: () => _copyToClipboard(_publicKeyController.text),
               ),
             ),

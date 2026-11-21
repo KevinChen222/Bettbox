@@ -1,5 +1,6 @@
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
+
 import 'dart:async';
 
 import 'package:bett_box/models/models.dart';
@@ -17,8 +18,9 @@ import 'text.dart';
 
 typedef OnKeywordsUpdateCallback = void Function(List<String> keywords);
 
-typedef AppBarSearchStateBuilder =
-    AppBarSearchState? Function(AppBarSearchState? state);
+typedef AppBarSearchStateBuilder = AppBarSearchState? Function(
+  AppBarSearchState? state,
+);
 
 class CommonScaffold extends StatefulWidget {
   final AppBar? appBar;
@@ -34,6 +36,7 @@ class CommonScaffold extends StatefulWidget {
   final AppBarSearchState? searchState;
   final OnKeywordsUpdateCallback? onKeywordsUpdate;
   final bool scrollEdgeFade;
+  final VoidCallback? onAppBarDoubleTap;
 
   const CommonScaffold({
     super.key,
@@ -50,6 +53,7 @@ class CommonScaffold extends StatefulWidget {
     this.floatingActionButton,
     this.onKeywordsUpdate,
     this.scrollEdgeFade = true,
+    this.onAppBarDoubleTap,
   });
 
   @override
@@ -165,6 +169,7 @@ class CommonScaffoldState extends State<CommonScaffold> {
     _appBarState.dispose();
     _textController.dispose();
     _floatingActionButton.dispose();
+    _keywordsNotifier.dispose();
     super.dispose();
   }
 
@@ -187,14 +192,14 @@ class CommonScaffoldState extends State<CommonScaffold> {
     if (_isEdit) {
       return IconButton(
         onPressed: _appBarState.value.editState?.onExit,
-        icon: const Icon(Icons.close),
+        icon: Icon(context.resolveIcon(Icons.close)),
         tooltip: appLocalizations.cancel,
       );
     }
     if (_isSearch) {
       return IconButton(
         onPressed: _handleExitSearching,
-        icon: const Icon(Icons.arrow_back),
+        icon: Icon(context.resolveIcon(Icons.arrow_back)),
         tooltip: appLocalizations.back,
       );
     }
@@ -227,22 +232,22 @@ class CommonScaffoldState extends State<CommonScaffold> {
 
   List<Widget> _buildActions(bool hasSearch, List<Widget> actions) {
     if (_isSearch) {
-      return genActions([
+      return genActions(context, [
         IconButton(
           onPressed: _handleClear,
-          icon: const Icon(Icons.close),
+          icon: Icon(context.resolveIcon(Icons.close)),
           tooltip: appLocalizations.clear,
         ),
       ]);
     }
-    return genActions([
+    return genActions(context, [
       if (hasSearch)
         IconButton(
           onPressed: () {
             _updateSearchState((state) => state?.copyWith(query: ''));
             unawaited(_searchFocusNode.requestFocusWhenIdle());
           },
-          icon: const Icon(Icons.search),
+          icon: Icon(context.resolveIcon(Icons.search)),
           tooltip: appLocalizations.search,
         ),
       ...actions,
@@ -295,6 +300,12 @@ class CommonScaffoldState extends State<CommonScaffold> {
                     AppBar(
                       centerTitle: widget.centerTitle ?? false,
                       leading: _buildLeading(),
+                      flexibleSpace: widget.onAppBarDoubleTap != null
+                          ? GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onDoubleTap: widget.onAppBarDoubleTap,
+                            )
+                          : null,
                       title: _buildTitle(state.searchState),
                       actions: _buildActions(
                         state.searchState != null,
@@ -380,7 +391,7 @@ class CommonScaffoldState extends State<CommonScaffold> {
             backgroundColor:
                 widget.backgroundColor ??
                 (isMobileView
-                    ? context.colorScheme.surfaceContainer
+                    ? context.colorScheme.pageColor
                     : Colors.transparent),
             floatingActionButton:
                 widget.floatingActionButton ??
@@ -460,7 +471,7 @@ class _ScrollEdgeFadeState extends ConsumerState<_ScrollEdgeFade> {
     final color =
         widget.backgroundColor ??
         (ref.watch(isMobileViewProvider)
-            ? context.colorScheme.surfaceContainer
+            ? context.colorScheme.pageColor
             : null);
     final opaque = color != null && color.a == 1;
     return NotificationListener<ScrollMetricsNotification>(
@@ -530,6 +541,35 @@ class _ScrollEdgeScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(_ScrollEdgeScope oldWidget) => false;
+}
+
+class ScrollEdgeSource extends StatelessWidget {
+  final Widget child;
+
+  const ScrollEdgeSource({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context
+        .getInheritedWidgetOfExactType<_ScrollEdgeScope>()
+        ?.state;
+    if (state == null) return child;
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (notification) => state._handleScroll(
+        notification.metrics,
+        notification.depth,
+        notification.context,
+      ),
+      child: NotificationListener<ScrollUpdateNotification>(
+        onNotification: (notification) => state._handleScroll(
+          notification.metrics,
+          notification.depth,
+          notification.context,
+        ),
+        child: child,
+      ),
+    );
+  }
 }
 
 class ScrollEdgeRise extends StatefulWidget {
@@ -673,10 +713,55 @@ class _RenderEdgeMask extends RenderProxyBox {
   }
 }
 
-List<Widget> genActions(List<Widget> actions, {double? space}) {
+Widget _resolveAction(BuildContext context, Widget action) {
+  final enabled = AppIconScope.of(context);
+  if (action is IconButton) {
+    final icon = action.icon;
+    final selectedIcon = action.selectedIcon;
+    final resolvedIcon = resolveIconWidget(icon, enabled: enabled);
+    if (!identical(icon, resolvedIcon) && resolvedIcon != null) {
+      return IconButton(
+        key: action.key,
+        iconSize: action.iconSize,
+        visualDensity: action.visualDensity,
+        padding: action.padding,
+        alignment: action.alignment,
+        splashRadius: action.splashRadius,
+        color: action.color,
+        focusColor: action.focusColor,
+        hoverColor: action.hoverColor,
+        highlightColor: action.highlightColor,
+        splashColor: action.splashColor,
+        disabledColor: action.disabledColor,
+        onPressed: action.onPressed,
+        mouseCursor: action.mouseCursor,
+        focusNode: action.focusNode,
+        autofocus: action.autofocus,
+        tooltip: action.tooltip,
+        enableFeedback: action.enableFeedback,
+        constraints: action.constraints,
+        style: action.style,
+        isSelected: action.isSelected,
+        selectedIcon: selectedIcon == null
+            ? null
+            : resolveIconWidget(selectedIcon, enabled: enabled),
+        icon: resolvedIcon,
+      );
+    }
+  }
+  return resolveIconWidget(action, enabled: enabled) ?? action;
+}
+
+List<Widget> genActions(
+  BuildContext context,
+  List<Widget> actions, {
+  double? space,
+}) {
   return <Widget>[
-    ...actions.separated(SizedBox(width: space ?? 4)),
-    SizedBox(width: 8),
+    ...actions
+        .map((action) => _resolveAction(context, action))
+        .separated(SizedBox(width: space ?? 4)),
+    const SizedBox(width: 8),
   ];
 }
 

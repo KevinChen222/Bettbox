@@ -8,122 +8,60 @@ import 'package:bett_box/clash/interface.dart';
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
+import 'package:intl/intl.dart';
 import 'package:bett_box/state.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart';
 
 @visibleForTesting
-List<Group> buildGroups(String proxiesRaw, List<ExternalProvider> providers) {
+List<Group> buildGroups(String proxiesRaw) {
   final decoded = json.decode(proxiesRaw);
   if (decoded is! Map) return [];
   final names = (decoded['names'] as List? ?? const []).cast<String>();
   final types = (decoded['types'] as List? ?? const []).cast<String>();
-  final allProxies = <String, dynamic>{
-    for (var i = 0; i < names.length; i++)
-      names[i]: <String, dynamic>{'name': names[i], 'type': types[i]},
+  final rawGroups = (decoded['groups'] as List? ?? const [])
+      .whereType<Map<dynamic, dynamic>>()
+      .toList();
+  final nows = <String, String>{
+    for (final group in rawGroups)
+      if (group['now'] case final String now) group['name'] as String: now,
   };
-  for (final entry in (decoded['groups'] as Map? ?? const {}).entries) {
-    final group = Map<String, dynamic>.from(entry.value as Map);
-    group['all'] = [
-      for (final member in (group['all'] ?? const []) as List)
-        member is int ? names[member] : member,
-    ];
-    allProxies[entry.key as String] = group;
-  }
-  for (final provider in providers) {
-    if (provider.proxies != null) {
-      for (final proxy in provider.proxies!) {
-        if (proxy is Map) {
-          final proxyMap = Map<String, dynamic>.from(proxy);
-          final name = proxyMap['name'];
-          if (name != null) {
-            allProxies[name] = proxyMap;
-            final suffix = '[${provider.name}]';
-            if (!name.endsWith(suffix)) {
-              allProxies['$name$suffix'] = proxyMap;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  final globalProxy = allProxies[UsedProxy.GLOBAL.name];
-  final groupNames = <String>[];
-  final seenGroupNames = <String>{};
-
-  if (globalProxy != null) {
-    groupNames.add(UsedProxy.GLOBAL.name);
-    seenGroupNames.add(UsedProxy.GLOBAL.name);
-
-    final allList = globalProxy['all'] as List?;
-    if (allList != null) {
-      for (final item in allList) {
-        final name = item.toString();
-        final proxy = allProxies[name];
-        if (proxy is Map &&
-            GroupTypeExtension.valueList.contains(proxy['type'])) {
-          if (seenGroupNames.add(name)) {
-            groupNames.add(name);
-          }
-        }
-      }
-    }
-  }
-
-  for (final entry in allProxies.entries) {
-    final proxy = entry.value;
-    if (proxy is Map && GroupTypeExtension.valueList.contains(proxy['type'])) {
-      final name = entry.key;
-      if (seenGroupNames.add(name)) {
-        groupNames.add(name);
-      }
-    }
-  }
-
-  final members = <Object?, Proxy>{};
-  final groups = <Group>[];
-  for (final groupName in groupNames) {
-    final proxyData = allProxies[groupName];
-    if (proxyData is! Map) continue;
-    final all = <Proxy>[];
-    for (final name in (proxyData['all'] ?? const []) as List) {
-      final data = allProxies[name];
-      if (data is! Map) continue;
-      all.add(
-        members[name] ??= Proxy.fromJson(Map<String, dynamic>.from(data)),
-      );
-    }
-    groups.add(
-      Group.fromJson({
-        ...proxyData.cast<String, dynamic>(),
-        'all': const <dynamic>[],
-      }).copyWith(all: all),
-    );
-  }
-  return groups;
+  final members = <int, Proxy>{};
+  return [
+    for (final group in rawGroups)
+      if (GroupTypeExtension.getGroupType(group['type'] as String? ?? '')
+          case final type?)
+        Group(
+          type: type,
+          name: group['name'] as String,
+          now: group['now'] as String?,
+          hidden: group['hidden'] as bool?,
+          testUrl: group['testUrl'] as String?,
+          icon: group['icon'] as String? ?? '',
+          all: [
+            for (final index in (group['all'] as List? ?? const []).cast<int>())
+              if (index >= 0 && index < names.length)
+                members[index] ??= Proxy(
+                  name: names[index],
+                  type: types[index],
+                  now: nows[names[index]],
+                ),
+          ],
+        ),
+  ];
 }
 
 class ClashCore {
   static ClashCore? _instance;
   late ClashHandlerInterface clashInterface;
 
-  ClashCore._internal([ClashHandlerInterface? handler]) {
-    if (handler != null) {
-      clashInterface = handler;
-      return;
-    }
-    if (system.isAndroid) {
-      clashInterface = clashLib!;
-    } else {
-      clashInterface = clashService!;
-    }
-  }
+  ClashCore._internal(this.clashInterface);
 
-  factory ClashCore({ClashHandlerInterface? handler}) {
-    _instance ??= ClashCore._internal(handler);
-    return _instance!;
+  factory ClashCore({@visibleForTesting ClashHandlerInterface? handler}) {
+    return _instance ??= ClashCore._internal(
+      handler ?? (system.isAndroid ? clashLib! : clashService!),
+    );
   }
 
   Future<bool> preload() {
@@ -218,6 +156,27 @@ class ClashCore {
     );
   }
 
+  Future<String> importProfile({
+    required String source,
+    required String output,
+    List<String>? encodings,
+    required String ageSecretKey,
+    required bool validate,
+    SetupParams? setup,
+  }) {
+    return clashInterface.importProfile(
+      json.encode({
+        'source': source,
+        'output': output,
+        'decompress': encodings != null,
+        'encodings': encodings ?? const <String>[],
+        'age-secret-key': ageSecretKey,
+        'validate': validate,
+        'setup': ?setup,
+      }),
+    );
+  }
+
   Future<String> getRuntimeConfig(SetupParams setupParams) async {
     final res = await clashInterface.getRuntimeConfig(setupParams);
     if (res.isError) {
@@ -226,50 +185,112 @@ class ClashCore {
     return res.data?.toString() ?? '';
   }
 
+  Future<({String yaml, String uri})> getProxyConfig(
+    SetupParams setupParams,
+    String name,
+  ) async {
+    final res = await clashInterface.getProxyConfig(setupParams, name);
+    if (res.isError) {
+      throw res.message;
+    }
+    final data = json.decode(res.data as String) as Map<String, Object?>;
+    return (
+      yaml: data['yaml'] as String? ?? '',
+      uri: data['uri'] as String? ?? '',
+    );
+  }
+
+  Future<bool> updateExpandedProvider(
+    Profile profile,
+    String name, {
+    String? content,
+  }) async {
+    final res = await clashInterface.updateExpandedProvider(
+      json.encode({
+        'path': await appPath.getProfilePath(profile.id),
+        'age-secret-key': profile.ageSecretKey ?? '',
+        'providers-path': await appPath.getProvidersDirPath(profile.id),
+        'name': name,
+        'content': ?content,
+      }),
+    );
+    if (res.isError) {
+      throw res.message;
+    }
+    final data = res.data;
+    return data is Map && data['changed'] == true;
+  }
+
   Future<void> exportConfig(
     String id,
     String output, {
     String? ageSecretKey,
+    bool expandProviders = false,
+    bool refresh = false,
   }) async {
     final res = await clashInterface.exportConfig(
       await appPath.getProfilePath(id),
       output,
       ageSecretKey: ageSecretKey,
+      providersPath: expandProviders
+          ? await appPath.getProvidersDirPath(id)
+          : null,
+      refresh: refresh,
     );
     if (res.isError) {
       throw res.message;
     }
   }
 
-  Future<List<Map<String, dynamic>>> importNodes(String data) async {
-    final result = await clashInterface.importNodes(data);
-    if (!result.isSuccess || result.data == null) {
-      throw FormatException(result.message);
+  Future<BundleReport> mergeProfiles({
+    required String output,
+    required List<({String prefix, String path})> members,
+    SetupParams? setup,
+  }) async {
+    final res = await clashInterface.mergeProfiles(
+      json.encode({
+        'output': output,
+        'members': [
+          for (final member in members)
+            {'prefix': member.prefix, 'path': member.path},
+        ],
+        'setup': ?setup,
+      }),
+    );
+    if (res.isError) {
+      throw res.message;
     }
-    return [
-      for (final node in jsonDecode(result.data!) as List)
-        Map<String, dynamic>.from(node as Map),
-    ];
+    return BundleReport.fromJson(
+      json.decode(res.data as String) as Map<String, Object?>,
+    );
+  }
+
+  Future<Map<String, List<String>>> downloadProfile({
+    required String url,
+    required String output,
+    required Map<String, String> headers,
+    String? proxy,
+  }) async {
+    final res = await clashInterface.downloadProfile(
+      json.encode({
+        'url': url,
+        'output': output,
+        'headers': headers,
+        'proxy': ?proxy,
+      }),
+    );
+    if (res.isError) {
+      throw res.message;
+    }
+    final decoded = json.decode(res.data as String) as Map<String, Object?>;
+    return {
+      for (final MapEntry(:key, :value) in decoded.entries)
+        key: (value as List).cast<String>(),
+    };
   }
 
   FutureOr<String> decryptAgeConfig(String data, String ageSecretKey) {
     return clashInterface.decryptAgeConfig(data, ageSecretKey);
-  }
-
-  Future<List<Map<String, dynamic>>> parseProviderNodes(
-    List<int> content,
-    Map<String, dynamic> provider,
-  ) async {
-    final result = await clashInterface.parseProviderNodes(
-      jsonEncode({'content': base64Encode(content), 'provider': provider}),
-    );
-    if (!result.isSuccess || result.data == null) {
-      throw FormatException(result.message);
-    }
-    return [
-      for (final node in jsonDecode(result.data!) as List)
-        Map<String, dynamic>.from(node as Map),
-    ];
   }
 
   Future<String> updateConfig(UpdateParams updateParams) async {
@@ -280,15 +301,10 @@ class ClashCore {
     return await clashInterface.setupConfig(setupParams);
   }
 
-  Future<List<Group>> getProxiesGroups({
-    List<ExternalProvider>? preloadedProviders,
-  }) async {
+  Future<List<Group>> getProxiesGroups() async {
     final proxiesRaw = await clashInterface.getProxies();
     if (proxiesRaw.isEmpty) return [];
-
-    final providers = preloadedProviders ?? await getExternalProviders();
-
-    return Isolate.run<List<Group>>(() => buildGroups(proxiesRaw, providers));
+    return Isolate.run<List<Group>>(() => buildGroups(proxiesRaw));
   }
 
   FutureOr<String> changeProxy(ChangeProxyParams changeProxyParams) async {
@@ -310,14 +326,40 @@ class ClashCore {
     }
     try {
       return await Isolate.run<List<TrackerInfo>>(() {
-        final connectionsData = json.decode(res) as Map;
-        final connectionsRaw = connectionsData['connections'] as List? ?? [];
-        return connectionsRaw.map((e) => TrackerInfo.fromJson(e)).toList();
+        final connectionsRaw = json.decode(res) as List? ?? [];
+        return connectionsRaw
+            .map((e) => TrackerInfo.fromJson(e as Map<String, Object?>))
+            .toList();
       });
     } catch (e) {
       commonPrint.warn('Failed to parse connections: $e');
       return [];
     }
+  }
+
+  ConnectionsSummary _connectionsSummary = const ConnectionsSummary();
+  DateTime? _connectionsSummaryAt;
+
+  Future<ConnectionsSummary> getConnectionsSummary({Duration? maxAge}) async {
+    final at = _connectionsSummaryAt;
+    if (maxAge != null &&
+        at != null &&
+        DateTime.now().difference(at) < maxAge) {
+      return _connectionsSummary;
+    }
+    final res = await clashInterface.getConnectionsSummary();
+    var summary = const ConnectionsSummary();
+    if (res.isNotEmpty) {
+      final decoded = json.decode(res);
+      if (decoded is Map) {
+        summary = ConnectionsSummary.fromJson(
+          Map<String, Object?>.from(decoded),
+        );
+      }
+    }
+    _connectionsSummary = summary;
+    _connectionsSummaryAt = DateTime.now();
+    return summary;
   }
 
   void _forget(FutureOr<Object?> request, String name) {
@@ -327,6 +369,10 @@ class ClashCore {
     );
   }
 
+  void setForeground(bool value) {
+    _forget(clashInterface.setForeground(value), 'setForeground');
+  }
+
   void closeConnection(String id) {
     _forget(clashInterface.closeConnection(id), 'closeConnection');
   }
@@ -334,6 +380,16 @@ class ClashCore {
   Future<void> closeConnections() async {
     await clashInterface.closeConnections();
   }
+
+  Future<void> closeGroupConnections(String groupName) async {
+    await clashInterface.closeGroupConnections(groupName);
+  }
+
+  Future<bool> checkDialerUdp(String name) async =>
+      await clashInterface.checkDialerUdp(name);
+
+  Future<List<String>> getDialerDependents(String groupName) async =>
+      await clashInterface.getDialerDependents(groupName);
 
   void resetConnections() {
     _forget(clashInterface.resetConnections(), 'resetConnections');
@@ -349,7 +405,10 @@ class ClashCore {
       return await Isolate.run<List<ExternalProvider>>(() {
         final externalProviders =
             (json.decode(externalProvidersRawString) as List<dynamic>)
-                .map((item) => ExternalProvider.fromJson(item))
+                .map(
+                  (item) =>
+                      ExternalProvider.fromJson(item as Map<String, Object?>),
+                )
                 .toList();
         return externalProviders;
       });
@@ -369,7 +428,9 @@ class ClashCore {
       return null;
     }
     try {
-      return ExternalProvider.fromJson(json.decode(externalProvidersRawString));
+      return ExternalProvider.fromJson(
+        json.decode(externalProvidersRawString) as Map<String, Object?>,
+      );
     } catch (e) {
       commonPrint.warn('Failed to parse external provider: $e');
       return null;
@@ -412,23 +473,53 @@ class ClashCore {
       throw Exception('Empty delay response');
     }
     try {
-      return Delay.fromJson(json.decode(data));
+      return Delay.fromJson(json.decode(data) as Map<String, Object?>);
     } catch (e) {
       commonPrint.warn('Failed to parse delay: $e');
       rethrow;
     }
   }
 
+  Future<List<Delay>> getDelays(
+    List<({String name, String url})> targets, {
+    required int concurrency,
+  }) async {
+    if (targets.isEmpty) return const [];
+    final effective = concurrency.clamp(1, maxDelayTestConcurrency);
+    final rounds = (targets.length / effective).ceil();
+    final data = await clashInterface.asyncTestDelays(
+      json.encode({
+        'targets': [
+          for (final target in targets)
+            {'name': target.name, 'url': target.url},
+        ],
+        'timeout': httpTimeoutDuration.inMilliseconds,
+        'concurrency': effective,
+      }),
+      (httpTimeoutDuration + const Duration(seconds: 1)) * rounds +
+          const Duration(seconds: 10),
+    );
+    if (data.isEmpty) return const [];
+    final decoded = json.decode(data);
+    if (decoded is! List) return const [];
+    return [
+      for (final item in decoded)
+        if (item is Map) Delay.fromJson(Map<String, Object?>.from(item)),
+    ];
+  }
+
   Future<Map<String, dynamic>> getConfig(
     String id, {
     String? ageSecretKey,
     List<String> disabledGroups = const [],
+    bool snippet = false,
   }) async {
     final profilePath = await appPath.getProfilePath(id);
     final res = await clashInterface.getConfig(
       profilePath,
       ageSecretKey: ageSecretKey,
       disabledGroups: disabledGroups,
+      snippet: snippet,
     );
     if (res.isSuccess) {
       final data = res.data;
@@ -450,7 +541,9 @@ class ClashCore {
       return Traffic();
     }
     try {
-      return Traffic.fromMap(json.decode(trafficString));
+      return Traffic.fromMap(
+        json.decode(trafficString) as Map<String, dynamic>,
+      );
     } catch (e) {
       commonPrint.warn('Failed to parse traffic: $e');
       return Traffic();
@@ -465,17 +558,20 @@ class ClashCore {
     return IpInfo(ip: ip, countryCode: countryCode);
   }
 
-  Future<Traffic> getTotalTraffic() async {
-    final totalTrafficString = await clashInterface.getTotalTraffic();
-    if (totalTrafficString.isEmpty) {
-      return Traffic();
+  Future<({Traffic now, Traffic total})> getTrafficSnapshot() async {
+    final value = await clashInterface.getTrafficSnapshot();
+    if (value.isNotEmpty) {
+      try {
+        final decoded = json.decode(value) as Map<String, dynamic>;
+        return (
+          now: Traffic.fromMap(decoded['now'] as Map<String, dynamic>),
+          total: Traffic.fromMap(decoded['total'] as Map<String, dynamic>),
+        );
+      } catch (e) {
+        commonPrint.warn('Failed to parse traffic snapshot: $e');
+      }
     }
-    try {
-      return Traffic.fromMap(json.decode(totalTrafficString));
-    } catch (e) {
-      commonPrint.warn('Failed to parse total traffic: $e');
-      return Traffic();
-    }
+    return (now: Traffic(), total: Traffic());
   }
 
   Future<int> getMemory() async {
@@ -498,6 +594,322 @@ class ClashCore {
     return CoreStatus.fromJson(Map<String, dynamic>.from(decoded));
   }
 
+  Future<List<CoreInterface>> getInterfaces() async {
+    final value = await clashInterface.getInterfaces();
+    if (value.isEmpty) {
+      return [];
+    }
+    final decoded = json.decode(value);
+    if (decoded is! List) {
+      return [];
+    }
+    return [
+      for (final item in decoded)
+        if (item is Map)
+          CoreInterface.fromJson(Map<String, dynamic>.from(item)),
+    ];
+  }
+
+  SpeedTestState? _decodeSpeedTestState(String value) {
+    if (value.isEmpty) {
+      return null;
+    }
+    final decoded = json.decode(value);
+    if (decoded is! Map) {
+      return null;
+    }
+    return SpeedTestState.fromJson(Map<String, dynamic>.from(decoded));
+  }
+
+  Future<SpeedTestState?> startSpeedTest({
+    required SpeedTestSettings settings,
+    required String proxy,
+  }) async {
+    final value = await clashInterface.startSpeedTest(
+      json.encode(settings.toParams(proxy)),
+    );
+    return _decodeSpeedTestState(value);
+  }
+
+  Future<SpeedTestState?> probeSpeedTest({
+    required SpeedTestSettings settings,
+    required String proxy,
+  }) async {
+    final isZh = Intl.getCurrentLocale().toLowerCase().startsWith('zh');
+    final value = await clashInterface.probeSpeedTest(
+      json.encode({...settings.toParams(proxy), 'lang': isZh ? 'zh-CN' : ''}),
+    );
+    return _decodeSpeedTestState(value);
+  }
+
+  Future<List<SpeedTestNode>> getSpeedTestServers({
+    required String proxy,
+    String search = '',
+  }) async {
+    final value = await clashInterface.getSpeedTestServers(
+      json.encode({'proxy': proxy, 'search': search}),
+    );
+    if (value.isEmpty) return const [];
+    final decoded = json.decode(value);
+    if (decoded is! List) return const [];
+    return [
+      for (final item in decoded)
+        if (item is Map)
+          SpeedTestNode.fromJson(Map<String, Object?>.from(item)),
+    ];
+  }
+
+  Future<void> cancelSpeedTest() async {
+    await clashInterface.cancelSpeedTest();
+  }
+
+  Future<StunTestState?> startStunTest({
+    required String server,
+    required String proxy,
+  }) async {
+    final value = await clashInterface.startStunTest(
+      json.encode({'server': server, 'proxy': proxy}),
+    );
+    if (value.isEmpty) {
+      return null;
+    }
+    final decoded = json.decode(value);
+    if (decoded is! Map) {
+      return null;
+    }
+    return StunTestState.fromJson(Map<String, dynamic>.from(decoded));
+  }
+
+  Future<void> cancelStunTest() async {
+    await clashInterface.cancelStunTest();
+  }
+
+  Future<IperfServerInfo> startIperfServer(int port) async {
+    final value = await clashInterface.startIperfServer(
+      json.encode({'port': port}),
+    );
+    final decoded = value.isEmpty ? null : json.decode(value);
+    if (decoded is! Map) return const IperfServerInfo(error: 'listen');
+    return IperfServerInfo.fromJson(Map<String, dynamic>.from(decoded));
+  }
+
+  Future<void> stopIperfServer() async {
+    await clashInterface.stopIperfServer();
+  }
+
+  Future<IperfState?> startIperfClient({
+    required List<String> hosts,
+    required int port,
+    required IperfOptions options,
+  }) async {
+    final value = await clashInterface.startIperfClient(
+      json.encode({
+        'hosts': hosts,
+        'port': port,
+        'protocol': options.protocol.name,
+        'direction': options.direction.name,
+        'parallel': options.parallel,
+        'duration': options.duration,
+        'bandwidth': options.protocol == IperfProtocol.udp
+            ? options.bandwidth * 1e6
+            : 0,
+      }),
+      Duration(seconds: options.duration + 45),
+    );
+    final decoded = value.isEmpty ? null : json.decode(value);
+    if (decoded is! Map) return null;
+    return IperfState.fromJson(Map<String, dynamic>.from(decoded));
+  }
+
+  Future<void> cancelIperfClient() async {
+    await clashInterface.cancelIperfClient();
+  }
+
+  Future<LocalPingState?> startLocalPing({
+    required String target,
+    required LocalPingOptions options,
+  }) async {
+    final value = await clashInterface.startLocalPing(
+      json.encode({
+        'target': target,
+        'protocol': options.protocol.name,
+        'port': options.port,
+        'count': options.count,
+        'interval': options.interval,
+        'size': options.size,
+      }),
+      Duration(milliseconds: options.count * options.interval) +
+          const Duration(seconds: 30),
+    );
+    final decoded = value.isEmpty ? null : json.decode(value);
+    if (decoded is! Map) return null;
+    return LocalPingState.fromJson(Map<String, dynamic>.from(decoded));
+  }
+
+  Future<void> cancelLocalPing() async {
+    await clashInterface.cancelLocalPing();
+  }
+
+  Future<Map<String, Object?>> _toolboxJson(
+    ActionMethod method, {
+    String data = '',
+  }) async {
+    final value = await clashInterface.toolboxInvoke(method, data: data);
+    if (value.isEmpty) return {};
+    final decoded = json.decode(value);
+    return decoded is Map ? Map<String, Object?>.from(decoded) : {};
+  }
+
+  Future<Map<String, Object?>> parseNodes(String text) =>
+      _toolboxJson(ActionMethod.parseNodes, data: text);
+
+  Future<Map<String, Object?>> testNode(
+    Map<String, dynamic> proxy, {
+    String? dialer,
+  }) => _toolboxJson(
+    ActionMethod.testNode,
+    data: json.encode({'proxy': proxy, 'dialer': ?dialer}),
+  );
+
+  Future<Map<String, Object?>> registerWarp() =>
+      _toolboxJson(ActionMethod.registerWarp);
+
+  Future<RouteTraceResult> routeTrace({
+    required String target,
+    required String network,
+    required int port,
+  }) async => RouteTraceResult.fromJson(
+    await _toolboxJson(
+      ActionMethod.routeTrace,
+      data: json.encode({'target': target, 'network': network, 'port': port}),
+    ),
+  );
+
+  Future<DnsQueryResult> dnsQuery({
+    required String domain,
+    required String type,
+    required String mode,
+    String server = '',
+  }) async => DnsQueryResult.fromJson(
+    await _toolboxJson(
+      ActionMethod.dnsQuery,
+      data: json.encode({
+        'domain': domain,
+        'type': type,
+        'mode': mode,
+        'server': server,
+      }),
+    ),
+  );
+
+  Future<MrsPrepareResult> mrsPrepare() async =>
+      MrsPrepareResult.fromJson(await _toolboxJson(ActionMethod.mrsPrepare));
+
+  Future<MrsLookupResult> mrsLookup(
+    String target, {
+    bool resolve = true,
+  }) async => MrsLookupResult.fromJson(
+    await _toolboxJson(
+      ActionMethod.mrsLookup,
+      data: json.encode({'target': target, 'resolve': resolve}),
+    ),
+  );
+
+  Future<String> mrsDump(String file) =>
+      clashInterface.toolboxInvoke(ActionMethod.mrsDump, data: file);
+
+  Future<void> cancelMrsLookup() async {
+    await clashInterface.toolboxInvoke(ActionMethod.cancelMrsLookup);
+  }
+
+  Future<TrafficStatsResult> getTrafficStats({
+    required String start,
+    required String end,
+    int top = 50,
+    String host = '',
+  }) async => TrafficStatsResult.fromJson(
+    await _toolboxJson(
+      ActionMethod.getTrafficStats,
+      data: json.encode({'start': start, 'end': end, 'top': top, 'host': host}),
+    ),
+  );
+
+  Future<void> clearTrafficStats() async {
+    await clashInterface.toolboxInvoke(ActionMethod.clearTrafficStats);
+  }
+
+  Future<String> storeGet(StoreSpace space, String key) =>
+      clashInterface.toolboxInvoke(
+        ActionMethod.storeGet,
+        data: json.encode({'ns': space.name, 'key': key}),
+      );
+
+  Future<bool> storeSet(
+    StoreSpace space,
+    String key,
+    Object data, {
+    int? time,
+  }) async =>
+      await clashInterface.toolboxInvoke(
+        ActionMethod.storeSet,
+        data: json.encode({
+          'ns': space.name,
+          'key': key,
+          'data': data,
+          'time': ?time,
+        }),
+      ) ==
+      'true';
+
+  Future<String> storeList(StoreSpace space) =>
+      clashInterface.toolboxInvoke(ActionMethod.storeList, data: space.name);
+
+  Future<void> storeClear(StoreSpace space) async {
+    await clashInterface.toolboxInvoke(
+      ActionMethod.storeClear,
+      data: space.name,
+    );
+  }
+
+  int _toolProxyUsers = 0;
+
+  Future<int> startToolProxy({bool acquire = true}) async {
+    if (acquire) _toolProxyUsers++;
+    final value = await clashInterface.toolboxInvoke(
+      ActionMethod.startToolProxy,
+    );
+    return int.tryParse(value) ?? 0;
+  }
+
+  String toolProxyRoute(String proxyName, int port) {
+    final user = utf8
+        .encode(proxyName)
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return 'PROXY $user:x@127.0.0.1:$port';
+  }
+
+  Future<void> stopToolProxy() async {
+    if (_toolProxyUsers > 0) _toolProxyUsers--;
+    if (_toolProxyUsers > 0) return;
+    await clashInterface.toolboxInvoke(ActionMethod.stopToolProxy);
+  }
+
+  Future<AgeCryptResult> ageCrypt({
+    required bool encrypt,
+    required String data,
+    required List<String> keys,
+  }) async => AgeCryptResult.fromJson(
+    await _toolboxJson(
+      ActionMethod.ageCrypt,
+      data: json.encode({
+        'mode': encrypt ? 'encrypt' : 'decrypt',
+        'data': data,
+        'keys': keys,
+      }),
+    ),
+  );
+
   void resetTraffic() {
     clashInterface.resetTraffic();
   }
@@ -518,7 +930,7 @@ class ClashCore {
     try {
       return await Isolate.run<List<Log>>(() {
         final logsRaw = json.decode(res) as List? ?? [];
-        return logsRaw.map((e) => Log.core(e)).toList();
+        return logsRaw.map((e) => Log.core(e as Map<String, Object?>)).toList();
       });
     } catch (e) {
       commonPrint.warn('Failed to parse logs: $e');
@@ -538,7 +950,9 @@ class ClashCore {
     try {
       return await Isolate.run<List<TrackerInfo>>(() {
         final requestsRaw = json.decode(res) as List? ?? [];
-        return requestsRaw.map((e) => TrackerInfo.fromJson(e)).toList();
+        return requestsRaw
+            .map((e) => TrackerInfo.fromJson(e as Map<String, Object?>))
+            .toList();
       });
     } catch (e) {
       commonPrint.warn('Failed to parse requests: $e');
@@ -558,8 +972,14 @@ class ClashCore {
     _forget(clashInterface.clearRequests(), 'clearRequests');
   }
 
-  Future<void> requestGc({bool forceFreeOSMemory = false}) async {
-    await clashInterface.forceGc(forceFreeOSMemory: forceFreeOSMemory);
+  Future<void> requestGc({
+    bool forceFreeOSMemory = false,
+    bool purge = true,
+  }) async {
+    await clashInterface.forceGc(
+      forceFreeOSMemory: forceFreeOSMemory,
+      purge: purge,
+    );
   }
 
   Future<void> flushFakeIP() async {
@@ -570,8 +990,8 @@ class ClashCore {
     await clashInterface.flushDnsCache();
   }
 
-  Future<Map<String, String>> generateAgeKeyPair() {
-    return clashInterface.generateAgeKeyPair();
+  Future<Map<String, String>> generateAgeKeyPair({bool hybrid = false}) {
+    return clashInterface.generateAgeKeyPair(hybrid: hybrid);
   }
 
   Future<Result<String>> convertAgeSecretKeyToPublicKey(String secretKey) {

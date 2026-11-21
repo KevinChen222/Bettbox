@@ -27,12 +27,16 @@ type GetConfigParams struct {
 	Path           string   `json:"path"`
 	AgeSecretKey   string   `json:"age-secret-key"`
 	DisabledGroups []string `json:"disabled-groups"`
+	Snippet        bool     `json:"snippet"`
 }
 
 type ExportConfigParams struct {
-	Path         string `json:"path"`
-	AgeSecretKey string `json:"age-secret-key"`
-	Output       string `json:"output"`
+	Path            string `json:"path"`
+	AgeSecretKey    string `json:"age-secret-key"`
+	Output          string `json:"output"`
+	ExpandProviders bool   `json:"expand-providers"`
+	ProvidersPath   string `json:"providers-path"`
+	Refresh         bool   `json:"refresh"`
 }
 
 type InitParams struct {
@@ -41,13 +45,12 @@ type InitParams struct {
 }
 
 type SetupParams struct {
-	SelectedMap     map[string]string `json:"selected-map"`
-	TestURL         string            `json:"test-url"`
-	OverrideTestUrl bool              `json:"override-test-url"`
-	ProfilePath     string            `json:"profile-path"`
-	AgeSecretKey    string            `json:"age-secret-key"`
-	ScriptedConfig  string            `json:"scripted-config"`
-	Patch           *PatchParams      `json:"patch"`
+	SelectedMap    map[string]string `json:"selected-map"`
+	TestURL        string            `json:"test-url"`
+	ProfilePath    string            `json:"profile-path"`
+	AgeSecretKey   string            `json:"age-secret-key"`
+	ScriptedConfig string            `json:"scripted-config"`
+	Patch          *PatchParams      `json:"patch"`
 }
 
 type SetupResult struct {
@@ -74,6 +77,7 @@ type tunSchema struct {
 	Enable                bool               `yaml:"enable" json:"enable"`
 	Device                *string            `yaml:"device" json:"device"`
 	Stack                 *constant.TUNStack `yaml:"stack" json:"stack"`
+	DNSMode               *string            `yaml:"dns-mode" json:"dns-mode,omitempty"`
 	DNSHijack             *[]string          `yaml:"dns-hijack" json:"dns-hijack"`
 	AutoRoute             *bool              `yaml:"auto-route" json:"auto-route"`
 	AutoRedirect          *bool              `yaml:"auto-redirect" json:"auto-redirect,omitempty"`
@@ -81,7 +85,6 @@ type tunSchema struct {
 	RouteExcludeAddress   *[]netip.Prefix    `yaml:"route-exclude-address" json:"route-exclude-address,omitempty"`
 	StrictRoute           *bool              `yaml:"strict-route" json:"strict-route,omitempty"`
 	DisableICMPForwarding *bool              `yaml:"disable-icmp-forwarding" json:"disable-icmp-forwarding,omitempty"`
-	CongestionController  *string            `yaml:"congestion-controller" json:"congestion-controller,omitempty"`
 }
 
 type ChangeProxyParams struct {
@@ -103,64 +106,102 @@ type ExternalProvider struct {
 	Path             string                     `json:"path"`
 	UpdateAt         time.Time                  `json:"update-at"`
 	SubscriptionInfo *provider.SubscriptionInfo `json:"subscription-info"`
-	Proxies          []constant.Proxy           `json:"proxies"`
 }
 
 const (
-	messageMethod                  Method = "message"
-	initClashMethod                Method = "initClash"
-	getIsInitMethod                Method = "getIsInit"
-	forceGcMethod                  Method = "forceGc"
-	shutdownMethod                 Method = "shutdown"
-	validateConfigMethod           Method = "validateConfig"
-	importNodesMethod              Method = "importNodes"
-	parseProviderNodesMethod       Method = "parseProviderNodes"
-	decryptAgeConfigMethod         Method = "decryptAgeConfig"
-	updateConfigMethod             Method = "updateConfig"
-	getProxiesMethod               Method = "getProxies"
-	changeProxyMethod              Method = "changeProxy"
-	getTrafficMethod               Method = "getTraffic"
-	getTotalTrafficMethod          Method = "getTotalTraffic"
-	resetTrafficMethod             Method = "resetTraffic"
-	asyncTestDelayMethod           Method = "asyncTestDelay"
-	getConnectionsMethod           Method = "getConnections"
-	closeConnectionsMethod         Method = "closeConnections"
-	resetConnectionsMethod         Method = "resetConnectionsMethod"
-	closeConnectionMethod          Method = "closeConnection"
-	getExternalProvidersMethod     Method = "getExternalProviders"
-	getExternalProviderMethod      Method = "getExternalProvider"
-	getCountryCodeMethod           Method = "getCountryCode"
-	getMemoryMethod                Method = "getMemory"
-	updateGeoDataMethod            Method = "updateGeoData"
-	updateExternalProviderMethod   Method = "updateExternalProvider"
-	sideLoadExternalProviderMethod Method = "sideLoadExternalProvider"
-	startLogMethod                 Method = "startLog"
-	stopLogMethod                  Method = "stopLog"
-	startListenerMethod            Method = "startListener"
-	stopListenerMethod             Method = "stopListener"
-	updateDnsMethod                Method = "updateDns"
-	setStateMethod                 Method = "setState"
-	getAndroidVpnOptionsMethod     Method = "getAndroidVpnOptions"
-	getRunTimeMethod               Method = "getRunTime"
-	getCurrentProfileNameMethod    Method = "getCurrentProfileName"
-	crashMethod                    Method = "crash"
-	setupConfigMethod              Method = "setupConfig"
-	getConfigMethod                Method = "getConfig"
-	getRuntimeConfigMethod         Method = "getRuntimeConfig"
-	exportConfigMethod             Method = "exportConfig"
-	flushFakeIPMethod              Method = "flushFakeIP"
-	flushDnsCacheMethod            Method = "flushDnsCache"
-	generateAgeKeyPairMethod              Method = "generateAgeKeyPair"
-	convertAgeSecretKeyToPublicKeyMethod  Method = "convertAgeSecretKeyToPublicKey"
-	getModeMethod                         Method = "getMode"
-	parseExternalProviderContentMethod    Method = "parseExternalProviderContent"
-	getCoreStatusMethod                   Method = "getCoreStatus"
-	getRequestsMethod                     Method = "getRequests"
-	startTrackRequestsMethod              Method = "startTrackRequests"
-	stopTrackRequestsMethod               Method = "stopTrackRequests"
-	clearRequestsMethod                   Method = "clearRequests"
-	getLogsMethod                         Method = "getLogs"
-	clearLogsMethod                       Method = "clearLogs"
+	messageMethod                        Method = "message"
+	initClashMethod                      Method = "initClash"
+	getIsInitMethod                      Method = "getIsInit"
+	forceGcMethod                        Method = "forceGc"
+	shutdownMethod                       Method = "shutdown"
+	validateConfigMethod                 Method = "validateConfig"
+	importProfileMethod                  Method = "importProfile"
+	downloadProfileMethod                Method = "downloadProfile"
+	decryptAgeConfigMethod               Method = "decryptAgeConfig"
+	updateConfigMethod                   Method = "updateConfig"
+	getProxiesMethod                     Method = "getProxies"
+	changeProxyMethod                    Method = "changeProxy"
+	getTrafficMethod                     Method = "getTraffic"
+	getTrafficSnapshotMethod             Method = "getTrafficSnapshot"
+	resetTrafficMethod                   Method = "resetTraffic"
+	asyncTestDelayMethod                 Method = "asyncTestDelay"
+	asyncTestDelaysMethod                Method = "asyncTestDelays"
+	setForegroundMethod                  Method = "setForeground"
+	getConnectionsMethod                 Method = "getConnections"
+	getConnectionsSummaryMethod          Method = "getConnectionsSummary"
+	closeConnectionsMethod               Method = "closeConnections"
+	resetConnectionsMethod               Method = "resetConnectionsMethod"
+	closeConnectionMethod                Method = "closeConnection"
+	closeGroupConnectionsMethod          Method = "closeGroupConnections"
+	getDialerDependentsMethod            Method = "getDialerDependents"
+	checkDialerUDPMethod                 Method = "checkDialerUdp"
+	getExternalProvidersMethod           Method = "getExternalProviders"
+	getExternalProviderMethod            Method = "getExternalProvider"
+	getCountryCodeMethod                 Method = "getCountryCode"
+	getMemoryMethod                      Method = "getMemory"
+	updateGeoDataMethod                  Method = "updateGeoData"
+	updateExternalProviderMethod         Method = "updateExternalProvider"
+	sideLoadExternalProviderMethod       Method = "sideLoadExternalProvider"
+	startLogMethod                       Method = "startLog"
+	stopLogMethod                        Method = "stopLog"
+	startListenerMethod                  Method = "startListener"
+	stopListenerMethod                   Method = "stopListener"
+	updateDnsMethod                      Method = "updateDns"
+	setStateMethod                       Method = "setState"
+	getAndroidVpnOptionsMethod           Method = "getAndroidVpnOptions"
+	getRunTimeMethod                     Method = "getRunTime"
+	getCurrentProfileNameMethod          Method = "getCurrentProfileName"
+	crashMethod                          Method = "crash"
+	setupConfigMethod                    Method = "setupConfig"
+	getConfigMethod                      Method = "getConfig"
+	getRuntimeConfigMethod               Method = "getRuntimeConfig"
+	getProxyConfigMethod                 Method = "getProxyConfig"
+	updateExpandedProviderMethod         Method = "updateExpandedProvider"
+	exportConfigMethod                   Method = "exportConfig"
+	mergeProfilesMethod                  Method = "mergeProfiles"
+	flushFakeIPMethod                    Method = "flushFakeIP"
+	flushDnsCacheMethod                  Method = "flushDnsCache"
+	generateAgeKeyPairMethod             Method = "generateAgeKeyPair"
+	convertAgeSecretKeyToPublicKeyMethod Method = "convertAgeSecretKeyToPublicKey"
+	getModeMethod                        Method = "getMode"
+	parseExternalProviderContentMethod   Method = "parseExternalProviderContent"
+	getCoreStatusMethod                  Method = "getCoreStatus"
+	getRequestsMethod                    Method = "getRequests"
+	startTrackRequestsMethod             Method = "startTrackRequests"
+	stopTrackRequestsMethod              Method = "stopTrackRequests"
+	clearRequestsMethod                  Method = "clearRequests"
+	getLogsMethod                        Method = "getLogs"
+	clearLogsMethod                      Method = "clearLogs"
+	startSpeedTestMethod                 Method = "startSpeedTest"
+	cancelSpeedTestMethod                Method = "cancelSpeedTest"
+	probeSpeedTestMethod                 Method = "probeSpeedTest"
+	getSpeedTestServersMethod            Method = "getSpeedTestServers"
+	startStunTestMethod                  Method = "startStunTest"
+	cancelStunTestMethod                 Method = "cancelStunTest"
+	startIperfServerMethod               Method = "startIperfServer"
+	stopIperfServerMethod                Method = "stopIperfServer"
+	startIperfClientMethod               Method = "startIperfClient"
+	cancelIperfClientMethod              Method = "cancelIperfClient"
+	startLocalPingMethod                 Method = "startLocalPing"
+	cancelLocalPingMethod                Method = "cancelLocalPing"
+	routeTraceMethod                     Method = "routeTrace"
+	dnsQueryMethod                       Method = "dnsQuery"
+	mrsPrepareMethod                     Method = "mrsPrepare"
+	mrsLookupMethod                      Method = "mrsLookup"
+	mrsDumpMethod                        Method = "mrsDump"
+	getTrafficStatsMethod                Method = "getTrafficStats"
+	clearTrafficStatsMethod              Method = "clearTrafficStats"
+	storeGetMethod                       Method = "storeGet"
+	storeSetMethod                       Method = "storeSet"
+	storeListMethod                      Method = "storeList"
+	parseNodesMethod                     Method = "parseNodes"
+	registerWarpMethod                   Method = "registerWarp"
+	testNodeMethod                       Method = "testNode"
+	storeClearMethod                     Method = "storeClear"
+	cancelMrsLookupMethod                Method = "cancelMrsLookup"
+	startToolProxyMethod                 Method = "startToolProxy"
+	stopToolProxyMethod                  Method = "stopToolProxy"
+	ageCryptMethod                       Method = "ageCrypt"
 )
 
 type Method string
@@ -179,10 +220,10 @@ type Message struct {
 }
 
 const (
-	LogMessage     MessageType = "log"
-	DelayMessage   MessageType = "delay"
-	RequestMessage MessageType = "request"
-	LoadedMessage  MessageType = "loaded"
+	LogMessage           MessageType = "log"
+	DelaysMessage        MessageType = "delays"
+	GroupsChangedMessage MessageType = "groupsChanged"
+	RequestMessage       MessageType = "request"
 )
 
 func (message *Message) Json() (string, error) {

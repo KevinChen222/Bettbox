@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
 
+	"github.com/metacubex/mihomo/adapter/outboundgroup"
 	"github.com/metacubex/mihomo/config"
 	"github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
@@ -86,6 +88,55 @@ func TestApplyPatchGeneral(t *testing.T) {
 	}
 }
 
+func TestApplyPatchInterfaceName(t *testing.T) {
+	rawCfg := parsePatchProfile(t, "interface-name: profile0\n")
+	if _, err := applyPatch(rawCfg, patchParams(t, `{"general":{"mode":"rule"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if rawCfg.Interface != "profile0" {
+		t.Errorf("profile interface-name should be kept, got %q", rawCfg.Interface)
+	}
+	if _, err := applyPatch(rawCfg, patchParams(t, `{"general":{"interface-name":"en0"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if rawCfg.Interface != "en0" {
+		t.Errorf("patched interface-name should override, got %q", rawCfg.Interface)
+	}
+}
+
+func TestApplyPatchTunDNSMode(t *testing.T) {
+	rawCfg := parsePatchProfile(t, "tun:\n  dns-mode: native\n")
+	if _, err := applyPatch(rawCfg, patchParams(t, `{"general":{"tun":{"enable":true,"stack":"system"}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if rawCfg.Tun.DNSMode != "native" {
+		t.Errorf("profile dns-mode should be kept, got %q", rawCfg.Tun.DNSMode)
+	}
+	if _, err := applyPatch(rawCfg, patchParams(t, `{"general":{"tun":{"enable":true,"stack":"system","dns-mode":"hijack"}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if rawCfg.Tun.DNSMode != "hijack" {
+		t.Errorf("patched dns-mode should override, got %q", rawCfg.Tun.DNSMode)
+	}
+}
+
+func TestApplyPatchTunCongestionController(t *testing.T) {
+	general := `{"general":{"tun":{"enable":true,"stack":"mips"}}}`
+	cases := map[string]string{
+		"tun:\n  congestion-controller: bbr\n": "bbr",
+		"mode: rule\n":                         "",
+	}
+	for profile, want := range cases {
+		rawCfg := parsePatchProfile(t, profile)
+		if _, err := applyPatch(rawCfg, patchParams(t, general)); err != nil {
+			t.Fatal(err)
+		}
+		if rawCfg.Tun.CongestionController != want {
+			t.Errorf("congestion-controller = %q, want %q", rawCfg.Tun.CongestionController, want)
+		}
+	}
+}
+
 func TestApplyPatchProvidersAndGroups(t *testing.T) {
 	rawCfg := parsePatchProfile(t, `
 proxy-providers:
@@ -143,64 +194,56 @@ rules:
 	}
 }
 
-func TestApplyPatchChainPreview(t *testing.T) {
-	const profile = `
+func TestApplyPatchNodeExcludeIncludeAll(t *testing.T) {
+	rawCfg := parsePatchProfile(t, `
 proxies:
-  - {name: exit, type: socks5, server: localhost, port: 1080}
+  - {name: A, type: trojan, server: a.example.com, port: 443, password: p}
+  - {name: B, type: trojan, server: b.example.com, port: 443, password: p}
 proxy-groups:
-  - {name: Off, type: select, proxies: [exit]}
-  - {name: Main, type: select, proxies: [exit]}
-tunnels: ["tcp,127.0.0.1:10080,example.com:80,DIRECT"]
-rules: ["DOMAIN,off.example,Off", "MATCH,route"]
-`
-	preview := parsePatchProfile(t, profile)
-	params := patchParams(t, `{"disabled-groups":["Off"],"prepend-rules":["DOMAIN,local.example,DIRECT"],"tunnels":["tcp,127.0.0.1:10081,example.com:81,DIRECT"],"select-global":true}`)
-	if _, err := applyPatch(preview, params); err != nil {
+  - {name: List, type: select, proxies: [A, B]}
+  - {name: All, type: select, include-all: true}
+  - {name: Mixed, type: select, proxies: [A], include-all-proxies: true, exclude-filter: C}
+  - {name: Providers, type: select, include-all-providers: true}
+rules:
+  - MATCH,List
+`)
+	if _, err := applyPatch(rawCfg, patchParams(t, `{"node-exclude-filter":"^A$"}`)); err != nil {
 		t.Fatal(err)
 	}
-	preview.Proxy = append(preview.Proxy, map[string]any{
-		"name": "path", "type": "socks5", "server": "localhost",
-		"port": 2080, "dialer-proxy": "Main",
-	})
-	preview.ProxyGroup = append([]map[string]any{{
-		"name": "route", "type": "select", "proxies": []any{"path"},
-	}}, preview.ProxyGroup...)
-	// The Dart preview round-trips through JSON before reaching the bridge.
-	bytes, err := json.Marshal(map[string]any{
-		"chain-proxies": preview.Proxy, "chain-groups": preview.ProxyGroup,
-	})
+	groups := map[string]map[string]any{}
+	for _, group := range rawCfg.ProxyGroup {
+		name, _ := groupName(group)
+		groups[name] = group
+	}
+	if got := groups["List"]["proxies"]; !reflect.DeepEqual(got, []any{"B"}) {
+		t.Errorf("list proxies = %v", got)
+	}
+	if _, exist := groups["List"]["exclude-filter"]; exist {
+		t.Errorf("list group should not get exclude-filter")
+	}
+	if got := groups["All"]["exclude-filter"]; got != "^A$" {
+		t.Errorf("include-all exclude-filter = %v", got)
+	}
+	if got := groups["Mixed"]["exclude-filter"]; got != "C|^A$" {
+		t.Errorf("include-all-proxies exclude-filter = %v", got)
+	}
+	if got := groups["Mixed"]["proxies"]; !reflect.DeepEqual(got, []any{}) {
+		t.Errorf("mixed proxies = %v", got)
+	}
+	if _, exist := groups["Providers"]["exclude-filter"]; exist {
+		t.Errorf("include-all-providers group should not get exclude-filter")
+	}
+	rawCfg.ProxyGroup = rawCfg.ProxyGroup[:3]
+	cfg, err := config.ParseRawConfig(rawCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(bytes, params); err != nil {
-		t.Fatal(err)
+	var names []string
+	for _, proxy := range cfg.Proxies["All"].Adapter().(outboundgroup.ProxyGroup).Proxies() {
+		names = append(names, proxy.Name())
 	}
-	raw := parsePatchProfile(t, profile)
-	global, err := applyPatch(raw, params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if global != "route" {
-		t.Fatalf("global = %q, want route", global)
-	}
-	if !reflect.DeepEqual(raw.Rule, preview.Rule) || len(raw.Tunnels) != len(preview.Tunnels) {
-		t.Fatalf("preview reapplied rules/tunnels: %v, %v", raw.Rule, raw.Tunnels)
-	}
-	if !reflect.DeepEqual(raw.Proxy, preview.Proxy) || !reflect.DeepEqual(raw.ProxyGroup, preview.ProxyGroup) {
-		t.Fatalf("chain nodes/groups changed: %v, %v", raw.Proxy, raw.ProxyGroup)
-	}
-	if _, err := config.ParseRawConfig(raw); err != nil {
-		t.Fatalf("chain config cannot load: %v", err)
-	}
-}
-
-func TestApplyPatchEmptyChainLists(t *testing.T) {
-	raw := parsePatchProfile(t, "proxies: [{name: old, type: socks5, server: localhost, port: 1080}]\nproxy-groups: [{name: old-group, type: select, proxies: [old]}]\n")
-	if _, err := applyPatch(raw, patchParams(t, `{"chain-proxies":[],"chain-groups":[]}`)); err != nil {
-		t.Fatal(err)
-	}
-	if len(raw.Proxy) != 0 || len(raw.ProxyGroup) != 0 {
-		t.Fatalf("empty lists should remove stale chain entries")
+	if !reflect.DeepEqual(names, []string{"B"}) {
+		t.Errorf("include-all members = %v", names)
 	}
 }
 
@@ -213,10 +256,10 @@ func TestApplyPatchAndroidDns(t *testing.T) {
 		dns    string
 		listen string
 	}{
-		{"dns: {enable: true, listen: '0.0.0.0:53'}", "0.0.0.0:10053"},
-		{"dns: {enable: true, listen: '0.0.0.0:1053'}", "0.0.0.0:1053"},
+		{"dns: {enable: true, listen: '0.0.0.0:53'}", "127.0.0.1:10053"},
+		{"dns: {enable: true, listen: '0.0.0.0:1053'}", "127.0.0.1:1053"},
 		{"dns: {enable: true, listen: '0.0.0.0:53', proxy-server-nameserver: ['127.0.0.1:5353']}", "127.0.0.1:53"},
-		{"dns: {enable: true, listen: '0.0.0.0:1053', proxy-server-nameserver: ['127.0.0.1:5353']}\nrule-providers: {}", "0.0.0.0:1053"},
+		{"dns: {enable: true, listen: '0.0.0.0:1053', proxy-server-nameserver: ['127.0.0.1:5353']}\nrule-providers: {}", "127.0.0.1:1053"},
 	}
 	for _, item := range cases {
 		rawCfg := parsePatchProfile(t, item.dns+"\nntp: {enable: true, write-to-system: true}\n")
@@ -232,32 +275,101 @@ func TestApplyPatchAndroidDns(t *testing.T) {
 	}
 }
 
-func TestApplyPatchDnsInjection(t *testing.T) {
-	rawCfg := parsePatchProfile(t, "dns: {enable: false, nameserver: ['10.0.0.1']}\n")
-	dns, _ := json.Marshal(map[string]any{
-		"enable":            true,
-		"nameserver":        []string{"1.1.1.1"},
-		"nameserver-policy": map[string]any{"+.a.com": []string{"8.8.8.8", "8.8.4.4"}},
-	})
-	params := patchParams(t, `{}`)
-	params.Dns = dns
-	params.DnsNodeOverride = true
-	if _, err := applyPatch(rawCfg, params); err != nil {
-		t.Fatal(err)
-	}
-	if !rawCfg.DNS.Enable || !reflect.DeepEqual(rawCfg.DNS.NameServer, []string{"1.1.1.1", "system://"}) {
-		t.Errorf("dns = %+v", rawCfg.DNS.NameServer)
-	}
-	if !reflect.DeepEqual(rawCfg.DNS.ProxyServerNameserver, []string{"10.0.0.1"}) {
-		t.Errorf("private dns should become proxy-server-nameserver: %v", rawCfg.DNS.ProxyServerNameserver)
-	}
+func TestApplyPatchProfileServices(t *testing.T) {
+	previous := patchForAndroid
+	patchForAndroid = false
+	defer func() { patchForAndroid = previous }()
 
-	enabled := parsePatchProfile(t, "dns: {enable: true, nameserver: ['10.0.0.1']}\n")
-	if _, err := applyPatch(enabled, params); err != nil {
+	profile := `
+external-controller-tls: 0.0.0.0:19443
+external-controller-unix: x.sock
+external-controller-pipe: \\.\pipe\x
+external-doh-server: /dns-query
+ss-config: ss://aes-128-gcm:pass@:17891
+tuic-server: {enable: true, listen: 0.0.0.0:17892}
+listeners:
+  - {name: socks, type: socks, port: 17890}
+  - {name: tun, type: tun, stack: system}
+tunnels:
+  - tcp,0.0.0.0:16553,1.1.1.1:53,DIRECT
+dns: {enable: true, listen: 0.0.0.0:1053, nameserver: [223.5.5.5]}
+`
+	cases := []struct {
+		allowLan bool
+		address  string
+	}{
+		{false, "127.0.0.1"},
+		{true, "0.0.0.0"},
+	}
+	for _, item := range cases {
+		rawCfg := parsePatchProfile(t, profile)
+		params := patchParams(t, `{"general":{"allow-lan":`+strconv.FormatBool(item.allowLan)+`},"tunnels":["tcp,0.0.0.0:17000,1.1.1.1:53,DIRECT"]}`)
+		if _, err := applyPatch(rawCfg, params); err != nil {
+			t.Fatal(err)
+		}
+		if rawCfg.ExternalControllerTLS != "" || rawCfg.ExternalControllerUnix != "" || rawCfg.ExternalControllerPipe != "" || rawCfg.ExternalDohServer != "" {
+			t.Errorf("allow-lan=%t: profile controllers should be removed", item.allowLan)
+		}
+		if rawCfg.ShadowSocksConfig != "" || rawCfg.VmessConfig != "" || rawCfg.TuicServer.Enable {
+			t.Errorf("allow-lan=%t: profile inbound servers should be removed", item.allowLan)
+		}
+		if len(rawCfg.Listeners) != 1 || rawCfg.Listeners[0]["name"] != "socks" {
+			t.Fatalf("allow-lan=%t: tun listener should be removed: %v", item.allowLan, rawCfg.Listeners)
+		}
+		listen, _ := rawCfg.Listeners[0]["listen"].(string)
+		if item.allowLan && listen != "" || !item.allowLan && listen != item.address {
+			t.Errorf("allow-lan=%t: listener listen = %q", item.allowLan, listen)
+		}
+		if len(rawCfg.Tunnels) != 2 || rawCfg.Tunnels[0].Address != item.address+":16553" || rawCfg.Tunnels[1].Address != "0.0.0.0:17000" {
+			t.Errorf("allow-lan=%t: tunnels = %+v", item.allowLan, rawCfg.Tunnels)
+		}
+		if rawCfg.DNS.Listen != item.address+":1053" {
+			t.Errorf("allow-lan=%t: dns listen = %q", item.allowLan, rawCfg.DNS.Listen)
+		}
+	}
+}
+
+func TestApplyPatchDnsDisabledKept(t *testing.T) {
+	rawCfg := parsePatchProfile(t, "dns: {enable: false, nameserver: ['10.0.0.1']}\n")
+	if _, err := applyPatch(rawCfg, patchParams(t, `{}`)); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(enabled.DNS.NameServer, []string{"10.0.0.1"}) {
-		t.Errorf("enabled dns without override should be kept: %v", enabled.DNS.NameServer)
+	if rawCfg.DNS.Enable || !reflect.DeepEqual(rawCfg.DNS.NameServer, []string{"10.0.0.1"}) {
+		t.Errorf("disabled dns should be kept: enable = %t, nameserver = %v", rawCfg.DNS.Enable, rawCfg.DNS.NameServer)
+	}
+}
+
+func TestApplyPatchDnsIPv6(t *testing.T) {
+	for _, item := range []struct {
+		general string
+		want    bool
+	}{
+		{`{"ipv6": false}`, false},
+		{`{"ipv6": true}`, true},
+	} {
+		rawCfg := parsePatchProfile(t, "dns: {enable: true, ipv6: true, nameserver: ['10.0.0.1']}\n")
+		params := patchParams(t, `{}`)
+		params.General = json.RawMessage(item.general)
+		if _, err := applyPatch(rawCfg, params); err != nil {
+			t.Fatal(err)
+		}
+		if rawCfg.DNS.IPv6 != item.want {
+			t.Errorf("general %s: dns.ipv6 = %t, want %t", item.general, rawCfg.DNS.IPv6, item.want)
+		}
+	}
+}
+
+func TestApplyPatchDnsFallbackFilter(t *testing.T) {
+	rawCfg := parsePatchProfile(t, "dns: {enable: true, nameserver: ['10.0.0.1'], fallback: ['1.1.1.1'], fallback-filter: {geoip: true, ipcidr: ['240.0.0.0/4'], domain: ['+.google.com'], geosite: ['gfw']}}\n")
+	if _, err := applyPatch(rawCfg, patchParams(t, `{}`)); err != nil {
+		t.Fatal(err)
+	}
+	filter := rawCfg.DNS.FallbackFilter
+	if len(filter.Domain) != 0 || len(filter.GeoSite) != 0 {
+		t.Errorf("fallback-filter domain = %v, geosite = %v, want empty", filter.Domain, filter.GeoSite)
+	}
+	if !filter.GeoIP || len(filter.IPCIDR) != 1 {
+		t.Errorf("fallback-filter geoip = %t, ipcidr = %v, want kept", filter.GeoIP, filter.IPCIDR)
 	}
 }
 
@@ -321,9 +433,14 @@ func TestMarshalProxies(t *testing.T) {
 proxies:
   - {name: A, type: ss, server: a.example.com, port: 1, cipher: aes-128-gcm, password: p}
   - {name: B, type: ss, server: b.example.com, port: 1, cipher: aes-128-gcm, password: p}
+proxy-providers:
+  inline:
+    type: inline
+    payload:
+      - {name: C, type: trojan, server: c.example.com, port: 443, password: p}
 proxy-groups:
   - {name: Main, type: select, proxies: [Auto, Balance, A, DIRECT], icon: main.png}
-  - {name: Auto, type: url-test, proxies: [A, B], url: "https://example.com/204", interval: 300, lazy: true, hidden: true}
+  - {name: Auto, type: url-test, proxies: [A, B], use: [inline], url: "https://example.com/204", interval: 300, lazy: true, hidden: true}
   - {name: Balance, type: load-balance, proxies: [A, B], url: "https://example.com/204", interval: 300, lazy: true}
 rules:
   - MATCH,Main
@@ -332,42 +449,44 @@ rules:
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, pd := range cfg.Providers {
+		if err := pd.Initial(); err != nil {
+			t.Fatal(err)
+		}
+	}
 	compact, err := marshalProxies(cfg.Proxies)
 	if err != nil {
 		t.Fatal(err)
 	}
 	payload := struct {
-		Names  []string                  `json:"names"`
-		Types  []string                  `json:"types"`
-		Groups map[string]map[string]any `json:"groups"`
+		Names  []string         `json:"names"`
+		Types  []string         `json:"types"`
+		Groups []map[string]any `json:"groups"`
 	}{}
 	if err := json.Unmarshal(compact, &payload); err != nil {
 		t.Fatal(err)
 	}
+	if len(payload.Names) != len(payload.Types) {
+		t.Fatalf("names %d, types %d", len(payload.Names), len(payload.Types))
+	}
 	full, _ := json.Marshal(cfg.Proxies)
 	expected := map[string]map[string]any{}
 	_ = json.Unmarshal(full, &expected)
-	if len(payload.Names) != len(expected) || len(payload.Names) != len(payload.Types) {
-		t.Fatalf("names %d, types %d, expected %d", len(payload.Names), len(payload.Types), len(expected))
-	}
-	for i, name := range payload.Names {
-		if expected[name]["type"] != payload.Types[i] {
-			t.Errorf("%s type = %s, want %v", name, payload.Types[i], expected[name]["type"])
-		}
-	}
-	groups := 0
-	for name, item := range expected {
-		if _, isGroup := item["all"]; !isGroup {
-			continue
-		}
-		groups++
-		group := payload.Groups[name]
-		if group == nil {
-			t.Fatalf("group %s is missing", name)
+	order := make([]string, 0, len(payload.Groups))
+	for _, group := range payload.Groups {
+		name := group["name"].(string)
+		order = append(order, name)
+		item := expected[name]
+		if item == nil {
+			t.Fatalf("unexpected group %s", name)
 		}
 		var members []any
 		for _, member := range group["all"].([]any) {
-			members = append(members, payload.Names[int(member.(float64))])
+			index := int(member.(float64))
+			members = append(members, payload.Names[index])
+			if top := expected[payload.Names[index]]; top != nil && top["type"] != payload.Types[index] {
+				t.Errorf("%s type = %s, want %v", payload.Names[index], payload.Types[index], top["type"])
+			}
 		}
 		if !reflect.DeepEqual(members, item["all"]) {
 			t.Errorf("%s members = %v, want %v", name, members, item["all"])
@@ -378,8 +497,25 @@ rules:
 			}
 		}
 	}
-	if groups != len(payload.Groups) || groups < 4 {
-		t.Errorf("groups = %d, payload groups = %d", groups, len(payload.Groups))
+	if !reflect.DeepEqual(order, []string{"GLOBAL", "Main", "Auto", "Balance"}) {
+		t.Errorf("group order = %v", order)
+	}
+	for i, name := range payload.Names {
+		if name == "C" && payload.Types[i] != "Trojan" {
+			t.Errorf("provider proxy type = %s", payload.Types[i])
+		}
+	}
+	nows := map[string]string{}
+	for _, group := range payload.Groups {
+		if now, ok := group["now"].(string); ok {
+			nows[group["name"].(string)] = now
+		}
+	}
+	groupNowsLock.Lock()
+	remembered := lastGroupNows
+	groupNowsLock.Unlock()
+	if !reflect.DeepEqual(remembered, nows) {
+		t.Errorf("remembered nows = %v, want %v", remembered, nows)
 	}
 }
 
@@ -478,14 +614,138 @@ rules:
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rawCfg, err := handleGetConfig(&GetConfigParams{Path: path, DisabledGroups: []string{"HK"}})
+	params := &GetConfigParams{Path: path, DisabledGroups: []string{"HK"}}
+	result, err := handleGetConfig(params)
 	if err != nil {
 		t.Fatal(err)
 	}
+	rawCfg := result.(*config.RawConfig)
 	if len(rawCfg.ProxyGroup) != 1 || !reflect.DeepEqual(rawCfg.ProxyGroup[0]["proxies"], []any{"A"}) {
 		t.Fatalf("groups: %v", rawCfg.ProxyGroup)
 	}
 	if !reflect.DeepEqual(rawCfg.Rule, []string{"MATCH,Main"}) {
 		t.Fatalf("rules: %v", rawCfg.Rule)
+	}
+	params.Snippet = true
+	snippet, err := handleGetConfig(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decode := func(value any) map[string]any {
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded := map[string]any{}
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		return decoded
+	}
+	full := decode(rawCfg)
+	want := map[string]any{
+		"proxy-groups":   full["proxy-groups"],
+		"rules":          full["rule"],
+		"rule-providers": full["rule-providers"],
+		"sub-rules":      full["sub-rules"],
+	}
+	if got := decode(snippet); !reflect.DeepEqual(got, want) {
+		t.Fatalf("snippet = %v, want %v", got, want)
+	}
+}
+
+func TestEnsureTunInet6(t *testing.T) {
+	previousHome := constant.Path.HomeDir()
+	constant.SetHomeDir(t.TempDir())
+	defer constant.SetHomeDir(previousHome)
+	previousAndroid, previousCheck := patchForAndroid, hasGlobalIPv6
+	defer func() { patchForAndroid, hasGlobalIPv6 = previousAndroid, previousCheck }()
+
+	cases := []struct {
+		android bool
+		global  bool
+		want    int
+	}{
+		{false, true, 1},
+		{false, false, 0},
+		{true, true, 0},
+	}
+	for _, item := range cases {
+		patchForAndroid = item.android
+		hasGlobalIPv6 = func() bool { return item.global }
+		cfg, err := config.ParseRawConfig(parsePatchProfile(t, "ipv6: false\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.General.Tun.Inet6Address) != 0 {
+			t.Fatalf("ipv6: false should clear inet6-address")
+		}
+		ensureTunInet6(cfg)
+		if got := len(cfg.General.Tun.Inet6Address); got != item.want {
+			t.Errorf("android=%t global=%t: inet6-address count = %d, want %d", item.android, item.global, got, item.want)
+		}
+	}
+}
+
+func TestApplyPatchSharedRules(t *testing.T) {
+	rawCfg := parsePatchProfile(t, `
+proxies:
+  - {name: Node, type: ss, server: a.com, port: 1, cipher: aes-128-gcm, password: p}
+proxy-groups:
+  - {name: 默认代理, type: select, proxies: [Node]}
+  - {name: 香港, type: select, proxies: [Node]}
+rule-providers:
+  ads: {type: http, behavior: domain, url: "https://example.com/ads.mrs", format: mrs}
+rules:
+  - MATCH,默认代理
+`)
+	params := patchParams(t, `{
+		"general": {"mode": "rule"},
+		"prepend-rules": ["DOMAIN,first.com,DIRECT"],
+		"override-rules": {"rules": ["DOMAIN,own.com,香港"]},
+		"shared-rules": {"fallback": "默认代理", "rules": [
+			"PROCESS-NAME,com.twitter.android,香港",
+			"DOMAIN-SUFFIX,jp.com,日本",
+			"IP-CIDR,1.1.1.1/32,日本,no-resolve",
+			"DOMAIN,direct.com,DIRECT",
+			"RULE-SET,ads,REJECT",
+			"RULE-SET,missing,REJECT",
+			"SUB-RULE,(NETWORK,tcp),missing"
+		]}
+	}`)
+	if _, err := applyPatch(rawCfg, params); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"DOMAIN,first.com,DIRECT",
+		"DOMAIN,own.com,香港",
+		"PROCESS-NAME,com.twitter.android,香港",
+		"DOMAIN-SUFFIX,jp.com,默认代理",
+		"IP-CIDR,1.1.1.1/32,默认代理,no-resolve",
+		"DOMAIN,direct.com,DIRECT",
+		"RULE-SET,ads,REJECT",
+		"MATCH,默认代理",
+	}
+	if !reflect.DeepEqual(rawCfg.Rule, want) {
+		t.Fatalf("rules = %v", rawCfg.Rule)
+	}
+
+	rawCfg = parsePatchProfile(t, `
+proxies:
+  - {name: Node, type: ss, server: a.com, port: 1, cipher: aes-128-gcm, password: p}
+rules:
+  - MATCH,DIRECT
+`)
+	if _, err := applyPatch(rawCfg, params); err != nil {
+		t.Fatal(err)
+	}
+	want = []string{
+		"DOMAIN,first.com,DIRECT",
+		"DOMAIN,own.com,香港",
+		"DOMAIN,direct.com,DIRECT",
+		"MATCH,DIRECT",
+	}
+	if !reflect.DeepEqual(rawCfg.Rule, want) {
+		t.Fatalf("rules without fallback = %v", rawCfg.Rule)
 	}
 }

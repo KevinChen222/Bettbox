@@ -3,7 +3,6 @@ import 'package:bett_box/models/clash_config.dart';
 import 'package:bett_box/models/config.dart';
 import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
-import 'package:bett_box/views/config/dns.dart';
 import 'package:bett_box/views/config/general.dart';
 import 'package:bett_box/views/config/network.dart';
 import 'package:bett_box/views/config/ntp.dart';
@@ -28,7 +27,7 @@ class _ConfigViewState extends State<ConfigView> {
       ListItem.next(
         title: Text(appLocalizations.general),
         subtitle: Text(appLocalizations.generalDesc),
-        leading: const Icon(Icons.build),
+        leading: const AppIcon(Icons.build_outlined),
         delegate: NextDelegate(
           title: appLocalizations.general,
           builder: (_) => const GeneralListView(),
@@ -38,7 +37,7 @@ class _ConfigViewState extends State<ConfigView> {
       ListItem.next(
         title: Text(appLocalizations.network),
         subtitle: Text(appLocalizations.networkDesc),
-        leading: const Icon(Icons.vpn_key),
+        leading: const AppIcon(Icons.vpn_key_outlined),
         delegate: NextDelegate(
           title: appLocalizations.network,
           blur: false,
@@ -70,7 +69,7 @@ class _ConfigViewState extends State<ConfigView> {
                         );
                   },
                   tooltip: appLocalizations.reset,
-                  icon: const Icon(Icons.replay),
+                  icon: const AppIcon(Icons.replay),
                 );
               },
             ),
@@ -79,43 +78,9 @@ class _ConfigViewState extends State<ConfigView> {
         ),
       ),
       ListItem.next(
-        title: const Text('DNS'),
-        subtitle: Text(appLocalizations.dnsDesc),
-        leading: const Icon(Icons.dns),
-        delegate: NextDelegate(
-          title: 'DNS',
-          actions: [
-            Consumer(
-              builder: (_, ref, _) {
-                return IconButton(
-                  onPressed: () async {
-                    final res = await globalState.showMessage(
-                      title: appLocalizations.reset,
-                      message: TextSpan(text: appLocalizations.resetTip),
-                    );
-                    if (res != true) {
-                      return;
-                    }
-                    ref
-                        .read(patchClashConfigProvider.notifier)
-                        .updateState(
-                          (state) => state.copyWith(dns: defaultDns),
-                        );
-                  },
-                  tooltip: appLocalizations.reset,
-                  icon: const Icon(Icons.replay),
-                );
-              },
-            ),
-          ],
-          builder: (_) => const DnsListView(),
-          blur: false,
-        ),
-      ),
-      ListItem.next(
         title: const Text('NTP'),
         subtitle: Text(appLocalizations.ntpDesc),
-        leading: const Icon(Icons.access_time),
+        leading: const AppIcon(Icons.access_time_outlined),
         delegate: NextDelegate(
           title: 'NTP',
           actions: [
@@ -137,7 +102,7 @@ class _ConfigViewState extends State<ConfigView> {
                         );
                   },
                   tooltip: appLocalizations.reset,
-                  icon: const Icon(Icons.replay),
+                  icon: const AppIcon(Icons.replay),
                 );
               },
             ),
@@ -149,7 +114,7 @@ class _ConfigViewState extends State<ConfigView> {
       ListItem.next(
         title: const Text('Hosts'),
         subtitle: Text(appLocalizations.hostsDesc),
-        leading: const Icon(Icons.view_list_outlined),
+        leading: const AppIcon(Icons.view_list_outlined),
         delegate: NextDelegate(
           blur: false,
           title: 'Hosts',
@@ -173,7 +138,9 @@ class _ConfigViewState extends State<ConfigView> {
                     !(system.isAndroid &&
                         storeFix &&
                         item.key == 'services.googleapis.cn') &&
-                    !(networkFix && item.key == 'dns.msftncsi.com'),
+                    !(system.isWindows &&
+                        networkFix &&
+                        item.key == 'dns.msftncsi.com'),
                 onChange: (value) {
                   ref
                       .read(patchClashConfigProvider.notifier)
@@ -187,7 +154,7 @@ class _ConfigViewState extends State<ConfigView> {
       ListItem.next(
         title: Text(appLocalizations.sniffer),
         subtitle: Text(appLocalizations.snifferDesc),
-        leading: const Icon(Icons.radar),
+        leading: const AppIcon(Icons.radar_outlined),
         delegate: NextDelegate(
           title: appLocalizations.sniffer,
           actions: [
@@ -209,7 +176,7 @@ class _ConfigViewState extends State<ConfigView> {
                         );
                   },
                   tooltip: appLocalizations.reset,
-                  icon: const Icon(Icons.replay),
+                  icon: const AppIcon(Icons.replay),
                 );
               },
             ),
@@ -221,7 +188,7 @@ class _ConfigViewState extends State<ConfigView> {
       ListItem.next(
         title: Text(appLocalizations.tunnel),
         subtitle: Text(appLocalizations.tunnelDesc),
-        leading: const Icon(Icons.swap_horiz),
+        leading: const AppIcon(Icons.swap_horiz_outlined),
         delegate: NextDelegate(
           title: appLocalizations.tunnel,
           actions: [
@@ -243,7 +210,7 @@ class _ConfigViewState extends State<ConfigView> {
                         );
                   },
                   tooltip: appLocalizations.reset,
-                  icon: const Icon(Icons.replay),
+                  icon: const AppIcon(Icons.replay),
                 );
               },
             ),
@@ -255,7 +222,7 @@ class _ConfigViewState extends State<ConfigView> {
       ListItem.next(
         title: Text(appLocalizations.experimental),
         subtitle: Text(appLocalizations.experimentalDesc),
-        leading: const Icon(Icons.science),
+        leading: const AppIcon(Icons.science_outlined),
         delegate: NextDelegate(
           title: appLocalizations.experimental,
           actions: [
@@ -278,7 +245,7 @@ class _ConfigViewState extends State<ConfigView> {
                         );
                   },
                   tooltip: appLocalizations.reset,
-                  icon: const Icon(Icons.replay),
+                  icon: const AppIcon(Icons.replay),
                 );
               },
             ),

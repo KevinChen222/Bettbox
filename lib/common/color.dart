@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:material_color_utilities/material_color_utilities.dart';
 import 'package:material_ui/material_ui.dart';
 
 extension ColorExtension on Color {
@@ -84,7 +85,7 @@ extension ColorExtension on Color {
         .toUpperCase();
   }
 
-  Color darken([final int amount = 10]) {
+  Color darken([int amount = 10]) {
     if (amount <= 0) return this;
     if (amount > 100) return Colors.black;
     final HSLColor hsl = HSLColor.fromColor(this);
@@ -112,22 +113,126 @@ extension ColorExtension on Color {
   }
 }
 
+Color _capChroma(Color color, double maxChroma) {
+  final hct = Hct.fromInt(color.toARGB32());
+  if (hct.chroma <= maxChroma) return color;
+  return Color(Hct.from(hct.hue, maxChroma, hct.tone).toInt());
+}
+
 extension ColorSchemeExtension on ColorScheme {
-  ColorScheme toPureBlack(bool isPrueBlack) => isPrueBlack
-      ? copyWith(
-          surface: Colors.black,
-          surfaceContainerLowest: Colors.black,
-          surfaceContainer: Colors.black,
-          surfaceContainerLow: Color.lerp(
-            Colors.black,
-            surfaceContainerLow,
-            0.6,
-          )!,
-          surfaceContainerHigh: Color.lerp(
-            Colors.black,
-            surfaceContainerHigh,
-            0.8,
-          )!,
-        )
-      : this;
+  Color get pageColor =>
+      brightness == Brightness.dark ? surface : surfaceContainer;
+
+  ColorScheme toNeutralSurfaces() {
+    final paper = brightness == Brightness.light ? 1.5 : 3.0;
+    return copyWith(
+      surface: _capChroma(surface, paper),
+      surfaceBright: _capChroma(surfaceBright, paper),
+      surfaceDim: _capChroma(surfaceDim, 3),
+      surfaceContainerLowest: _capChroma(surfaceContainerLowest, 3),
+      surfaceContainerLow: _capChroma(surfaceContainerLow, 3),
+      surfaceContainer: _capChroma(surfaceContainer, 3),
+      surfaceContainerHigh: _capChroma(surfaceContainerHigh, 3),
+      surfaceContainerHighest: _capChroma(surfaceContainerHighest, 3),
+      outlineVariant: _capChroma(outlineVariant, 4),
+    );
+  }
+}
+
+extension DynamicSchemeExtension on DynamicScheme {
+  ColorScheme toColorScheme() {
+    return ColorScheme(
+      brightness: isDark ? Brightness.dark : Brightness.light,
+      primary: Color(MaterialDynamicColors.primary.getArgb(this)),
+      onPrimary: Color(MaterialDynamicColors.onPrimary.getArgb(this)),
+      primaryContainer: Color(
+        MaterialDynamicColors.primaryContainer.getArgb(this),
+      ),
+      onPrimaryContainer: Color(
+        MaterialDynamicColors.onPrimaryContainer.getArgb(this),
+      ),
+      primaryFixed: Color(MaterialDynamicColors.primaryFixed.getArgb(this)),
+      primaryFixedDim: Color(
+        MaterialDynamicColors.primaryFixedDim.getArgb(this),
+      ),
+      onPrimaryFixed: Color(MaterialDynamicColors.onPrimaryFixed.getArgb(this)),
+      onPrimaryFixedVariant: Color(
+        MaterialDynamicColors.onPrimaryFixedVariant.getArgb(this),
+      ),
+      secondary: Color(MaterialDynamicColors.secondary.getArgb(this)),
+      onSecondary: Color(MaterialDynamicColors.onSecondary.getArgb(this)),
+      secondaryContainer: Color(
+        MaterialDynamicColors.secondaryContainer.getArgb(this),
+      ),
+      onSecondaryContainer: Color(
+        MaterialDynamicColors.onSecondaryContainer.getArgb(this),
+      ),
+      secondaryFixed: Color(MaterialDynamicColors.secondaryFixed.getArgb(this)),
+      secondaryFixedDim: Color(
+        MaterialDynamicColors.secondaryFixedDim.getArgb(this),
+      ),
+      onSecondaryFixed: Color(
+        MaterialDynamicColors.onSecondaryFixed.getArgb(this),
+      ),
+      onSecondaryFixedVariant: Color(
+        MaterialDynamicColors.onSecondaryFixedVariant.getArgb(this),
+      ),
+      tertiary: Color(MaterialDynamicColors.tertiary.getArgb(this)),
+      onTertiary: Color(MaterialDynamicColors.onTertiary.getArgb(this)),
+      tertiaryContainer: Color(
+        MaterialDynamicColors.tertiaryContainer.getArgb(this),
+      ),
+      onTertiaryContainer: Color(
+        MaterialDynamicColors.onTertiaryContainer.getArgb(this),
+      ),
+      tertiaryFixed: Color(MaterialDynamicColors.tertiaryFixed.getArgb(this)),
+      tertiaryFixedDim: Color(
+        MaterialDynamicColors.tertiaryFixedDim.getArgb(this),
+      ),
+      onTertiaryFixed: Color(
+        MaterialDynamicColors.onTertiaryFixed.getArgb(this),
+      ),
+      onTertiaryFixedVariant: Color(
+        MaterialDynamicColors.onTertiaryFixedVariant.getArgb(this),
+      ),
+      error: Color(MaterialDynamicColors.error.getArgb(this)),
+      onError: Color(MaterialDynamicColors.onError.getArgb(this)),
+      errorContainer: Color(MaterialDynamicColors.errorContainer.getArgb(this)),
+      onErrorContainer: Color(
+        MaterialDynamicColors.onErrorContainer.getArgb(this),
+      ),
+      outline: Color(MaterialDynamicColors.outline.getArgb(this)),
+      outlineVariant: Color(MaterialDynamicColors.outlineVariant.getArgb(this)),
+      surface: Color(MaterialDynamicColors.surface.getArgb(this)),
+      surfaceDim: Color(MaterialDynamicColors.surfaceDim.getArgb(this)),
+      surfaceBright: Color(MaterialDynamicColors.surfaceBright.getArgb(this)),
+      surfaceContainerLowest: Color(
+        MaterialDynamicColors.surfaceContainerLowest.getArgb(this),
+      ),
+      surfaceContainerLow: Color(
+        MaterialDynamicColors.surfaceContainerLow.getArgb(this),
+      ),
+      surfaceContainer: Color(
+        MaterialDynamicColors.surfaceContainer.getArgb(this),
+      ),
+      surfaceContainerHigh: Color(
+        MaterialDynamicColors.surfaceContainerHigh.getArgb(this),
+      ),
+      surfaceContainerHighest: Color(
+        MaterialDynamicColors.surfaceContainerHighest.getArgb(this),
+      ),
+      onSurface: Color(MaterialDynamicColors.onSurface.getArgb(this)),
+      onSurfaceVariant: Color(
+        MaterialDynamicColors.onSurfaceVariant.getArgb(this),
+      ),
+      inverseSurface: Color(MaterialDynamicColors.inverseSurface.getArgb(this)),
+      onInverseSurface: Color(
+        MaterialDynamicColors.inverseOnSurface.getArgb(this),
+      ),
+      inversePrimary: Color(MaterialDynamicColors.inversePrimary.getArgb(this)),
+      shadow: Color(MaterialDynamicColors.shadow.getArgb(this)),
+      scrim: Color(MaterialDynamicColors.scrim.getArgb(this)),
+      surfaceTint: Color(MaterialDynamicColors.primary.getArgb(this)),
+    );
+  }
 }

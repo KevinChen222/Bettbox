@@ -14,7 +14,7 @@ if (( $# > 1 )); then
 fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-source tool/linux-env.sh
+source tool/linux-env.sh android
 
 # NTFS mounts may silently ignore chmod. Check before downloading/building.
 mkdir -p .test
@@ -38,10 +38,10 @@ for key in keyAlias storePassword keyPassword; do
 done
 if ! "$has_signing"; then
   if "$require_signing"; then
-    echo "Restore the original keystore and local signing properties first. Do not generate a replacement key." >&2
+    echo "Restore the original keystore and local signing properties first." >&2
     exit 1
   fi
-  echo "WARNING: persistent signing is not configured; this release-mode APK uses a debug key and cannot update a differently signed installed app." >&2
+  echo "WARNING: using a debug signature for this local test APK." >&2
 fi
 
 if ! rustup target list --installed | grep -qx aarch64-linux-android; then
@@ -53,13 +53,12 @@ export SENTRY_BACKEND=none
 export GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.vfs.watch=false"
 
 flutter pub get
-dart run build_runner build -d
-cp lib/features/chains/LICENSE assets/data/avalon-chain-LICENSE.txt
-cp NOTICE assets/data/avalon-chain-NOTICE.txt
-dart setup.dart android --arch arm64 --out core
+dart run build_runner build
+dart setup.dart android --arch arm64 --out core --standard
 [[ ! -f android/gradlew ]] || chmod u+x android/gradlew
-flutter build apk --release --split-per-abi --target-platform android-arm64 --dart-define=APP_ENV=pre
+flutter build apk --no-pub --release --split-per-abi --target-platform android-arm64 --dart-define=APP_ENV=pre --dart-define=APP_STANDARD=true
 
 apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+bash tool/build-android-verify.sh "$apk"
 printf '\nAPK: %s/%s\n' "$PWD" "$apk"
 sha256sum "$apk"

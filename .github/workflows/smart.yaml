@@ -40,7 +40,7 @@ jobs:
             core/Clash.Meta/go.sum
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.7'
+          flutter-version: '3.50.1'
           channel: stable
           cache: true
       - uses: dtolnay/rust-toolchain@stable
@@ -50,28 +50,23 @@ jobs:
         if: matrix.platform == 'android'
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - name: Configure Android toolchains
         if: matrix.platform == 'android'
         shell: bash
         run: |
-          "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" "cmake;3.22.1"
-          echo "ANDROID_NDK=${ANDROID_SDK_ROOT}/ndk/28.2.13676358" >> "$GITHUB_ENV"
-          mkdir -p ~/.cargo
-          cat > ~/.cargo/config.toml <<EOF
-          [target.aarch64-linux-android]
-          linker = "${ANDROID_SDK_ROOT}/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
-          EOF
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          ndk="$sdk/ndk/28.2.13676358"
+          "$sdk/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358" "cmake;3.22.1"
+          echo "ANDROID_SDK_ROOT=$sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=$ndk" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang" >> "$GITHUB_ENV"
       - name: Flutter dependencies and generated models
         run: |
           flutter pub get
-          dart run build_runner build -d
-      - name: Bundle proxy-chain license and attribution
-        run: |
-          cp lib/features/chains/LICENSE assets/data/avalon-chain-LICENSE.txt
-          cp NOTICE assets/data/avalon-chain-NOTICE.txt
-      - name: Test Smart client models and proxy chains
-        run: flutter test test/features/chains test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart test/main_page_titles_test.dart test/models/profile_save_test.dart
+          dart run build_runner build
+      - name: Test Smart client integration
+        run: flutter test --no-pub test/smart_group_test.dart test/common/smart_update_test.dart test/clash/interface_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/widgets/synced_loading_test.dart
       - name: Prepare Smart kernel
         run: dart tool/prepare_smart_core.dart
       - name: Test Go bridge
@@ -86,29 +81,58 @@ jobs:
         run: go test -tags=with_gvisor ./common/callback ./adapter/outboundgroup ./component/smart/... ./tunnel/statistic ./listener/sing_tun
       - name: Build Windows core and helper
         if: matrix.platform == 'windows'
-        run: dart setup.dart windows --arch amd64 --out core --compatible
+        run: dart setup.dart windows --arch amd64 --out core --compatible --standard
       - name: Build Windows client
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           $coreHash = (Get-FileHash libclash/windows/BettboxCore.exe -Algorithm SHA256).Hash.ToLower()
-          flutter build windows --release --dart-define=CORE_SHA256=$coreHash --dart-define=APP_ENV=pre
+          flutter build windows --no-pub --release --dart-define=CORE_SHA256=$coreHash --dart-define=APP_ENV=pre --dart-define=APP_STANDARD=true
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Bettbox-smart-windows-x64.zip
-      - name: Build Android core and APK
+          $bundle = 'build/windows/x64/runner/Release'
+          foreach ($file in @('Bettbox.exe', 'BettboxCore.exe', 'BettboxHelperService.exe', 'data/flutter_assets/NOTICE')) {
+            if (!(Test-Path -LiteralPath "$bundle/$file" -PathType Leaf)) {
+              throw "Missing Windows bundle file $file"
+            }
+          }
+          if ((Get-FileHash "$bundle/BettboxCore.exe").Hash.ToLower() -ne $coreHash) {
+            throw 'Packaged Windows core does not match the helper token'
+          }
+          if ((Get-FileHash "$bundle/data/flutter_assets/NOTICE").Hash -ne (Get-FileHash NOTICE).Hash) {
+            throw 'Bundled NOTICE differs from the root NOTICE'
+          }
+          Compress-Archive -Path "$bundle/*" -DestinationPath Bettbox-smart-windows-x64.zip
+      - name: Restore Android release keystore
         if: matrix.platform == 'android'
+        shell: bash
         env:
           KEYSTORE: ${{ secrets.KEYSTORE }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          test -n "$KEYSTORE" && test -n "$KEY_ALIAS" && test -n "$STORE_PASSWORD" && test -n "$KEY_PASSWORD"
+          : "${KEYSTORE:?Missing KEYSTORE}" "${KEY_ALIAS:?Missing KEY_ALIAS}" "${STORE_PASSWORD:?Missing STORE_PASSWORD}" "${KEY_PASSWORD:?Missing KEY_PASSWORD}"
+          umask 077
           printf '%s' "$KEYSTORE" | base64 --decode > android/app/keystore.jks
-          printf '\nkeyAlias=%s\nstorePassword=%s\nkeyPassword=%s\n' "$KEY_ALIAS" "$STORE_PASSWORD" "$KEY_PASSWORD" >> android/local.properties
-          dart setup.dart android --arch arm64 --out core
-          flutter build apk --release --split-per-abi --target-platform android-arm64 --dart-define=APP_ENV=pre
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk Bettbox-smart-android-arm64-v8a.apk
+          python3 - <<'PY'
+          import os
+
+          with open('android/local.properties', 'a', encoding='ascii') as props:
+              props.write('\n')
+              for key, var in [('keyAlias', 'KEY_ALIAS'), ('storePassword', 'STORE_PASSWORD'), ('keyPassword', 'KEY_PASSWORD')]:
+                  value = os.environ[var].encode('utf-16-be')
+                  escaped = ''.join(f'\\u{value[i:i+2].hex()}' for i in range(0, len(value), 2))
+                  props.write(f'{key}={escaped}\n')
+          PY
+      - name: Build and verify Android APK
+        if: matrix.platform == 'android'
+        shell: bash
+        run: |
+          dart setup.dart android --arch arm64 --out core --standard
+          flutter build apk --no-pub --release --split-per-abi --target-platform android-arm64 --dart-define=APP_ENV=pre --dart-define=APP_STANDARD=true
+          apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          bash tool/build-android-verify.sh "$apk"
+          cp "$apk" Bettbox-smart-android-arm64-v8a.apk
       - name: Upload Windows package
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v7

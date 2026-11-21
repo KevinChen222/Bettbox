@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.HapticFeedbackConstants
@@ -14,6 +15,7 @@ import com.appshub.bettbox.plugins.AppPlugin
 import com.appshub.bettbox.plugins.ServicePlugin
 import com.appshub.bettbox.plugins.TilePlugin
 import com.appshub.bettbox.plugins.VpnPlugin
+import com.appshub.bettbox.widget.HomeWidgets
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineGroup
@@ -45,35 +47,36 @@ class MainActivity : FlutterActivity() {
             installSplashScreen()
         }
         super.onCreate(savedInstanceState)
+        enableHighRefreshRate()
+        HomeWidgets.handleIntent(intent)
     }
 
-    override fun onResume() {
-        super.onResume()
-        applyHighRefreshRate()
-    }
-
-    private fun applyHighRefreshRate() {
-        runCatching {
-            val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                display
-            } else {
-                @Suppress("DEPRECATION")
-                windowManager.defaultDisplay
-            } ?: return
-            val active = display.mode
-            val target = display.supportedModes
-                .filter {
-                    it.physicalWidth == active.physicalWidth &&
-                        it.physicalHeight == active.physicalHeight
-                }
-                .maxByOrNull { it.refreshRate } ?: return
-            val attributes = window.attributes
-            if (attributes.preferredDisplayModeId == target.modeId) return
-            attributes.preferredDisplayModeId = target.modeId
-            window.attributes = attributes
-        }.onFailure {
-            Log.w("MainActivity", "Failed to apply high refresh rate: ${it.message}")
+    private fun enableHighRefreshRate() {
+        val currentDisplay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay
+        } ?: return
+        val currentMode = currentDisplay.mode ?: return
+        val bestMode = currentDisplay.supportedModes
+            .filter {
+                it.physicalWidth == currentMode.physicalWidth &&
+                    it.physicalHeight == currentMode.physicalHeight
+            }
+            .maxByOrNull { it.refreshRate }
+            ?: return
+        if (bestMode.modeId != currentMode.modeId) {
+            window.attributes = window.attributes.apply {
+                preferredDisplayModeId = bestMode.modeId
+            }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        HomeWidgets.handleIntent(intent)
     }
 
     override fun provideFlutterEngine(context: Context): FlutterEngine {

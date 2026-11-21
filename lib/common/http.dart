@@ -14,14 +14,13 @@ class BettboxHttpOverrides extends HttpOverrides {
     }
     final port = globalState.config.patchClashConfig.mixedPort;
     final isStart = globalState.appState.runTime != null;
-    if (!isStart) return 'DIRECT';
+    if (!isStart || port == 0) return 'DIRECT';
     return 'PROXY localhost:$port';
   }
 
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     final client = super.createHttpClient(context);
-    client.badCertificateCallback = (_, _, _) => true;
     client.findProxy = handleFindProxy;
     return client;
   }

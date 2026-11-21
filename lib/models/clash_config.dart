@@ -12,7 +12,6 @@ typedef HostsMap = Map<String, String>;
 const defaultClashConfig = ClashConfig();
 
 const defaultTun = Tun();
-const defaultDns = Dns();
 const defaultNtp = Ntp();
 const defaultSniffer = Sniffer();
 const defaultTunnel = <TunnelEntry>[];
@@ -155,22 +154,7 @@ abstract class Sniffer with _$Sniffer {
     @Default(['192.168.0.3/32'])
     @JsonKey(name: 'skip-src-address')
     List<String> skipSrcAddress,
-    @Default([
-      '91.108.56.0/22',
-      '91.108.4.0/22',
-      '91.108.8.0/22',
-      '91.108.16.0/22',
-      '91.108.12.0/22',
-      '149.154.160.0/20',
-      '91.105.192.0/23',
-      '91.108.20.0/22',
-      '185.76.151.0/24',
-      '2001:b28:f23d::/48',
-      '2001:b28:f23f::/48',
-      '2001:67c:4e8::/48',
-      '2001:b28:f23c::/48',
-      '2a0a:f280::/32',
-    ])
+    @Default(telegramCidrs)
     @JsonKey(name: 'skip-dst-address')
     List<String> skipDstAddress,
     @Default(['Mijia Cloud', '+.push.apple.com'])
@@ -199,7 +183,7 @@ abstract class Sniffer with _$Sniffer {
   }
 }
 
-List<String> _formJsonPorts(List? ports) {
+List<String> _formJsonPorts(List<dynamic>? ports) {
   return ports?.map((item) => item.toString()).toList() ?? [];
 }
 
@@ -287,9 +271,7 @@ abstract class Tun with _$Tun {
     @Default(tunDeviceName) String device,
     @JsonKey(name: 'auto-route') @Default(false) bool autoRoute,
     @Default(TunStack.mips) TunStack stack,
-    @JsonKey(name: 'congestion-controller')
-    @Default(CongestionController.bbr3)
-    CongestionController congestionController,
+    @JsonKey(name: 'dns-mode') TunDnsMode? dnsMode,
     @JsonKey(name: 'dns-hijack') @Default(['any:53']) List<String> dnsHijack,
     @JsonKey(name: 'route-address') @Default([]) List<String> routeAddress,
     @JsonKey(name: 'route-exclude-address')
@@ -323,15 +305,17 @@ abstract class Tun with _$Tun {
 extension TunExt on Tun {
   Tun getRealTun(
     bool bypassPrivateRoute, {
-    String? fakeIpRange,
-    String? fakeIpRangeV6,
     List<String>? bypassPrivateRouteAddress,
   }) {
     if (system.isDesktop) {
+      final dnsMode = dnsHijack.isNotEmpty
+          ? TunDnsMode.hijack
+          : TunDnsMode.disabled;
       if (bypassPrivateRoute) {
         return copyWith(
           autoRoute: true,
           autoRedirect: system.isLinux,
+          dnsMode: dnsMode,
           routeAddress: [],
           routeExcludeAddress:
               bypassPrivateRouteAddress ??
@@ -341,6 +325,7 @@ extension TunExt on Tun {
       return copyWith(
         autoRoute: true,
         autoRedirect: system.isLinux,
+        dnsMode: dnsMode,
         routeAddress: [],
         routeExcludeAddress: [],
       );
@@ -360,105 +345,11 @@ extension TunExt on Tun {
 }
 
 @freezed
-abstract class FallbackFilter with _$FallbackFilter {
-  const factory FallbackFilter({
-    @Default(false) bool geoip,
-    @Default('CN') @JsonKey(name: 'geoip-code') String geoipCode,
-    @Default([]) List<String> ipcidr,
-    @Default([]) List<String> domain,
-  }) = _FallbackFilter;
-  factory FallbackFilter.fromJson(Map<String, Object?> json) =>
-      _$FallbackFilterFromJson(json);
-}
-
-@freezed
-abstract class Dns with _$Dns {
-  const factory Dns({
-    @Default(true) bool enable,
-    @Default('0.0.0.0:10053') String listen,
-    @Default(false) @JsonKey(name: 'prefer-h3') bool preferH3,
-    @Default(CacheAlgorithm.arc)
-    @JsonKey(name: 'cache-algorithm')
-    CacheAlgorithm cacheAlgorithm,
-    @Default(true) @JsonKey(name: 'use-hosts') bool useHosts,
-    @Default(true) @JsonKey(name: 'use-system-hosts') bool useSystemHosts,
-    @Default(false) @JsonKey(name: 'respect-rules') bool respectRules,
-    @Default(false) bool ipv6,
-    @Default(['114.114.114.114'])
-    @JsonKey(name: 'default-nameserver')
-    List<String> defaultNameserver,
-    @Default(DnsMode.fakeIp)
-    @JsonKey(name: 'enhanced-mode')
-    DnsMode enhancedMode,
-    @Default('198.18.0.1/15')
-    @JsonKey(name: 'fake-ip-range')
-    String fakeIpRange,
-    @Default('') @JsonKey(name: 'fake-ip-range6') String fakeIpRangeV6,
-    @Default(FilterMode.blacklist)
-    @JsonKey(name: 'fake-ip-filter-mode')
-    FilterMode fakeIpFilterMode,
-    @Default([
-      '*',
-      'geosite:private',
-      'geosite:category-ntp',
-      'geosite:geolocation-cn',
-      'geosite:connectivity-check',
-    ])
-    @JsonKey(name: 'fake-ip-filter')
-    List<String> fakeIpFilter,
-    @Default(1) @JsonKey(name: 'fake-ip-ttl') int fakeIpTtl,
-    @Default({
-      '+.internal.corp.com': '10.0.0.1',
-      'geosite:cn': '119.29.29.29',
-      'geosite:private': 'system',
-      '*': 'system',
-    })
-    @JsonKey(name: 'nameserver-policy')
-    Map<String, String> nameserverPolicy,
-    @Default(['1.1.1.1']) List<String> nameserver,
-    @Default([]) List<String> fallback,
-    @Default(['tls://223.6.6.6#DIRECT', 'https://doh.pub/dns-query#DIRECT'])
-    @JsonKey(name: 'proxy-server-nameserver')
-    List<String> proxyServerNameserver,
-    @Default([])
-    @JsonKey(name: 'direct-nameserver')
-    List<String> directNameserver,
-    @Default(false)
-    @JsonKey(name: 'direct-nameserver-follow-policy')
-    bool directNameserverFollowPolicy,
-    @Default(FallbackFilter())
-    @JsonKey(name: 'fallback-filter')
-    FallbackFilter fallbackFilter,
-    @Default(false)
-    @JsonKey(name: 'fallback-lazy-query')
-    bool fallbackLazyQuery,
-  }) = _Dns;
-
-  factory Dns.fromJson(Map<String, Object?> json) => _$DnsFromJson(json);
-
-  factory Dns.safeDnsFromJson(Map<String, Object?> json) {
-    try {
-      return Dns.fromJson(json);
-    } catch (_) {
-      return const Dns();
-    }
-  }
-}
-
-extension DnsExt on Dns {
-  String effectiveFakeIpRangeV6({required bool ipv6Enabled}) {
-    if (fakeIpRangeV6.isNotEmpty) return fakeIpRangeV6;
-    if (ipv6Enabled) return '2001:2::1/48';
-    return '';
-  }
-}
-
-@freezed
 abstract class Ntp with _$Ntp {
   const factory Ntp({
     @Default(true) bool enable,
     @Default(false) @JsonKey(name: 'write-to-system') bool writeToSystem,
-    @Default('time.apple.com') String server,
+    @Default(defaultNtpServer) String server,
     @Default(123) int port,
     @Default(60) int interval,
   }) = _Ntp;
@@ -671,16 +562,16 @@ List<Rule> _genRule(List<dynamic>? rules) {
   if (rules == null) {
     return [];
   }
-  return rules.map((item) => Rule.value(item)).toList();
+  return rules.map((item) => Rule.value(item as String)).toList();
 }
 
-List<RuleProvider> _genRuleProviders(Map json) {
+List<RuleProvider> _genRuleProviders(Map<dynamic, dynamic> json) {
   return json.entries
       .map((entry) => RuleProvider(name: entry.key.toString()))
       .toList();
 }
 
-List<SubRule> _genSubRules(Map json) {
+List<SubRule> _genSubRules(Map<dynamic, dynamic> json) {
   return json.entries
       .map((entry) => SubRule(name: entry.key.toString()))
       .toList();
@@ -711,6 +602,11 @@ extension ClashConfigExt on ClashConfig {
     redirPort,
     tproxyPort,
   }.where((port) => port > 0).join('/');
+
+  String get externalControllerAddress =>
+      externalController == ExternalControllerStatus.open
+      ? '127.0.0.1:$externalControllerPort'
+      : '';
 }
 
 @freezed
@@ -728,8 +624,8 @@ abstract class ClashConfig with _$ClashConfig {
     @JsonKey(name: 'skip-auth-prefixes')
     List<String> skipAuthPrefixes,
     @Default(LogLevel.error) @JsonKey(name: 'log-level') LogLevel logLevel,
-    @Default(false) bool ipv6,
-    @Default(FindProcessMode.off)
+    @Default(true) bool ipv6,
+    @Default(FindProcessMode.always)
     @JsonKey(
       name: 'find-process-mode',
       unknownEnumValue: FindProcessMode.always,
@@ -740,8 +636,8 @@ abstract class ClashConfig with _$ClashConfig {
     int keepAliveInterval,
     @Default(true) @JsonKey(name: 'unified-delay') bool unifiedDelay,
     @Default(true) @JsonKey(name: 'tcp-concurrent') bool tcpConcurrent,
+    @Default('') @JsonKey(name: 'interface-name') String interfaceName,
     @Default(defaultTun) @JsonKey(fromJson: Tun.safeFormJson) Tun tun,
-    @Default(defaultDns) @JsonKey(fromJson: Dns.safeDnsFromJson) Dns dns,
     @Default(defaultNtp) @JsonKey(fromJson: Ntp.safeNtpFromJson) Ntp ntp,
     @Default(defaultSniffer)
     @JsonKey(fromJson: Sniffer.safeSnifferFromJson)
@@ -762,6 +658,9 @@ abstract class ClashConfig with _$ClashConfig {
     @Default(ExternalControllerStatus.close)
     @JsonKey(name: 'external-controller')
     ExternalControllerStatus externalController,
+    @Default(defaultExternalControllerPort)
+    @JsonKey(name: 'external-controller-port')
+    int externalControllerPort,
     String? secret,
     @JsonKey(name: 'external-ui-name') String? externalUiName,
     @JsonKey(name: 'external-ui-url') String? externalUiUrl,
@@ -773,16 +672,12 @@ abstract class ClashConfig with _$ClashConfig {
 
   factory ClashConfig.safeFormJson(Map<String, Object?>? json) {
     if (json == null) {
-      return system.isAndroid
-          ? const ClashConfig(findProcessMode: FindProcessMode.always)
-          : defaultClashConfig;
+      return defaultClashConfig;
     }
     try {
       return ClashConfig.fromJson(json);
     } catch (_) {
-      return system.isAndroid
-          ? const ClashConfig(findProcessMode: FindProcessMode.always)
-          : defaultClashConfig;
+      return defaultClashConfig;
     }
   }
 }

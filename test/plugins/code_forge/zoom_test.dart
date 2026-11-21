@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:re_highlight/languages/yaml.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 
 import 'support.dart';
@@ -37,7 +36,7 @@ void _pinchZoom() {
         home: Scaffold(
           body: CodeForge(
             controller: controller,
-            language: langYaml,
+            language: editorYamlMode,
             editorTheme: atomOneLightTheme,
             textStyle: const TextStyle(fontSize: 16, height: 1.25),
             enablePinchZoom: true,
@@ -110,7 +109,7 @@ void _pinchZoom() {
         home: Scaffold(
           body: CodeForge(
             controller: controller,
-            language: langYaml,
+            language: editorYamlMode,
             editorTheme: atomOneLightTheme,
             enablePinchZoom: true,
             onZoomEnd: (zoom) => committed = zoom,
@@ -178,7 +177,7 @@ void _pinchZoom() {
           home: Scaffold(
             body: CodeForge(
               controller: controller,
-              language: langYaml,
+              language: editorYamlMode,
               editorTheme: atomOneLightTheme,
               enablePinchZoom: enable,
               onContextMenu: (_, _) {},
@@ -240,7 +239,7 @@ void _pinchZoom() {
             body: StatefulBuilder(
               builder: (context, setState) => CodeForge(
                 controller: controller,
-                language: langYaml,
+                language: editorYamlMode,
                 editorTheme: atomOneLightTheme,
                 textStyle: TextStyle(fontSize: 14 * zoom),
                 zoom: zoom,
@@ -337,7 +336,7 @@ void _pinchZoomTreeStability() {
           home: Scaffold(
             body: CodeForge(
               controller: controller,
-              language: langYaml,
+              language: editorYamlMode,
               editorTheme: atomOneLightTheme,
               enablePinchZoom: true,
               onContextMenu: (_, _) {},
@@ -389,14 +388,12 @@ void _pinchZoomTreeStability() {
       expect(
         identical(inPinchScrollableElement, initialScrollableElement),
         isTrue,
-        reason:
-            'TwoDimensionalScrollable element should not be unmounted during pinch',
+        reason: 'TwoDimensionalScrollable element should not be unmounted during pinch',
       );
       expect(
         identical(inPinchScrollableState, initialScrollableState),
         isTrue,
-        reason:
-            'TwoDimensionalScrollable state should not be recreated during pinch',
+        reason: 'TwoDimensionalScrollable state should not be recreated during pinch',
       );
 
       await touch1.up();
@@ -413,14 +410,12 @@ void _pinchZoomTreeStability() {
       expect(
         identical(afterPinchScrollableElement, initialScrollableElement),
         isTrue,
-        reason:
-            'TwoDimensionalScrollable element should remain identical after pinch ends',
+        reason: 'TwoDimensionalScrollable element should remain identical after pinch ends',
       );
       expect(
         identical(afterPinchScrollableState, initialScrollableState),
         isTrue,
-        reason:
-            'TwoDimensionalScrollable state should remain identical after pinch ends',
+        reason: 'TwoDimensionalScrollable state should remain identical after pinch ends',
       );
     },
   );
@@ -454,7 +449,7 @@ class _Editor {
             child: StatefulBuilder(
               builder: (context, setState) => CodeForge(
                 controller: controller,
-                language: langYaml,
+                language: editorYamlMode,
                 editorTheme: atomOneLightTheme,
                 lineWrap: lineWrap,
                 textStyle: TextStyle(
@@ -723,7 +718,7 @@ void _zoomAnchor() {
       home: Scaffold(
         body: CodeForge(
           controller: controller,
-          language: langYaml,
+          language: editorYamlMode,
           editorTheme: atomOneLightTheme,
           textStyle: TextStyle(fontSize: fontSize, height: 1.25),
           onContextMenu: (_, _) {},

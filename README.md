@@ -23,44 +23,46 @@
 >
 > **开源许可保持有效**：本声明说明个人维护范围及使用风险，不修改原有开源许可证，也不额外限制许可证已经授予的使用、修改或再分发权利。
 
-[使用说明：Smart 与代理链路](readme/Fork-Features.md)
+[Smart、落地节点、订阅合并与旧版升级](readme/Fork-Features.md)
 
 ---
 
 <p align="center">
-  <strong>Another Better Mihomo Client</strong>
+  <strong>Another Better Network Toolbox</strong>
 </p>
 
-**Bettbox 是一款多平台的网络分流和 DNS 调试工具，基于强大的 Mihomo 内核深度打造。我们注重更多的用户体验、严格的隐私安全与细微的功能打磨，目标致力于提供更加轻量畅快、低资源消耗即可长期稳定运行的现代化客户端。**
+**Bettbox 是基于 Mihomo 内核的多平台网络分流与 DNS 调试工具。更专注于极致的用户体验，为长期稳定运行而生，轻量省资源，且不收集任何数据。**
 
-秉承 **“Better Experience, Out of the box”（更优体验，亦开箱可用）** 的设计理念，Bettbox 深度挖掘系统与硬件潜能，实现前台高帧率简洁流畅、后台低能耗与低资源占用。项目已率先通过 SignPath 开源基金会的人工审核安全溯源，Windows 端已装载官方权威的 OV 数字签名证书。
+上游项目 Bettbox 取自 Better Network Toolbox。上游 Windows 版使用 SignPath 开源基金会提供的 OV 代码签名；本分支的下载入口见下文。
 
 [![Latest Release](https://img.shields.io/github/v/release/KevinChen222/Bettbox?style=for-the-badge&logo=github&color=238636&label=Smart)](https://github.com/KevinChen222/Bettbox/releases/latest) [![Core](https://img.shields.io/badge/Core-Mihomo%20Smart-8A2BE2?style=for-the-badge&logo=go&logoColor=white)](https://github.com/vernesong/mihomo/tree/Alpha)
 
 <p align="center">
-  <img src="snapshots/home.png" alt="Bettbox" />
+  <img src="snapshots/home.jpg" alt="Bettbox" />
 </p>
 
 ---
 ### ✈️ Telegram 社区交流
 
-[![Telegram Group](https://img.shields.io/badge/Bettbox-Chat-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/appshub_chat) [![Telegram Channel](https://img.shields.io/badge/Bettbox-Channel-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/appshub_channel)
+[![Telegram Group](https://img.shields.io/badge/Bettbox-Chat-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/bettbox_chat) [![Telegram Channel](https://img.shields.io/badge/Bettbox-Channel-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/appshub_channel)
 
 ---
 ## 🚀 核心特性
 
-* **开箱即用**：完善的权限引导与舒适的 TUN / VPN 体验，预置大量合理优化策略，安装即达最佳可用状态。
-* **轻量畅快**：深度调优系统与渲染管线，前台交互动画高帧率简洁丝滑，移动端低能耗，桌面端低资源占用。
-* **安全可信**：内核紧跟 Mihomo 主线，遵循各平台最小权限设计；通过 SignPath 审计并装载 Windows OV 数字签名证书。
-* **稳定容错**：优化多平台极端网络环境下的边界问题，内置双重配置检测验证与保护机制，带来媲美企业级应用的长期稳定性。
-* **架构优化**：桌面端原生 ARM64 架构深度支持，提供硬件性能分级，同时持续维护面向老旧设备的 Compatible 兼容版本。
-* **智能守护**：支持多平台无感智能启停、移动端低功耗休眠策略、一键禁用 QUIC 以及托盘菜单多维快捷控制。
-* **可视化设置**：提供丰富深入的可视化参数调节界面，支持改动即时生效，摆脱繁琐的手动改写配置负担。
-* **首页小组件**：内置多款设计精良的 Widget 小组件，在首页直观掌控实时网速、连接与全局运行状态。
-* **个性化定制**：支持丰富的色彩主题、自定义图标与标题等，并内置 30 种精美的测速动效。
-* **生态与扩展**：支持外置 JS 覆写脚本的可视化 UI 适配，深度重构的Code-forge高性能编辑器。
-* **零隐私风险**：代码完全透明开源、无广告，全自动化 CI/CD 流程接受全方位审计，零后台隐私收集。
-* **社区导向**：我们会认真评估社区反馈，积极响应高质量 Issue，与活跃的用户社群共同打磨进化。
+* **开箱即用**：权限引导、TUN 与托管分流模式均已预置，安装后即可使用。
+* **轻量畅快**：移动端低功耗，桌面端后台占用低，界面动画流畅。
+* **安全可信**：内核跟随 Mihomo 主线，各平台只申请最小权限。
+* **稳定容错**：优化多平台极端网络环境下的边界问题，配置双重校验，适合长期运行。
+* **架构优化**：桌面端原生支持 ARM64，持续维护面向旧设备的 Compatible 兼容版。
+* **智能守护**：多平台智能启停，适配移动端 Doze 休眠，桌面端多平台托盘快捷控制。
+* **可视化设置**：参数可视化调节，改动即时生效，小白用户无需手动改写配置。
+* **首页小组件**：内置多款设计精良的 Widget 小组件，首页可掌控全局运行状态。
+* **全能工具箱**：内置专业级别网络与 DNS 分流调试工具，网络状况一目了然。
+* **节点与订阅管理**：从节点页为落地节点设置前置代理，或通过订阅合并统一管理多个配置。
+* **个性化定制**：多套类 MD 色彩主题，可自定义图标，提供多种测速动效。
+* **生态与扩展**：外置 JS 覆写脚本可适配图形界面，高性能 Code-forge 编辑器。
+* **零隐私风险**：代码开源、无广告，CI/CD 全自动且公开可审计，无后台数据收集。
+* **社区导向**：认真对待社区反馈，与活跃用户社群共同进化，积极响应高质量 Issue。
 
 ---
 ## 🛠️ 安装与下载
@@ -72,21 +74,20 @@
   * **Linux Kernel 5.4+:** (x64 / arm64)
   * **macOS 12.0+:** (Intel / Apple Silicon)
 * **移动端及其他**:
-  * **Android 8.0+:** (ARMv8 / ARMv7 / x86_64 / Universal)
+  * **Android 7.0+（上游 Gradle 最低 API 24）:** (ARMv8 / ARMv7 / x86_64 / Universal)
   * **Android TV:** 完整大屏适配，可选 ARMv7 32位版本
   * **鸿蒙 NEXT:** 可配合 [[卓易通]](https://harmonyos.cool/android-app) 稳定使用
 
 **Linux社区维护包:**<br>
 * **ArchLinux:** <code>yay -S bettbox-bin</code> 或 <code>paru -S bettbox-bin</code> (由 [lyj404](https://github.com/lyj404/bettbox-aur) 维护)<br>
-* **AMD64=v1 (旧硬件兼容):** <code>yay -S bettbox-compatible-bin</code> 或 <code>paru -S bettbox-compatible-bin</code> (由 [VillagerTom](https://github.com/VillagerTom) 维护)
+* **AMD64=v1 (兼容版):** <code>yay -S bettbox-compatible-bin</code> 或 <code>paru -S bettbox-compatible-bin</code> (由 [VillagerTom](https://github.com/VillagerTom) 维护)
 
 ---
 ## 💡 常见问题
 
 1. **安装环境与兼容版本**：
-   - 安卓端设备请检查是否授予了充足的后台运行权限，系统需满足 Android 8.0+。
-   - 桌面端老旧硬件请根据 CPU 指令集架构选择对应的 Compatible 兼容版本。
-   - 安全相关：Bettbox 全流程开源透明，代码已通过 SignPath 权威安全审计，零隐私收集。
+   - 安卓端设备请检查后台运行权限。本分支仅提供 arm64-v8a；Android 7.x 在 Smart 产物上的兼容性需以对应构建的实际验证为准。
+   - 桌面端老旧硬件请根据 CPU 指令集架构选择对应的上游 Compatible 版本。
 
 2. **桌面端权限与 TUN**：
    - Windows 端管理员权限安装包已内置处理，日常使用无需手动再次授权。
@@ -117,7 +118,7 @@
 以 Windows 平台构建为例：
 
 * 系统需求：Windows 10 及以上
-* 依赖环境：Git, Visual Studio, Flutter 3.47.x, Golang, Inno Setup, Rust
+* 依赖环境：Git、Visual Studio、Flutter 3.50.1（上游 CI）、Dart 3.14+、Go、Inno Setup、Rust
 ```bash
 * flutter pub get (获取相关依赖)
 * dart .\setup.dart windows --arch amd64 --out core (仅构建Core核心)
@@ -142,12 +143,22 @@ const Compatible_With_Bettbox = {
 
 ---
 ### 🛩️ 推荐服务
+
+<table>
+<tbody>
+<tr>
+<td width="180"><a href="https://api.muteki.site/register?aff=BETTBOX"><img src="https://raw.githubusercontent.com/sub-store-org/Sub-Store/master/assets/banners/MaruCode.jpg" alt="MaruCode" width="150"></a></td>
+<td><a href="https://api.muteki.site/register?aff=BETTBOX">MaruCode</a> 是一家偶尔做做慈善的小破站 API，自营号池，不搞充值营销套路，主要提供 Codex、Claude Code、GPT Image-2 等主流模型，支持 WebSocket 协议，明码标价(Codex 0.3x, CC 1.7x)，透明汇率(1:1)，<a href="https://api.muteki.site/register?aff=BETTBOX">新用户注册</a></td>
+</tr>
+</tbody>
+</table>
+
+--------------------------------
 #### IEPL 专线  〢  [百变小樱](https://www.bbxy01.com/v2/register?code=c09R)  〢  [白月光](https://www.sibker.com/register?invite_code=YZq6L5zd)  〢  [Ytoo](https://y-too.net/aff.php?aff=10354)
 --------------------------------
 #### 低价 直连  〢  [良心云](https://xn--9kqz23b19z.com/#/register?code=VTnrQYAj)  〢  [吹雪云](https://xn--9kqs1lo79d.com/#/register?code=skKMTab7)  〢  [一分](https://xn--4gqx1hgtfdmt.com/#/register?code=AuCiXprV)
 --------------------------------
 #### 百变小樱专享68折优惠码：bettbox68 ，参见：[相关介绍](https://t.me/appshub_channel/381)
---------------------------------
 
 **简评** : ❚ ❚ 以上链接基本为自用或 TG 群组讨论推荐，此处仅做 AFF 展示（注：通过链接购买第三方服务，开发者可获得少量佣金支持），这并不代表对其服务作出承诺或保证。请自行甄别并合理选择。
 
@@ -181,6 +192,19 @@ const Compatible_With_Bettbox = {
 [Zashboard](https://github.com/Zephyruso/zashboard), [CMFA](https://github.com/MetaCubeX/ClashMetaForAndroid), [Sparkle](https://github.com/xishang0128/sparkle), [SFA](https://github.com/SagerNet/sing-box-for-android), [HUSI](https://github.com/xchacha20-poly1305/husi), [V2rayN](https://github.com/2dust/v2rayN), [Bett-rules](https://github.com/appshubcc/bett-rules)
 
 ---
+## 📈 项目热度
+
+<p align="center">
+  <a href="https://www.star-history.com/?repos=appshubcc%2FBettbox&type=timeline&legend=top-left">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=appshubcc/Bettbox&type=date&theme=dark&legend=top-left" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=appshubcc/Bettbox&type=date&legend=top-left" />
+      <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=appshubcc/Bettbox&type=date&legend=top-left" />
+    </picture>
+  </a>
+</p>
+
+---
 ## 📄 开源协议
 
-本项目采用 [GPL-3.0 License](LICENSE) 开源协议。
+本项目采用 [GPL-3.0 License](LICENSE) 开源协议。旧版贡献及其许可记录见 [NOTICE](NOTICE)。

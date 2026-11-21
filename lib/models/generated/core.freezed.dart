@@ -16,7 +16,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$SetupParams {
 
-@JsonKey(name: 'selected-map') Map<String, String> get selectedMap;@JsonKey(name: 'test-url') String get testUrl;@JsonKey(name: 'override-test-url') bool get overrideTestUrl;@JsonKey(name: 'profile-path') String get profilePath;@JsonKey(name: 'age-secret-key') String get ageSecretKey;@JsonKey(name: 'scripted-config') String get scriptedConfig; Map<String, dynamic>? get patch;
+@JsonKey(name: 'selected-map') Map<String, String> get selectedMap;@JsonKey(name: 'test-url') String get testUrl;@JsonKey(name: 'profile-path') String get profilePath;@JsonKey(name: 'age-secret-key') String get ageSecretKey;@JsonKey(name: 'scripted-config') String get scriptedConfig; Map<String, dynamic>? get patch;
 /// Create a copy of SetupParams
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -30,20 +30,20 @@ $SetupParamsCopyWith<SetupParams> get copyWith => _$SetupParamsCopyWithImpl<Setu
 @override
 bool operator ==(Object other) {
   final _this = this as SetupParams;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is SetupParams&&const DeepCollectionEquality().equals(other.selectedMap, _this.selectedMap)&&(identical(other.testUrl, _this.testUrl) || other.testUrl == _this.testUrl)&&(identical(other.overrideTestUrl, _this.overrideTestUrl) || other.overrideTestUrl == _this.overrideTestUrl)&&(identical(other.profilePath, _this.profilePath) || other.profilePath == _this.profilePath)&&(identical(other.ageSecretKey, _this.ageSecretKey) || other.ageSecretKey == _this.ageSecretKey)&&(identical(other.scriptedConfig, _this.scriptedConfig) || other.scriptedConfig == _this.scriptedConfig)&&const DeepCollectionEquality().equals(other.patch, _this.patch));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SetupParams&&const DeepCollectionEquality().equals(other.selectedMap, _this.selectedMap)&&(identical(other.testUrl, _this.testUrl) || other.testUrl == _this.testUrl)&&(identical(other.profilePath, _this.profilePath) || other.profilePath == _this.profilePath)&&(identical(other.ageSecretKey, _this.ageSecretKey) || other.ageSecretKey == _this.ageSecretKey)&&(identical(other.scriptedConfig, _this.scriptedConfig) || other.scriptedConfig == _this.scriptedConfig)&&const DeepCollectionEquality().equals(other.patch, _this.patch));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as SetupParams;
-  return Object.hash(runtimeType,const DeepCollectionEquality().hash(_this.selectedMap),_this.testUrl,_this.overrideTestUrl,_this.profilePath,_this.ageSecretKey,_this.scriptedConfig,const DeepCollectionEquality().hash(_this.patch));
+  return Object.hash(runtimeType,const DeepCollectionEquality().hash(_this.selectedMap),_this.testUrl,_this.profilePath,_this.ageSecretKey,_this.scriptedConfig,const DeepCollectionEquality().hash(_this.patch));
 }
 
 @override
 String toString() {
   final _this = this as SetupParams;
-  return 'SetupParams(selectedMap: ${_this.selectedMap}, testUrl: ${_this.testUrl}, overrideTestUrl: ${_this.overrideTestUrl}, profilePath: ${_this.profilePath}, ageSecretKey: ${_this.ageSecretKey}, scriptedConfig: ${_this.scriptedConfig}, patch: ${_this.patch})';
+  return 'SetupParams(selectedMap: ${_this.selectedMap}, testUrl: ${_this.testUrl}, profilePath: ${_this.profilePath}, ageSecretKey: ${_this.ageSecretKey}, scriptedConfig: ${_this.scriptedConfig}, patch: ${_this.patch})';
 }
 
 
@@ -54,7 +54,7 @@ abstract mixin class $SetupParamsCopyWith<$Res>  {
   factory $SetupParamsCopyWith(SetupParams value, $Res Function(SetupParams) _then) = _$SetupParamsCopyWithImpl;
 @useResult
 $Res call({
-@JsonKey(name: 'selected-map') Map<String, String> selectedMap,@JsonKey(name: 'test-url') String testUrl,@JsonKey(name: 'override-test-url') bool overrideTestUrl,@JsonKey(name: 'profile-path') String profilePath,@JsonKey(name: 'age-secret-key') String ageSecretKey,@JsonKey(name: 'scripted-config') String scriptedConfig, Map<String, dynamic>? patch
+@JsonKey(name: 'selected-map') Map<String, String> selectedMap,@JsonKey(name: 'test-url') String testUrl,@JsonKey(name: 'profile-path') String profilePath,@JsonKey(name: 'age-secret-key') String ageSecretKey,@JsonKey(name: 'scripted-config') String scriptedConfig, Map<String, dynamic>? patch
 });
 
 
@@ -71,12 +71,11 @@ class _$SetupParamsCopyWithImpl<$Res>
 
 /// Create a copy of SetupParams
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? selectedMap = null,Object? testUrl = null,Object? overrideTestUrl = null,Object? profilePath = null,Object? ageSecretKey = null,Object? scriptedConfig = null,Object? patch = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? selectedMap = null,Object? testUrl = null,Object? profilePath = null,Object? ageSecretKey = null,Object? scriptedConfig = null,Object? patch = freezed,}) {
   return _then(SetupParams(
 selectedMap: null == selectedMap ? _self.selectedMap : selectedMap // ignore: cast_nullable_to_non_nullable
 as Map<String, String>,testUrl: null == testUrl ? _self.testUrl : testUrl // ignore: cast_nullable_to_non_nullable
-as String,overrideTestUrl: null == overrideTestUrl ? _self.overrideTestUrl : overrideTestUrl // ignore: cast_nullable_to_non_nullable
-as bool,profilePath: null == profilePath ? _self.profilePath : profilePath // ignore: cast_nullable_to_non_nullable
+as String,profilePath: null == profilePath ? _self.profilePath : profilePath // ignore: cast_nullable_to_non_nullable
 as String,ageSecretKey: null == ageSecretKey ? _self.ageSecretKey : ageSecretKey // ignore: cast_nullable_to_non_nullable
 as String,scriptedConfig: null == scriptedConfig ? _self.scriptedConfig : scriptedConfig // ignore: cast_nullable_to_non_nullable
 as String,patch: freezed == patch ? _self.patch : patch // ignore: cast_nullable_to_non_nullable
@@ -165,10 +164,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'selected-map')  Map<String, String> selectedMap, @JsonKey(name: 'test-url')  String testUrl, @JsonKey(name: 'override-test-url')  bool overrideTestUrl, @JsonKey(name: 'profile-path')  String profilePath, @JsonKey(name: 'age-secret-key')  String ageSecretKey, @JsonKey(name: 'scripted-config')  String scriptedConfig,  Map<String, dynamic>? patch)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'selected-map')  Map<String, String> selectedMap, @JsonKey(name: 'test-url')  String testUrl, @JsonKey(name: 'profile-path')  String profilePath, @JsonKey(name: 'age-secret-key')  String ageSecretKey, @JsonKey(name: 'scripted-config')  String scriptedConfig,  Map<String, dynamic>? patch)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _SetupParams() when $default != null:
-return $default(_that.selectedMap,_that.testUrl,_that.overrideTestUrl,_that.profilePath,_that.ageSecretKey,_that.scriptedConfig,_that.patch);case _:
+return $default(_that.selectedMap,_that.testUrl,_that.profilePath,_that.ageSecretKey,_that.scriptedConfig,_that.patch);case _:
   return orElse();
 
 }
@@ -186,10 +185,10 @@ return $default(_that.selectedMap,_that.testUrl,_that.overrideTestUrl,_that.prof
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'selected-map')  Map<String, String> selectedMap, @JsonKey(name: 'test-url')  String testUrl, @JsonKey(name: 'override-test-url')  bool overrideTestUrl, @JsonKey(name: 'profile-path')  String profilePath, @JsonKey(name: 'age-secret-key')  String ageSecretKey, @JsonKey(name: 'scripted-config')  String scriptedConfig,  Map<String, dynamic>? patch)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'selected-map')  Map<String, String> selectedMap, @JsonKey(name: 'test-url')  String testUrl, @JsonKey(name: 'profile-path')  String profilePath, @JsonKey(name: 'age-secret-key')  String ageSecretKey, @JsonKey(name: 'scripted-config')  String scriptedConfig,  Map<String, dynamic>? patch)  $default,) {final _that = this;
 switch (_that) {
 case _SetupParams():
-return $default(_that.selectedMap,_that.testUrl,_that.overrideTestUrl,_that.profilePath,_that.ageSecretKey,_that.scriptedConfig,_that.patch);case _:
+return $default(_that.selectedMap,_that.testUrl,_that.profilePath,_that.ageSecretKey,_that.scriptedConfig,_that.patch);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -206,10 +205,10 @@ return $default(_that.selectedMap,_that.testUrl,_that.overrideTestUrl,_that.prof
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'selected-map')  Map<String, String> selectedMap, @JsonKey(name: 'test-url')  String testUrl, @JsonKey(name: 'override-test-url')  bool overrideTestUrl, @JsonKey(name: 'profile-path')  String profilePath, @JsonKey(name: 'age-secret-key')  String ageSecretKey, @JsonKey(name: 'scripted-config')  String scriptedConfig,  Map<String, dynamic>? patch)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'selected-map')  Map<String, String> selectedMap, @JsonKey(name: 'test-url')  String testUrl, @JsonKey(name: 'profile-path')  String profilePath, @JsonKey(name: 'age-secret-key')  String ageSecretKey, @JsonKey(name: 'scripted-config')  String scriptedConfig,  Map<String, dynamic>? patch)?  $default,) {final _that = this;
 switch (_that) {
 case _SetupParams() when $default != null:
-return $default(_that.selectedMap,_that.testUrl,_that.overrideTestUrl,_that.profilePath,_that.ageSecretKey,_that.scriptedConfig,_that.patch);case _:
+return $default(_that.selectedMap,_that.testUrl,_that.profilePath,_that.ageSecretKey,_that.scriptedConfig,_that.patch);case _:
   return null;
 
 }
@@ -221,7 +220,7 @@ return $default(_that.selectedMap,_that.testUrl,_that.overrideTestUrl,_that.prof
 @JsonSerializable()
 
 class _SetupParams implements SetupParams {
-  const _SetupParams({@JsonKey(name: 'selected-map') required  Map<String, String> selectedMap, @JsonKey(name: 'test-url') required this.testUrl, @JsonKey(name: 'override-test-url') this.overrideTestUrl = true, @JsonKey(name: 'profile-path') this.profilePath = '', @JsonKey(name: 'age-secret-key') this.ageSecretKey = '', @JsonKey(name: 'scripted-config') this.scriptedConfig = '',  Map<String, dynamic>? patch}): _selectedMap = selectedMap,_patch = patch;
+  const _SetupParams({@JsonKey(name: 'selected-map') required  Map<String, String> selectedMap, @JsonKey(name: 'test-url') required this.testUrl, @JsonKey(name: 'profile-path') this.profilePath = '', @JsonKey(name: 'age-secret-key') this.ageSecretKey = '', @JsonKey(name: 'scripted-config') this.scriptedConfig = '',  Map<String, dynamic>? patch}): _selectedMap = selectedMap,_patch = patch;
   factory _SetupParams.fromJson(Map<String, dynamic> json) => _$SetupParamsFromJson(json);
 
  final  Map<String, String> _selectedMap;
@@ -232,7 +231,6 @@ class _SetupParams implements SetupParams {
 }
 
 @override@JsonKey(name: 'test-url') final  String testUrl;
-@override@JsonKey(name: 'override-test-url') final  bool overrideTestUrl;
 @override@JsonKey(name: 'profile-path') final  String profilePath;
 @override@JsonKey(name: 'age-secret-key') final  String ageSecretKey;
 @override@JsonKey(name: 'scripted-config') final  String scriptedConfig;
@@ -259,18 +257,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _SetupParams&&const DeepCollectionEquality().equals(other.selectedMap, _selectedMap)&&(identical(other.testUrl, testUrl) || other.testUrl == testUrl)&&(identical(other.overrideTestUrl, overrideTestUrl) || other.overrideTestUrl == overrideTestUrl)&&(identical(other.profilePath, profilePath) || other.profilePath == profilePath)&&(identical(other.ageSecretKey, ageSecretKey) || other.ageSecretKey == ageSecretKey)&&(identical(other.scriptedConfig, scriptedConfig) || other.scriptedConfig == scriptedConfig)&&const DeepCollectionEquality().equals(other.patch, _patch));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _SetupParams&&const DeepCollectionEquality().equals(other.selectedMap, _selectedMap)&&(identical(other.testUrl, testUrl) || other.testUrl == testUrl)&&(identical(other.profilePath, profilePath) || other.profilePath == profilePath)&&(identical(other.ageSecretKey, ageSecretKey) || other.ageSecretKey == ageSecretKey)&&(identical(other.scriptedConfig, scriptedConfig) || other.scriptedConfig == scriptedConfig)&&const DeepCollectionEquality().equals(other.patch, _patch));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,const DeepCollectionEquality().hash(_selectedMap),testUrl,overrideTestUrl,profilePath,ageSecretKey,scriptedConfig,const DeepCollectionEquality().hash(_patch));
+    return Object.hash(runtimeType,const DeepCollectionEquality().hash(_selectedMap),testUrl,profilePath,ageSecretKey,scriptedConfig,const DeepCollectionEquality().hash(_patch));
 }
 
 @override
 String toString() {
-    return 'SetupParams(selectedMap: $selectedMap, testUrl: $testUrl, overrideTestUrl: $overrideTestUrl, profilePath: $profilePath, ageSecretKey: $ageSecretKey, scriptedConfig: $scriptedConfig, patch: $patch)';
+    return 'SetupParams(selectedMap: $selectedMap, testUrl: $testUrl, profilePath: $profilePath, ageSecretKey: $ageSecretKey, scriptedConfig: $scriptedConfig, patch: $patch)';
 }
 
 
@@ -281,7 +279,7 @@ abstract mixin class _$SetupParamsCopyWith<$Res> implements $SetupParamsCopyWith
   factory _$SetupParamsCopyWith(_SetupParams value, $Res Function(_SetupParams) _then) = __$SetupParamsCopyWithImpl;
 @override @useResult
 $Res call({
-@JsonKey(name: 'selected-map') Map<String, String> selectedMap,@JsonKey(name: 'test-url') String testUrl,@JsonKey(name: 'override-test-url') bool overrideTestUrl,@JsonKey(name: 'profile-path') String profilePath,@JsonKey(name: 'age-secret-key') String ageSecretKey,@JsonKey(name: 'scripted-config') String scriptedConfig, Map<String, dynamic>? patch
+@JsonKey(name: 'selected-map') Map<String, String> selectedMap,@JsonKey(name: 'test-url') String testUrl,@JsonKey(name: 'profile-path') String profilePath,@JsonKey(name: 'age-secret-key') String ageSecretKey,@JsonKey(name: 'scripted-config') String scriptedConfig, Map<String, dynamic>? patch
 });
 
 
@@ -298,12 +296,11 @@ class __$SetupParamsCopyWithImpl<$Res>
 
 /// Create a copy of SetupParams
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? selectedMap = null,Object? testUrl = null,Object? overrideTestUrl = null,Object? profilePath = null,Object? ageSecretKey = null,Object? scriptedConfig = null,Object? patch = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? selectedMap = null,Object? testUrl = null,Object? profilePath = null,Object? ageSecretKey = null,Object? scriptedConfig = null,Object? patch = freezed,}) {
   return _then(_SetupParams(
 selectedMap: null == selectedMap ? _self._selectedMap : selectedMap // ignore: cast_nullable_to_non_nullable
 as Map<String, String>,testUrl: null == testUrl ? _self.testUrl : testUrl // ignore: cast_nullable_to_non_nullable
-as String,overrideTestUrl: null == overrideTestUrl ? _self.overrideTestUrl : overrideTestUrl // ignore: cast_nullable_to_non_nullable
-as bool,profilePath: null == profilePath ? _self.profilePath : profilePath // ignore: cast_nullable_to_non_nullable
+as String,profilePath: null == profilePath ? _self.profilePath : profilePath // ignore: cast_nullable_to_non_nullable
 as String,ageSecretKey: null == ageSecretKey ? _self.ageSecretKey : ageSecretKey // ignore: cast_nullable_to_non_nullable
 as String,scriptedConfig: null == scriptedConfig ? _self.scriptedConfig : scriptedConfig // ignore: cast_nullable_to_non_nullable
 as String,patch: freezed == patch ? _self._patch : patch // ignore: cast_nullable_to_non_nullable
@@ -591,7 +588,7 @@ as String,
 /// @nodoc
 mixin _$UpdateParams {
 
- Tun get tun;@JsonKey(name: 'mixed-port') int get mixedPort;@JsonKey(name: 'allow-lan') bool get allowLan;@JsonKey(name: 'find-process-mode') FindProcessMode get findProcessMode; Mode get mode;@JsonKey(name: 'log-level') LogLevel get logLevel; bool get ipv6;@JsonKey(name: 'tcp-concurrent') bool get tcpConcurrent;@JsonKey(name: 'external-controller') ExternalControllerStatus get externalController;@JsonKey(name: 'unified-delay') bool get unifiedDelay;
+ Tun get tun;@JsonKey(name: 'mixed-port') int get mixedPort;@JsonKey(name: 'allow-lan') bool get allowLan;@JsonKey(name: 'find-process-mode') FindProcessMode get findProcessMode; Mode get mode;@JsonKey(name: 'log-level') LogLevel get logLevel; bool get ipv6;@JsonKey(name: 'tcp-concurrent') bool get tcpConcurrent;@JsonKey(name: 'external-controller') String get externalController;@JsonKey(name: 'unified-delay') bool get unifiedDelay;
 /// Create a copy of UpdateParams
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -629,7 +626,7 @@ abstract mixin class $UpdateParamsCopyWith<$Res>  {
   factory $UpdateParamsCopyWith(UpdateParams value, $Res Function(UpdateParams) _then) = _$UpdateParamsCopyWithImpl;
 @useResult
 $Res call({
- Tun tun,@JsonKey(name: 'mixed-port') int mixedPort,@JsonKey(name: 'allow-lan') bool allowLan,@JsonKey(name: 'find-process-mode') FindProcessMode findProcessMode, Mode mode,@JsonKey(name: 'log-level') LogLevel logLevel, bool ipv6,@JsonKey(name: 'tcp-concurrent') bool tcpConcurrent,@JsonKey(name: 'external-controller') ExternalControllerStatus externalController,@JsonKey(name: 'unified-delay') bool unifiedDelay
+ Tun tun,@JsonKey(name: 'mixed-port') int mixedPort,@JsonKey(name: 'allow-lan') bool allowLan,@JsonKey(name: 'find-process-mode') FindProcessMode findProcessMode, Mode mode,@JsonKey(name: 'log-level') LogLevel logLevel, bool ipv6,@JsonKey(name: 'tcp-concurrent') bool tcpConcurrent,@JsonKey(name: 'external-controller') String externalController,@JsonKey(name: 'unified-delay') bool unifiedDelay
 });
 
 
@@ -657,7 +654,7 @@ as Mode,logLevel: null == logLevel ? _self.logLevel : logLevel // ignore: cast_n
 as LogLevel,ipv6: null == ipv6 ? _self.ipv6 : ipv6 // ignore: cast_nullable_to_non_nullable
 as bool,tcpConcurrent: null == tcpConcurrent ? _self.tcpConcurrent : tcpConcurrent // ignore: cast_nullable_to_non_nullable
 as bool,externalController: null == externalController ? _self.externalController : externalController // ignore: cast_nullable_to_non_nullable
-as ExternalControllerStatus,unifiedDelay: null == unifiedDelay ? _self.unifiedDelay : unifiedDelay // ignore: cast_nullable_to_non_nullable
+as String,unifiedDelay: null == unifiedDelay ? _self.unifiedDelay : unifiedDelay // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }
@@ -752,7 +749,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( Tun tun, @JsonKey(name: 'mixed-port')  int mixedPort, @JsonKey(name: 'allow-lan')  bool allowLan, @JsonKey(name: 'find-process-mode')  FindProcessMode findProcessMode,  Mode mode, @JsonKey(name: 'log-level')  LogLevel logLevel,  bool ipv6, @JsonKey(name: 'tcp-concurrent')  bool tcpConcurrent, @JsonKey(name: 'external-controller')  ExternalControllerStatus externalController, @JsonKey(name: 'unified-delay')  bool unifiedDelay)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( Tun tun, @JsonKey(name: 'mixed-port')  int mixedPort, @JsonKey(name: 'allow-lan')  bool allowLan, @JsonKey(name: 'find-process-mode')  FindProcessMode findProcessMode,  Mode mode, @JsonKey(name: 'log-level')  LogLevel logLevel,  bool ipv6, @JsonKey(name: 'tcp-concurrent')  bool tcpConcurrent, @JsonKey(name: 'external-controller')  String externalController, @JsonKey(name: 'unified-delay')  bool unifiedDelay)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _UpdateParams() when $default != null:
 return $default(_that.tun,_that.mixedPort,_that.allowLan,_that.findProcessMode,_that.mode,_that.logLevel,_that.ipv6,_that.tcpConcurrent,_that.externalController,_that.unifiedDelay);case _:
@@ -773,7 +770,7 @@ return $default(_that.tun,_that.mixedPort,_that.allowLan,_that.findProcessMode,_
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( Tun tun, @JsonKey(name: 'mixed-port')  int mixedPort, @JsonKey(name: 'allow-lan')  bool allowLan, @JsonKey(name: 'find-process-mode')  FindProcessMode findProcessMode,  Mode mode, @JsonKey(name: 'log-level')  LogLevel logLevel,  bool ipv6, @JsonKey(name: 'tcp-concurrent')  bool tcpConcurrent, @JsonKey(name: 'external-controller')  ExternalControllerStatus externalController, @JsonKey(name: 'unified-delay')  bool unifiedDelay)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( Tun tun, @JsonKey(name: 'mixed-port')  int mixedPort, @JsonKey(name: 'allow-lan')  bool allowLan, @JsonKey(name: 'find-process-mode')  FindProcessMode findProcessMode,  Mode mode, @JsonKey(name: 'log-level')  LogLevel logLevel,  bool ipv6, @JsonKey(name: 'tcp-concurrent')  bool tcpConcurrent, @JsonKey(name: 'external-controller')  String externalController, @JsonKey(name: 'unified-delay')  bool unifiedDelay)  $default,) {final _that = this;
 switch (_that) {
 case _UpdateParams():
 return $default(_that.tun,_that.mixedPort,_that.allowLan,_that.findProcessMode,_that.mode,_that.logLevel,_that.ipv6,_that.tcpConcurrent,_that.externalController,_that.unifiedDelay);case _:
@@ -793,7 +790,7 @@ return $default(_that.tun,_that.mixedPort,_that.allowLan,_that.findProcessMode,_
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( Tun tun, @JsonKey(name: 'mixed-port')  int mixedPort, @JsonKey(name: 'allow-lan')  bool allowLan, @JsonKey(name: 'find-process-mode')  FindProcessMode findProcessMode,  Mode mode, @JsonKey(name: 'log-level')  LogLevel logLevel,  bool ipv6, @JsonKey(name: 'tcp-concurrent')  bool tcpConcurrent, @JsonKey(name: 'external-controller')  ExternalControllerStatus externalController, @JsonKey(name: 'unified-delay')  bool unifiedDelay)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( Tun tun, @JsonKey(name: 'mixed-port')  int mixedPort, @JsonKey(name: 'allow-lan')  bool allowLan, @JsonKey(name: 'find-process-mode')  FindProcessMode findProcessMode,  Mode mode, @JsonKey(name: 'log-level')  LogLevel logLevel,  bool ipv6, @JsonKey(name: 'tcp-concurrent')  bool tcpConcurrent, @JsonKey(name: 'external-controller')  String externalController, @JsonKey(name: 'unified-delay')  bool unifiedDelay)?  $default,) {final _that = this;
 switch (_that) {
 case _UpdateParams() when $default != null:
 return $default(_that.tun,_that.mixedPort,_that.allowLan,_that.findProcessMode,_that.mode,_that.logLevel,_that.ipv6,_that.tcpConcurrent,_that.externalController,_that.unifiedDelay);case _:
@@ -819,7 +816,7 @@ class _UpdateParams implements UpdateParams {
 @override@JsonKey(name: 'log-level') final  LogLevel logLevel;
 @override final  bool ipv6;
 @override@JsonKey(name: 'tcp-concurrent') final  bool tcpConcurrent;
-@override@JsonKey(name: 'external-controller') final  ExternalControllerStatus externalController;
+@override@JsonKey(name: 'external-controller') final  String externalController;
 @override@JsonKey(name: 'unified-delay') final  bool unifiedDelay;
 
 /// Create a copy of UpdateParams
@@ -857,7 +854,7 @@ abstract mixin class _$UpdateParamsCopyWith<$Res> implements $UpdateParamsCopyWi
   factory _$UpdateParamsCopyWith(_UpdateParams value, $Res Function(_UpdateParams) _then) = __$UpdateParamsCopyWithImpl;
 @override @useResult
 $Res call({
- Tun tun,@JsonKey(name: 'mixed-port') int mixedPort,@JsonKey(name: 'allow-lan') bool allowLan,@JsonKey(name: 'find-process-mode') FindProcessMode findProcessMode, Mode mode,@JsonKey(name: 'log-level') LogLevel logLevel, bool ipv6,@JsonKey(name: 'tcp-concurrent') bool tcpConcurrent,@JsonKey(name: 'external-controller') ExternalControllerStatus externalController,@JsonKey(name: 'unified-delay') bool unifiedDelay
+ Tun tun,@JsonKey(name: 'mixed-port') int mixedPort,@JsonKey(name: 'allow-lan') bool allowLan,@JsonKey(name: 'find-process-mode') FindProcessMode findProcessMode, Mode mode,@JsonKey(name: 'log-level') LogLevel logLevel, bool ipv6,@JsonKey(name: 'tcp-concurrent') bool tcpConcurrent,@JsonKey(name: 'external-controller') String externalController,@JsonKey(name: 'unified-delay') bool unifiedDelay
 });
 
 
@@ -885,7 +882,7 @@ as Mode,logLevel: null == logLevel ? _self.logLevel : logLevel // ignore: cast_n
 as LogLevel,ipv6: null == ipv6 ? _self.ipv6 : ipv6 // ignore: cast_nullable_to_non_nullable
 as bool,tcpConcurrent: null == tcpConcurrent ? _self.tcpConcurrent : tcpConcurrent // ignore: cast_nullable_to_non_nullable
 as bool,externalController: null == externalController ? _self.externalController : externalController // ignore: cast_nullable_to_non_nullable
-as ExternalControllerStatus,unifiedDelay: null == unifiedDelay ? _self.unifiedDelay : unifiedDelay // ignore: cast_nullable_to_non_nullable
+as String,unifiedDelay: null == unifiedDelay ? _self.unifiedDelay : unifiedDelay // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }
@@ -906,7 +903,7 @@ $TunCopyWith<$Res> get tun {
 /// @nodoc
 mixin _$CoreState {
 
-@JsonKey(name: 'vpn-props') VpnProps get vpnProps;@JsonKey(name: 'only-statistics-proxy') bool get onlyStatisticsProxy;@JsonKey(name: 'current-profile-name') String get currentProfileName;@JsonKey(name: 'bypass-domain') List<String> get bypassDomain;
+@JsonKey(name: 'vpn-props') VpnProps get vpnProps;@JsonKey(name: 'only-statistics-proxy') bool get onlyStatisticsProxy;@JsonKey(name: 'current-profile-name') String get currentProfileName;@JsonKey(name: 'bypass-domain') List<String> get bypassDomain;@JsonKey(name: 'traffic-stats') TrafficStatsOptions get trafficStats;
 /// Create a copy of CoreState
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -920,20 +917,20 @@ $CoreStateCopyWith<CoreState> get copyWith => _$CoreStateCopyWithImpl<CoreState>
 @override
 bool operator ==(Object other) {
   final _this = this as CoreState;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is CoreState&&(identical(other.vpnProps, _this.vpnProps) || other.vpnProps == _this.vpnProps)&&(identical(other.onlyStatisticsProxy, _this.onlyStatisticsProxy) || other.onlyStatisticsProxy == _this.onlyStatisticsProxy)&&(identical(other.currentProfileName, _this.currentProfileName) || other.currentProfileName == _this.currentProfileName)&&const DeepCollectionEquality().equals(other.bypassDomain, _this.bypassDomain));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CoreState&&(identical(other.vpnProps, _this.vpnProps) || other.vpnProps == _this.vpnProps)&&(identical(other.onlyStatisticsProxy, _this.onlyStatisticsProxy) || other.onlyStatisticsProxy == _this.onlyStatisticsProxy)&&(identical(other.currentProfileName, _this.currentProfileName) || other.currentProfileName == _this.currentProfileName)&&const DeepCollectionEquality().equals(other.bypassDomain, _this.bypassDomain)&&(identical(other.trafficStats, _this.trafficStats) || other.trafficStats == _this.trafficStats));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as CoreState;
-  return Object.hash(runtimeType,_this.vpnProps,_this.onlyStatisticsProxy,_this.currentProfileName,const DeepCollectionEquality().hash(_this.bypassDomain));
+  return Object.hash(runtimeType,_this.vpnProps,_this.onlyStatisticsProxy,_this.currentProfileName,const DeepCollectionEquality().hash(_this.bypassDomain),_this.trafficStats);
 }
 
 @override
 String toString() {
   final _this = this as CoreState;
-  return 'CoreState(vpnProps: ${_this.vpnProps}, onlyStatisticsProxy: ${_this.onlyStatisticsProxy}, currentProfileName: ${_this.currentProfileName}, bypassDomain: ${_this.bypassDomain})';
+  return 'CoreState(vpnProps: ${_this.vpnProps}, onlyStatisticsProxy: ${_this.onlyStatisticsProxy}, currentProfileName: ${_this.currentProfileName}, bypassDomain: ${_this.bypassDomain}, trafficStats: ${_this.trafficStats})';
 }
 
 
@@ -944,11 +941,11 @@ abstract mixin class $CoreStateCopyWith<$Res>  {
   factory $CoreStateCopyWith(CoreState value, $Res Function(CoreState) _then) = _$CoreStateCopyWithImpl;
 @useResult
 $Res call({
-@JsonKey(name: 'vpn-props') VpnProps vpnProps,@JsonKey(name: 'only-statistics-proxy') bool onlyStatisticsProxy,@JsonKey(name: 'current-profile-name') String currentProfileName,@JsonKey(name: 'bypass-domain') List<String> bypassDomain
+@JsonKey(name: 'vpn-props') VpnProps vpnProps,@JsonKey(name: 'only-statistics-proxy') bool onlyStatisticsProxy,@JsonKey(name: 'current-profile-name') String currentProfileName,@JsonKey(name: 'bypass-domain') List<String> bypassDomain,@JsonKey(name: 'traffic-stats') TrafficStatsOptions trafficStats
 });
 
 
-$VpnPropsCopyWith<$Res> get vpnProps;
+$VpnPropsCopyWith<$Res> get vpnProps;$TrafficStatsOptionsCopyWith<$Res> get trafficStats;
 
 }
 /// @nodoc
@@ -961,13 +958,14 @@ class _$CoreStateCopyWithImpl<$Res>
 
 /// Create a copy of CoreState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? vpnProps = null,Object? onlyStatisticsProxy = null,Object? currentProfileName = null,Object? bypassDomain = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? vpnProps = null,Object? onlyStatisticsProxy = null,Object? currentProfileName = null,Object? bypassDomain = null,Object? trafficStats = null,}) {
   return _then(CoreState(
 vpnProps: null == vpnProps ? _self.vpnProps : vpnProps // ignore: cast_nullable_to_non_nullable
 as VpnProps,onlyStatisticsProxy: null == onlyStatisticsProxy ? _self.onlyStatisticsProxy : onlyStatisticsProxy // ignore: cast_nullable_to_non_nullable
 as bool,currentProfileName: null == currentProfileName ? _self.currentProfileName : currentProfileName // ignore: cast_nullable_to_non_nullable
 as String,bypassDomain: null == bypassDomain ? _self.bypassDomain : bypassDomain // ignore: cast_nullable_to_non_nullable
-as List<String>,
+as List<String>,trafficStats: null == trafficStats ? _self.trafficStats : trafficStats // ignore: cast_nullable_to_non_nullable
+as TrafficStatsOptions,
   ));
 }
 /// Create a copy of CoreState
@@ -978,6 +976,15 @@ $VpnPropsCopyWith<$Res> get vpnProps {
   
   return $VpnPropsCopyWith<$Res>(_self.vpnProps, (value) {
     return _then(_self.copyWith(vpnProps: value));
+  });
+}/// Create a copy of CoreState
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$TrafficStatsOptionsCopyWith<$Res> get trafficStats {
+  
+  return $TrafficStatsOptionsCopyWith<$Res>(_self.trafficStats, (value) {
+    return _then(_self.copyWith(trafficStats: value));
   });
 }
 }
@@ -1061,10 +1068,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'vpn-props')  VpnProps vpnProps, @JsonKey(name: 'only-statistics-proxy')  bool onlyStatisticsProxy, @JsonKey(name: 'current-profile-name')  String currentProfileName, @JsonKey(name: 'bypass-domain')  List<String> bypassDomain)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'vpn-props')  VpnProps vpnProps, @JsonKey(name: 'only-statistics-proxy')  bool onlyStatisticsProxy, @JsonKey(name: 'current-profile-name')  String currentProfileName, @JsonKey(name: 'bypass-domain')  List<String> bypassDomain, @JsonKey(name: 'traffic-stats')  TrafficStatsOptions trafficStats)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _CoreState() when $default != null:
-return $default(_that.vpnProps,_that.onlyStatisticsProxy,_that.currentProfileName,_that.bypassDomain);case _:
+return $default(_that.vpnProps,_that.onlyStatisticsProxy,_that.currentProfileName,_that.bypassDomain,_that.trafficStats);case _:
   return orElse();
 
 }
@@ -1082,10 +1089,10 @@ return $default(_that.vpnProps,_that.onlyStatisticsProxy,_that.currentProfileNam
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'vpn-props')  VpnProps vpnProps, @JsonKey(name: 'only-statistics-proxy')  bool onlyStatisticsProxy, @JsonKey(name: 'current-profile-name')  String currentProfileName, @JsonKey(name: 'bypass-domain')  List<String> bypassDomain)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'vpn-props')  VpnProps vpnProps, @JsonKey(name: 'only-statistics-proxy')  bool onlyStatisticsProxy, @JsonKey(name: 'current-profile-name')  String currentProfileName, @JsonKey(name: 'bypass-domain')  List<String> bypassDomain, @JsonKey(name: 'traffic-stats')  TrafficStatsOptions trafficStats)  $default,) {final _that = this;
 switch (_that) {
 case _CoreState():
-return $default(_that.vpnProps,_that.onlyStatisticsProxy,_that.currentProfileName,_that.bypassDomain);case _:
+return $default(_that.vpnProps,_that.onlyStatisticsProxy,_that.currentProfileName,_that.bypassDomain,_that.trafficStats);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1102,10 +1109,10 @@ return $default(_that.vpnProps,_that.onlyStatisticsProxy,_that.currentProfileNam
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'vpn-props')  VpnProps vpnProps, @JsonKey(name: 'only-statistics-proxy')  bool onlyStatisticsProxy, @JsonKey(name: 'current-profile-name')  String currentProfileName, @JsonKey(name: 'bypass-domain')  List<String> bypassDomain)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'vpn-props')  VpnProps vpnProps, @JsonKey(name: 'only-statistics-proxy')  bool onlyStatisticsProxy, @JsonKey(name: 'current-profile-name')  String currentProfileName, @JsonKey(name: 'bypass-domain')  List<String> bypassDomain, @JsonKey(name: 'traffic-stats')  TrafficStatsOptions trafficStats)?  $default,) {final _that = this;
 switch (_that) {
 case _CoreState() when $default != null:
-return $default(_that.vpnProps,_that.onlyStatisticsProxy,_that.currentProfileName,_that.bypassDomain);case _:
+return $default(_that.vpnProps,_that.onlyStatisticsProxy,_that.currentProfileName,_that.bypassDomain,_that.trafficStats);case _:
   return null;
 
 }
@@ -1117,7 +1124,7 @@ return $default(_that.vpnProps,_that.onlyStatisticsProxy,_that.currentProfileNam
 @JsonSerializable()
 
 class _CoreState implements CoreState {
-  const _CoreState({@JsonKey(name: 'vpn-props') required this.vpnProps, @JsonKey(name: 'only-statistics-proxy') required this.onlyStatisticsProxy, @JsonKey(name: 'current-profile-name') required this.currentProfileName, @JsonKey(name: 'bypass-domain')  List<String> bypassDomain = const []}): _bypassDomain = bypassDomain;
+  const _CoreState({@JsonKey(name: 'vpn-props') required this.vpnProps, @JsonKey(name: 'only-statistics-proxy') required this.onlyStatisticsProxy, @JsonKey(name: 'current-profile-name') required this.currentProfileName, @JsonKey(name: 'bypass-domain')  List<String> bypassDomain = const [], @JsonKey(name: 'traffic-stats') required this.trafficStats}): _bypassDomain = bypassDomain;
   factory _CoreState.fromJson(Map<String, dynamic> json) => _$CoreStateFromJson(json);
 
 @override@JsonKey(name: 'vpn-props') final  VpnProps vpnProps;
@@ -1130,6 +1137,7 @@ class _CoreState implements CoreState {
   return EqualUnmodifiableListView(_bypassDomain);
 }
 
+@override@JsonKey(name: 'traffic-stats') final  TrafficStatsOptions trafficStats;
 
 /// Create a copy of CoreState
 /// with the given fields replaced by the non-null parameter values.
@@ -1144,18 +1152,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _CoreState&&(identical(other.vpnProps, vpnProps) || other.vpnProps == vpnProps)&&(identical(other.onlyStatisticsProxy, onlyStatisticsProxy) || other.onlyStatisticsProxy == onlyStatisticsProxy)&&(identical(other.currentProfileName, currentProfileName) || other.currentProfileName == currentProfileName)&&const DeepCollectionEquality().equals(other.bypassDomain, _bypassDomain));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _CoreState&&(identical(other.vpnProps, vpnProps) || other.vpnProps == vpnProps)&&(identical(other.onlyStatisticsProxy, onlyStatisticsProxy) || other.onlyStatisticsProxy == onlyStatisticsProxy)&&(identical(other.currentProfileName, currentProfileName) || other.currentProfileName == currentProfileName)&&const DeepCollectionEquality().equals(other.bypassDomain, _bypassDomain)&&(identical(other.trafficStats, trafficStats) || other.trafficStats == trafficStats));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,vpnProps,onlyStatisticsProxy,currentProfileName,const DeepCollectionEquality().hash(_bypassDomain));
+    return Object.hash(runtimeType,vpnProps,onlyStatisticsProxy,currentProfileName,const DeepCollectionEquality().hash(_bypassDomain),trafficStats);
 }
 
 @override
 String toString() {
-    return 'CoreState(vpnProps: $vpnProps, onlyStatisticsProxy: $onlyStatisticsProxy, currentProfileName: $currentProfileName, bypassDomain: $bypassDomain)';
+    return 'CoreState(vpnProps: $vpnProps, onlyStatisticsProxy: $onlyStatisticsProxy, currentProfileName: $currentProfileName, bypassDomain: $bypassDomain, trafficStats: $trafficStats)';
 }
 
 
@@ -1166,11 +1174,11 @@ abstract mixin class _$CoreStateCopyWith<$Res> implements $CoreStateCopyWith<$Re
   factory _$CoreStateCopyWith(_CoreState value, $Res Function(_CoreState) _then) = __$CoreStateCopyWithImpl;
 @override @useResult
 $Res call({
-@JsonKey(name: 'vpn-props') VpnProps vpnProps,@JsonKey(name: 'only-statistics-proxy') bool onlyStatisticsProxy,@JsonKey(name: 'current-profile-name') String currentProfileName,@JsonKey(name: 'bypass-domain') List<String> bypassDomain
+@JsonKey(name: 'vpn-props') VpnProps vpnProps,@JsonKey(name: 'only-statistics-proxy') bool onlyStatisticsProxy,@JsonKey(name: 'current-profile-name') String currentProfileName,@JsonKey(name: 'bypass-domain') List<String> bypassDomain,@JsonKey(name: 'traffic-stats') TrafficStatsOptions trafficStats
 });
 
 
-@override $VpnPropsCopyWith<$Res> get vpnProps;
+@override $VpnPropsCopyWith<$Res> get vpnProps;@override $TrafficStatsOptionsCopyWith<$Res> get trafficStats;
 
 }
 /// @nodoc
@@ -1183,13 +1191,14 @@ class __$CoreStateCopyWithImpl<$Res>
 
 /// Create a copy of CoreState
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? vpnProps = null,Object? onlyStatisticsProxy = null,Object? currentProfileName = null,Object? bypassDomain = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? vpnProps = null,Object? onlyStatisticsProxy = null,Object? currentProfileName = null,Object? bypassDomain = null,Object? trafficStats = null,}) {
   return _then(_CoreState(
 vpnProps: null == vpnProps ? _self.vpnProps : vpnProps // ignore: cast_nullable_to_non_nullable
 as VpnProps,onlyStatisticsProxy: null == onlyStatisticsProxy ? _self.onlyStatisticsProxy : onlyStatisticsProxy // ignore: cast_nullable_to_non_nullable
 as bool,currentProfileName: null == currentProfileName ? _self.currentProfileName : currentProfileName // ignore: cast_nullable_to_non_nullable
 as String,bypassDomain: null == bypassDomain ? _self._bypassDomain : bypassDomain // ignore: cast_nullable_to_non_nullable
-as List<String>,
+as List<String>,trafficStats: null == trafficStats ? _self.trafficStats : trafficStats // ignore: cast_nullable_to_non_nullable
+as TrafficStatsOptions,
   ));
 }
 
@@ -1201,6 +1210,15 @@ $VpnPropsCopyWith<$Res> get vpnProps {
   
   return $VpnPropsCopyWith<$Res>(_self.vpnProps, (value) {
     return _then(_self.copyWith(vpnProps: value));
+  });
+}/// Create a copy of CoreState
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$TrafficStatsOptionsCopyWith<$Res> get trafficStats {
+  
+  return $TrafficStatsOptionsCopyWith<$Res>(_self.trafficStats, (value) {
+    return _then(_self.copyWith(trafficStats: value));
   });
 }
 }
@@ -3744,7 +3762,7 @@ as int,
 /// @nodoc
 mixin _$ExternalProvider {
 
- String get name; String get type; String? get path; int get count;@JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore) SubscriptionInfo? get subscriptionInfo; bool get isUpdating;@JsonKey(name: 'vehicle-type') String get vehicleType;@JsonKey(name: 'update-at') DateTime get updateAt; List<dynamic>? get proxies;
+ String get name; String get type; String? get path; int get count;@JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore) SubscriptionInfo? get subscriptionInfo; bool get isUpdating; bool get expanded; int get interval;@JsonKey(name: 'vehicle-type') String get vehicleType;@JsonKey(name: 'update-at') DateTime get updateAt;
 /// Create a copy of ExternalProvider
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -3758,20 +3776,20 @@ $ExternalProviderCopyWith<ExternalProvider> get copyWith => _$ExternalProviderCo
 @override
 bool operator ==(Object other) {
   final _this = this as ExternalProvider;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ExternalProvider&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.type, _this.type) || other.type == _this.type)&&(identical(other.path, _this.path) || other.path == _this.path)&&(identical(other.count, _this.count) || other.count == _this.count)&&(identical(other.subscriptionInfo, _this.subscriptionInfo) || other.subscriptionInfo == _this.subscriptionInfo)&&(identical(other.isUpdating, _this.isUpdating) || other.isUpdating == _this.isUpdating)&&(identical(other.vehicleType, _this.vehicleType) || other.vehicleType == _this.vehicleType)&&(identical(other.updateAt, _this.updateAt) || other.updateAt == _this.updateAt)&&const DeepCollectionEquality().equals(other.proxies, _this.proxies));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ExternalProvider&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.type, _this.type) || other.type == _this.type)&&(identical(other.path, _this.path) || other.path == _this.path)&&(identical(other.count, _this.count) || other.count == _this.count)&&(identical(other.subscriptionInfo, _this.subscriptionInfo) || other.subscriptionInfo == _this.subscriptionInfo)&&(identical(other.isUpdating, _this.isUpdating) || other.isUpdating == _this.isUpdating)&&(identical(other.expanded, _this.expanded) || other.expanded == _this.expanded)&&(identical(other.interval, _this.interval) || other.interval == _this.interval)&&(identical(other.vehicleType, _this.vehicleType) || other.vehicleType == _this.vehicleType)&&(identical(other.updateAt, _this.updateAt) || other.updateAt == _this.updateAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as ExternalProvider;
-  return Object.hash(runtimeType,_this.name,_this.type,_this.path,_this.count,_this.subscriptionInfo,_this.isUpdating,_this.vehicleType,_this.updateAt,const DeepCollectionEquality().hash(_this.proxies));
+  return Object.hash(runtimeType,_this.name,_this.type,_this.path,_this.count,_this.subscriptionInfo,_this.isUpdating,_this.expanded,_this.interval,_this.vehicleType,_this.updateAt);
 }
 
 @override
 String toString() {
   final _this = this as ExternalProvider;
-  return 'ExternalProvider(name: ${_this.name}, type: ${_this.type}, path: ${_this.path}, count: ${_this.count}, subscriptionInfo: ${_this.subscriptionInfo}, isUpdating: ${_this.isUpdating}, vehicleType: ${_this.vehicleType}, updateAt: ${_this.updateAt}, proxies: ${_this.proxies})';
+  return 'ExternalProvider(name: ${_this.name}, type: ${_this.type}, path: ${_this.path}, count: ${_this.count}, subscriptionInfo: ${_this.subscriptionInfo}, isUpdating: ${_this.isUpdating}, expanded: ${_this.expanded}, interval: ${_this.interval}, vehicleType: ${_this.vehicleType}, updateAt: ${_this.updateAt})';
 }
 
 
@@ -3782,7 +3800,7 @@ abstract mixin class $ExternalProviderCopyWith<$Res>  {
   factory $ExternalProviderCopyWith(ExternalProvider value, $Res Function(ExternalProvider) _then) = _$ExternalProviderCopyWithImpl;
 @useResult
 $Res call({
- String name, String type, String? path, int count,@JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore) SubscriptionInfo? subscriptionInfo, bool isUpdating,@JsonKey(name: 'vehicle-type') String vehicleType,@JsonKey(name: 'update-at') DateTime updateAt, List<dynamic>? proxies
+ String name, String type, String? path, int count,@JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore) SubscriptionInfo? subscriptionInfo, bool isUpdating, bool expanded, int interval,@JsonKey(name: 'vehicle-type') String vehicleType,@JsonKey(name: 'update-at') DateTime updateAt
 });
 
 
@@ -3799,7 +3817,7 @@ class _$ExternalProviderCopyWithImpl<$Res>
 
 /// Create a copy of ExternalProvider
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? name = null,Object? type = null,Object? path = freezed,Object? count = null,Object? subscriptionInfo = freezed,Object? isUpdating = null,Object? vehicleType = null,Object? updateAt = null,Object? proxies = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? name = null,Object? type = null,Object? path = freezed,Object? count = null,Object? subscriptionInfo = freezed,Object? isUpdating = null,Object? expanded = null,Object? interval = null,Object? vehicleType = null,Object? updateAt = null,}) {
   return _then(ExternalProvider(
 name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
@@ -3807,10 +3825,11 @@ as String,path: freezed == path ? _self.path : path // ignore: cast_nullable_to_
 as String?,count: null == count ? _self.count : count // ignore: cast_nullable_to_non_nullable
 as int,subscriptionInfo: freezed == subscriptionInfo ? _self.subscriptionInfo : subscriptionInfo // ignore: cast_nullable_to_non_nullable
 as SubscriptionInfo?,isUpdating: null == isUpdating ? _self.isUpdating : isUpdating // ignore: cast_nullable_to_non_nullable
-as bool,vehicleType: null == vehicleType ? _self.vehicleType : vehicleType // ignore: cast_nullable_to_non_nullable
+as bool,expanded: null == expanded ? _self.expanded : expanded // ignore: cast_nullable_to_non_nullable
+as bool,interval: null == interval ? _self.interval : interval // ignore: cast_nullable_to_non_nullable
+as int,vehicleType: null == vehicleType ? _self.vehicleType : vehicleType // ignore: cast_nullable_to_non_nullable
 as String,updateAt: null == updateAt ? _self.updateAt : updateAt // ignore: cast_nullable_to_non_nullable
-as DateTime,proxies: freezed == proxies ? _self.proxies : proxies // ignore: cast_nullable_to_non_nullable
-as List<dynamic>?,
+as DateTime,
   ));
 }
 /// Create a copy of ExternalProvider
@@ -3907,10 +3926,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String name,  String type,  String? path,  int count, @JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore)  SubscriptionInfo? subscriptionInfo,  bool isUpdating, @JsonKey(name: 'vehicle-type')  String vehicleType, @JsonKey(name: 'update-at')  DateTime updateAt,  List<dynamic>? proxies)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String name,  String type,  String? path,  int count, @JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore)  SubscriptionInfo? subscriptionInfo,  bool isUpdating,  bool expanded,  int interval, @JsonKey(name: 'vehicle-type')  String vehicleType, @JsonKey(name: 'update-at')  DateTime updateAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ExternalProvider() when $default != null:
-return $default(_that.name,_that.type,_that.path,_that.count,_that.subscriptionInfo,_that.isUpdating,_that.vehicleType,_that.updateAt,_that.proxies);case _:
+return $default(_that.name,_that.type,_that.path,_that.count,_that.subscriptionInfo,_that.isUpdating,_that.expanded,_that.interval,_that.vehicleType,_that.updateAt);case _:
   return orElse();
 
 }
@@ -3928,10 +3947,10 @@ return $default(_that.name,_that.type,_that.path,_that.count,_that.subscriptionI
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String name,  String type,  String? path,  int count, @JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore)  SubscriptionInfo? subscriptionInfo,  bool isUpdating, @JsonKey(name: 'vehicle-type')  String vehicleType, @JsonKey(name: 'update-at')  DateTime updateAt,  List<dynamic>? proxies)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String name,  String type,  String? path,  int count, @JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore)  SubscriptionInfo? subscriptionInfo,  bool isUpdating,  bool expanded,  int interval, @JsonKey(name: 'vehicle-type')  String vehicleType, @JsonKey(name: 'update-at')  DateTime updateAt)  $default,) {final _that = this;
 switch (_that) {
 case _ExternalProvider():
-return $default(_that.name,_that.type,_that.path,_that.count,_that.subscriptionInfo,_that.isUpdating,_that.vehicleType,_that.updateAt,_that.proxies);case _:
+return $default(_that.name,_that.type,_that.path,_that.count,_that.subscriptionInfo,_that.isUpdating,_that.expanded,_that.interval,_that.vehicleType,_that.updateAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -3948,10 +3967,10 @@ return $default(_that.name,_that.type,_that.path,_that.count,_that.subscriptionI
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String name,  String type,  String? path,  int count, @JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore)  SubscriptionInfo? subscriptionInfo,  bool isUpdating, @JsonKey(name: 'vehicle-type')  String vehicleType, @JsonKey(name: 'update-at')  DateTime updateAt,  List<dynamic>? proxies)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String name,  String type,  String? path,  int count, @JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore)  SubscriptionInfo? subscriptionInfo,  bool isUpdating,  bool expanded,  int interval, @JsonKey(name: 'vehicle-type')  String vehicleType, @JsonKey(name: 'update-at')  DateTime updateAt)?  $default,) {final _that = this;
 switch (_that) {
 case _ExternalProvider() when $default != null:
-return $default(_that.name,_that.type,_that.path,_that.count,_that.subscriptionInfo,_that.isUpdating,_that.vehicleType,_that.updateAt,_that.proxies);case _:
+return $default(_that.name,_that.type,_that.path,_that.count,_that.subscriptionInfo,_that.isUpdating,_that.expanded,_that.interval,_that.vehicleType,_that.updateAt);case _:
   return null;
 
 }
@@ -3963,7 +3982,7 @@ return $default(_that.name,_that.type,_that.path,_that.count,_that.subscriptionI
 @JsonSerializable()
 
 class _ExternalProvider implements ExternalProvider {
-  const _ExternalProvider({required this.name, required this.type, this.path, required this.count, @JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore) this.subscriptionInfo, this.isUpdating = false, @JsonKey(name: 'vehicle-type') required this.vehicleType, @JsonKey(name: 'update-at') required this.updateAt,  List<dynamic>? proxies}): _proxies = proxies;
+  const _ExternalProvider({required this.name, required this.type, this.path, required this.count, @JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore) this.subscriptionInfo, this.isUpdating = false, this.expanded = false, this.interval = 0, @JsonKey(name: 'vehicle-type') required this.vehicleType, @JsonKey(name: 'update-at') required this.updateAt});
   factory _ExternalProvider.fromJson(Map<String, dynamic> json) => _$ExternalProviderFromJson(json);
 
 @override final  String name;
@@ -3972,17 +3991,10 @@ class _ExternalProvider implements ExternalProvider {
 @override final  int count;
 @override@JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore) final  SubscriptionInfo? subscriptionInfo;
 @override@JsonKey() final  bool isUpdating;
+@override@JsonKey() final  bool expanded;
+@override@JsonKey() final  int interval;
 @override@JsonKey(name: 'vehicle-type') final  String vehicleType;
 @override@JsonKey(name: 'update-at') final  DateTime updateAt;
- final  List<dynamic>? _proxies;
-@override List<dynamic>? get proxies {
-  final value = _proxies;
-  if (value == null) return null;
-  if (_proxies is EqualUnmodifiableListView) return _proxies;
-  // ignore: implicit_dynamic_type
-  return EqualUnmodifiableListView(value);
-}
-
 
 /// Create a copy of ExternalProvider
 /// with the given fields replaced by the non-null parameter values.
@@ -3997,18 +4009,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ExternalProvider&&(identical(other.name, name) || other.name == name)&&(identical(other.type, type) || other.type == type)&&(identical(other.path, path) || other.path == path)&&(identical(other.count, count) || other.count == count)&&(identical(other.subscriptionInfo, subscriptionInfo) || other.subscriptionInfo == subscriptionInfo)&&(identical(other.isUpdating, isUpdating) || other.isUpdating == isUpdating)&&(identical(other.vehicleType, vehicleType) || other.vehicleType == vehicleType)&&(identical(other.updateAt, updateAt) || other.updateAt == updateAt)&&const DeepCollectionEquality().equals(other.proxies, _proxies));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ExternalProvider&&(identical(other.name, name) || other.name == name)&&(identical(other.type, type) || other.type == type)&&(identical(other.path, path) || other.path == path)&&(identical(other.count, count) || other.count == count)&&(identical(other.subscriptionInfo, subscriptionInfo) || other.subscriptionInfo == subscriptionInfo)&&(identical(other.isUpdating, isUpdating) || other.isUpdating == isUpdating)&&(identical(other.expanded, expanded) || other.expanded == expanded)&&(identical(other.interval, interval) || other.interval == interval)&&(identical(other.vehicleType, vehicleType) || other.vehicleType == vehicleType)&&(identical(other.updateAt, updateAt) || other.updateAt == updateAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,name,type,path,count,subscriptionInfo,isUpdating,vehicleType,updateAt,const DeepCollectionEquality().hash(_proxies));
+    return Object.hash(runtimeType,name,type,path,count,subscriptionInfo,isUpdating,expanded,interval,vehicleType,updateAt);
 }
 
 @override
 String toString() {
-    return 'ExternalProvider(name: $name, type: $type, path: $path, count: $count, subscriptionInfo: $subscriptionInfo, isUpdating: $isUpdating, vehicleType: $vehicleType, updateAt: $updateAt, proxies: $proxies)';
+    return 'ExternalProvider(name: $name, type: $type, path: $path, count: $count, subscriptionInfo: $subscriptionInfo, isUpdating: $isUpdating, expanded: $expanded, interval: $interval, vehicleType: $vehicleType, updateAt: $updateAt)';
 }
 
 
@@ -4019,7 +4031,7 @@ abstract mixin class _$ExternalProviderCopyWith<$Res> implements $ExternalProvid
   factory _$ExternalProviderCopyWith(_ExternalProvider value, $Res Function(_ExternalProvider) _then) = __$ExternalProviderCopyWithImpl;
 @override @useResult
 $Res call({
- String name, String type, String? path, int count,@JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore) SubscriptionInfo? subscriptionInfo, bool isUpdating,@JsonKey(name: 'vehicle-type') String vehicleType,@JsonKey(name: 'update-at') DateTime updateAt, List<dynamic>? proxies
+ String name, String type, String? path, int count,@JsonKey(name: 'subscription-info', fromJson: subscriptionInfoFormCore) SubscriptionInfo? subscriptionInfo, bool isUpdating, bool expanded, int interval,@JsonKey(name: 'vehicle-type') String vehicleType,@JsonKey(name: 'update-at') DateTime updateAt
 });
 
 
@@ -4036,7 +4048,7 @@ class __$ExternalProviderCopyWithImpl<$Res>
 
 /// Create a copy of ExternalProvider
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? name = null,Object? type = null,Object? path = freezed,Object? count = null,Object? subscriptionInfo = freezed,Object? isUpdating = null,Object? vehicleType = null,Object? updateAt = null,Object? proxies = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? name = null,Object? type = null,Object? path = freezed,Object? count = null,Object? subscriptionInfo = freezed,Object? isUpdating = null,Object? expanded = null,Object? interval = null,Object? vehicleType = null,Object? updateAt = null,}) {
   return _then(_ExternalProvider(
 name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
@@ -4044,10 +4056,11 @@ as String,path: freezed == path ? _self.path : path // ignore: cast_nullable_to_
 as String?,count: null == count ? _self.count : count // ignore: cast_nullable_to_non_nullable
 as int,subscriptionInfo: freezed == subscriptionInfo ? _self.subscriptionInfo : subscriptionInfo // ignore: cast_nullable_to_non_nullable
 as SubscriptionInfo?,isUpdating: null == isUpdating ? _self.isUpdating : isUpdating // ignore: cast_nullable_to_non_nullable
-as bool,vehicleType: null == vehicleType ? _self.vehicleType : vehicleType // ignore: cast_nullable_to_non_nullable
+as bool,expanded: null == expanded ? _self.expanded : expanded // ignore: cast_nullable_to_non_nullable
+as bool,interval: null == interval ? _self.interval : interval // ignore: cast_nullable_to_non_nullable
+as int,vehicleType: null == vehicleType ? _self.vehicleType : vehicleType // ignore: cast_nullable_to_non_nullable
 as String,updateAt: null == updateAt ? _self.updateAt : updateAt // ignore: cast_nullable_to_non_nullable
-as DateTime,proxies: freezed == proxies ? _self._proxies : proxies // ignore: cast_nullable_to_non_nullable
-as List<dynamic>?,
+as DateTime,
   ));
 }
 
@@ -4615,6 +4628,285 @@ as ActionMethod,data: freezed == data ? _self.data : data // ignore: cast_nullab
 as dynamic,id: freezed == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String?,code: null == code ? _self.code : code // ignore: cast_nullable_to_non_nullable
 as ResultType,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
+mixin _$ConnectionsSummary {
+
+ int get total; int get tcp; int get udp;@JsonKey(name: 'fcm-start') int get fcmStart;
+/// Create a copy of ConnectionsSummary
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ConnectionsSummaryCopyWith<ConnectionsSummary> get copyWith => _$ConnectionsSummaryCopyWithImpl<ConnectionsSummary>(this as ConnectionsSummary, _$identity);
+
+  /// Serializes this ConnectionsSummary to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  final _this = this as ConnectionsSummary;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ConnectionsSummary&&(identical(other.total, _this.total) || other.total == _this.total)&&(identical(other.tcp, _this.tcp) || other.tcp == _this.tcp)&&(identical(other.udp, _this.udp) || other.udp == _this.udp)&&(identical(other.fcmStart, _this.fcmStart) || other.fcmStart == _this.fcmStart));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode {
+  final _this = this as ConnectionsSummary;
+  return Object.hash(runtimeType,_this.total,_this.tcp,_this.udp,_this.fcmStart);
+}
+
+@override
+String toString() {
+  final _this = this as ConnectionsSummary;
+  return 'ConnectionsSummary(total: ${_this.total}, tcp: ${_this.tcp}, udp: ${_this.udp}, fcmStart: ${_this.fcmStart})';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ConnectionsSummaryCopyWith<$Res>  {
+  factory $ConnectionsSummaryCopyWith(ConnectionsSummary value, $Res Function(ConnectionsSummary) _then) = _$ConnectionsSummaryCopyWithImpl;
+@useResult
+$Res call({
+ int total, int tcp, int udp,@JsonKey(name: 'fcm-start') int fcmStart
+});
+
+
+
+
+}
+/// @nodoc
+class _$ConnectionsSummaryCopyWithImpl<$Res>
+    implements $ConnectionsSummaryCopyWith<$Res> {
+  _$ConnectionsSummaryCopyWithImpl(this._self, this._then);
+
+  final ConnectionsSummary _self;
+  final $Res Function(ConnectionsSummary) _then;
+
+/// Create a copy of ConnectionsSummary
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? total = null,Object? tcp = null,Object? udp = null,Object? fcmStart = null,}) {
+  return _then(ConnectionsSummary(
+total: null == total ? _self.total : total // ignore: cast_nullable_to_non_nullable
+as int,tcp: null == tcp ? _self.tcp : tcp // ignore: cast_nullable_to_non_nullable
+as int,udp: null == udp ? _self.udp : udp // ignore: cast_nullable_to_non_nullable
+as int,fcmStart: null == fcmStart ? _self.fcmStart : fcmStart // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [ConnectionsSummary].
+extension ConnectionsSummaryPatterns on ConnectionsSummary {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _ConnectionsSummary value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _ConnectionsSummary() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _ConnectionsSummary value)  $default,){
+final _that = this;
+switch (_that) {
+case _ConnectionsSummary():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _ConnectionsSummary value)?  $default,){
+final _that = this;
+switch (_that) {
+case _ConnectionsSummary() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int total,  int tcp,  int udp, @JsonKey(name: 'fcm-start')  int fcmStart)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _ConnectionsSummary() when $default != null:
+return $default(_that.total,_that.tcp,_that.udp,_that.fcmStart);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int total,  int tcp,  int udp, @JsonKey(name: 'fcm-start')  int fcmStart)  $default,) {final _that = this;
+switch (_that) {
+case _ConnectionsSummary():
+return $default(_that.total,_that.tcp,_that.udp,_that.fcmStart);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int total,  int tcp,  int udp, @JsonKey(name: 'fcm-start')  int fcmStart)?  $default,) {final _that = this;
+switch (_that) {
+case _ConnectionsSummary() when $default != null:
+return $default(_that.total,_that.tcp,_that.udp,_that.fcmStart);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _ConnectionsSummary implements ConnectionsSummary {
+  const _ConnectionsSummary({this.total = 0, this.tcp = 0, this.udp = 0, @JsonKey(name: 'fcm-start') this.fcmStart = 0});
+  factory _ConnectionsSummary.fromJson(Map<String, dynamic> json) => _$ConnectionsSummaryFromJson(json);
+
+@override@JsonKey() final  int total;
+@override@JsonKey() final  int tcp;
+@override@JsonKey() final  int udp;
+@override@JsonKey(name: 'fcm-start') final  int fcmStart;
+
+/// Create a copy of ConnectionsSummary
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$ConnectionsSummaryCopyWith<_ConnectionsSummary> get copyWith => __$ConnectionsSummaryCopyWithImpl<_ConnectionsSummary>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$ConnectionsSummaryToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ConnectionsSummary&&(identical(other.total, total) || other.total == total)&&(identical(other.tcp, tcp) || other.tcp == tcp)&&(identical(other.udp, udp) || other.udp == udp)&&(identical(other.fcmStart, fcmStart) || other.fcmStart == fcmStart));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode {
+    return Object.hash(runtimeType,total,tcp,udp,fcmStart);
+}
+
+@override
+String toString() {
+    return 'ConnectionsSummary(total: $total, tcp: $tcp, udp: $udp, fcmStart: $fcmStart)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$ConnectionsSummaryCopyWith<$Res> implements $ConnectionsSummaryCopyWith<$Res> {
+  factory _$ConnectionsSummaryCopyWith(_ConnectionsSummary value, $Res Function(_ConnectionsSummary) _then) = __$ConnectionsSummaryCopyWithImpl;
+@override @useResult
+$Res call({
+ int total, int tcp, int udp,@JsonKey(name: 'fcm-start') int fcmStart
+});
+
+
+
+
+}
+/// @nodoc
+class __$ConnectionsSummaryCopyWithImpl<$Res>
+    implements _$ConnectionsSummaryCopyWith<$Res> {
+  __$ConnectionsSummaryCopyWithImpl(this._self, this._then);
+
+  final _ConnectionsSummary _self;
+  final $Res Function(_ConnectionsSummary) _then;
+
+/// Create a copy of ConnectionsSummary
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? total = null,Object? tcp = null,Object? udp = null,Object? fcmStart = null,}) {
+  return _then(_ConnectionsSummary(
+total: null == total ? _self.total : total // ignore: cast_nullable_to_non_nullable
+as int,tcp: null == tcp ? _self.tcp : tcp // ignore: cast_nullable_to_non_nullable
+as int,udp: null == udp ? _self.udp : udp // ignore: cast_nullable_to_non_nullable
+as int,fcmStart: null == fcmStart ? _self.fcmStart : fcmStart // ignore: cast_nullable_to_non_nullable
+as int,
   ));
 }
 

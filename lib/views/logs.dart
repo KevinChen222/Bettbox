@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:bett_box/clash/clash.dart';
@@ -40,7 +41,7 @@ class _LogColors {
     required this.tintAlpha,
   });
 
-  factory _LogColors.of(ColorScheme scheme, {required bool pureBlack}) {
+  factory _LogColors.of(ColorScheme scheme) {
     final isDark = scheme.brightness == Brightness.dark;
     final warning = isDark ? const Color(0xFFFFD54F) : const Color(0xFFB26A00);
     return _LogColors(
@@ -53,7 +54,7 @@ class _LogColors {
       warning: warning.harmonizeWith(scheme.primary),
       expanded: scheme.onSurface.withValues(alpha: 0.06),
       hover: scheme.onSurface.withValues(alpha: 0.04),
-      tintAlpha: isDark && pureBlack ? 0.1 : 0.06,
+      tintAlpha: 0.06,
     );
   }
 
@@ -307,7 +308,7 @@ class _LogsViewState extends ConsumerState<LogsView>
       patchClashConfigProvider.select((state) => state.logLevel),
     );
 
-    final selectedLogLevel = await globalState.showCommonDialog<LogLevel>(
+    final selectedLogLevel = await globalState.showAdaptiveSheet<LogLevel>(
       child: OptionsDialog<LogLevel>(
         title: appLocalizations.logLevel,
         options: LogLevel.values,
@@ -333,10 +334,12 @@ class _LogsViewState extends ConsumerState<LogsView>
       title: appLocalizations.exportLogs,
     );
     if (res != true) return;
-    globalState.showMessage(
-      title: appLocalizations.tip,
-      message: TextSpan(text: appLocalizations.exportSuccess),
-      cancelable: false,
+    unawaited(
+      globalState.showMessage(
+        title: appLocalizations.tip,
+        message: TextSpan(text: appLocalizations.exportSuccess),
+        cancelable: false,
+      ),
     );
   }
 
@@ -365,7 +368,7 @@ class _LogsViewState extends ConsumerState<LogsView>
               : null,
           onPressed: _toggleAutoScroll,
           tooltip: appLocalizations.autoScroll,
-          icon: const Icon(Icons.vertical_align_top_outlined),
+          icon: const AppIcon(Icons.vertical_align_top_outlined),
         ),
         CommonPopupBox(
           targetBuilder: (open) {
@@ -374,7 +377,7 @@ class _LogsViewState extends ConsumerState<LogsView>
                 open(offset: const Offset(0, 20));
               },
               tooltip: appLocalizations.more,
-              icon: const Icon(Icons.more_vert),
+              icon: const AppIcon(Icons.more_vert),
             );
           },
           popup: CommonPopupMenu(
@@ -444,7 +447,6 @@ class _LogsConsoleState extends ConsumerState<LogsConsole> {
   var _heights = Expando<double>();
   var _rows = Expando<Widget>();
   ColorScheme? _colorScheme;
-  bool? _pureBlack;
   var _filter = const LogsFilterState();
   Log? _expanded;
   var _aiSearch = true;
@@ -603,15 +605,14 @@ class _LogsConsoleState extends ConsumerState<LogsConsole> {
         metrics.verticalPadding * 2;
   }
 
-  _LogColors _resolveColors(ColorScheme scheme, bool pureBlack) {
+  _LogColors _resolveColors(ColorScheme scheme) {
     final prev = _colors;
-    if (prev != null && scheme == _colorScheme && pureBlack == _pureBlack) {
+    if (prev != null && scheme == _colorScheme) {
       return prev;
     }
     _colorScheme = scheme;
-    _pureBlack = pureBlack;
     _rows = Expando<Widget>();
-    return _colors = _LogColors.of(scheme, pureBlack: pureBlack);
+    return _colors = _LogColors.of(scheme);
   }
 
   Widget _rowOf(Log log, _LogMetrics metrics, _LogColors colors) {
@@ -647,7 +648,7 @@ class _LogsConsoleState extends ConsumerState<LogsConsole> {
   Future<void> _copy(Log log) async {
     await Clipboard.setData(ClipboardData(text: log.raw));
     if (!mounted) return;
-    context.showNotifier(appLocalizations.copySuccess);
+    unawaited(context.showNotifier(appLocalizations.copySuccess));
   }
 
   void _search(Log log) {
@@ -709,6 +710,22 @@ class _LogsConsoleState extends ConsumerState<LogsConsole> {
           mainAxisSize: MainAxisSize.min,
           spacing: 8,
           children: [
+            Container(
+              width: 76,
+              height: 76,
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: context.colorScheme.primary.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                context.resolveIcon(
+                  hasLogs ? Icons.search_off_rounded : Icons.notes_rounded,
+                ),
+                size: 34,
+                color: context.colorScheme.primary.withValues(alpha: 0.85),
+              ),
+            ),
             Text(
               hasLogs
                   ? appLocalizations.noMatchedLogs
@@ -733,7 +750,6 @@ class _LogsConsoleState extends ConsumerState<LogsConsole> {
   Widget _buildList({
     required List<Log> logs,
     required bool compact,
-    required bool pureBlack,
     required LogLevel level,
   }) {
     final textDirection = Directionality.of(context);
@@ -749,7 +765,7 @@ class _LogsConsoleState extends ConsumerState<LogsConsole> {
           compact,
           level != LogLevel.debug,
         );
-        final colors = _resolveColors(context.colorScheme, pureBlack);
+        final colors = _resolveColors(context.colorScheme);
         final extents = List<double?>.filled(logs.length, null);
         final slivers = [
           SliverPadding(
@@ -850,9 +866,6 @@ class _LogsConsoleState extends ConsumerState<LogsConsole> {
       appSettingProvider.select((state) => state.logAiSearch),
     );
     final compact = ref.watch(isMobileViewProvider);
-    final pureBlack = ref.watch(
-      themeSettingProvider.select((state) => state.pureBlack),
-    );
 
     ref.listen<FilteredLogs>(filteredLogsProvider, _handleLogsChanged);
 
@@ -862,17 +875,11 @@ class _LogsConsoleState extends ConsumerState<LogsConsole> {
           errors: filtered.errors,
           warnings: filtered.warnings,
           compact: compact,
-          pureBlack: pureBlack,
         ),
         Expanded(
           child: filtered.logs.isEmpty
               ? _buildEmpty(hasLogs: hasLogs, hasFacet: hasFacet, level: level)
-              : _buildList(
-                  logs: filtered.logs,
-                  compact: compact,
-                  pureBlack: pureBlack,
-                  level: level,
-                ),
+              : _buildList(logs: filtered.logs, compact: compact, level: level),
         ),
       ],
     );
@@ -974,14 +981,20 @@ class _LogRow extends StatelessWidget {
                   TextButton.icon(
                     onPressed: onCopy,
                     style: buttonStyle,
-                    icon: const Icon(Icons.copy_rounded, size: 16),
+                    icon: Icon(
+                      context.resolveIcon(Icons.copy_rounded),
+                      size: 16,
+                    ),
                     label: Text(appLocalizations.copy),
                   ),
                   if (onSearch != null)
                     TextButton.icon(
                       onPressed: onSearch,
                       style: buttonStyle,
-                      icon: const Icon(Icons.search_rounded, size: 16),
+                      icon: Icon(
+                        context.resolveIcon(Icons.search_rounded),
+                        size: 16,
+                      ),
                       label: Text(appLocalizations.search),
                     ),
                   Expanded(
@@ -992,7 +1005,10 @@ class _LogRow extends StatelessWidget {
                         child: TextButton.icon(
                           onPressed: onFilter,
                           style: buttonStyle,
-                          icon: const Icon(Icons.filter_list_rounded, size: 16),
+                          icon: Icon(
+                            context.resolveIcon(Icons.filter_list_rounded),
+                            size: 16,
+                          ),
                           label: Text(
                             '[ ${log.tag} ]',
                             maxLines: 1,
@@ -1007,7 +1023,7 @@ class _LogRow extends StatelessWidget {
                     visualDensity: VisualDensity.compact,
                     iconSize: 20,
                     tooltip: appLocalizations.collapse,
-                    icon: const Icon(Icons.expand_less_rounded),
+                    icon: Icon(context.resolveIcon(Icons.expand_less_rounded)),
                   ),
                 ],
               ),
@@ -1053,263 +1069,111 @@ class _LogsFilterBar extends ConsumerWidget {
   final int errors;
   final int warnings;
   final bool compact;
-  final bool pureBlack;
 
   const _LogsFilterBar({
     required this.errors,
     required this.warnings,
     required this.compact,
-    required this.pureBlack,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final filter = ref.watch(logsFilterProvider);
+    final (filterSource, filterLevels, filterModule) = ref.watch(
+      logsFilterProvider.select(
+        (state) => (state.source, state.levels, state.module),
+      ),
+    );
     final notifier = ref.read(logsFilterProvider.notifier);
-    final colors = _LogColors.of(context.colorScheme, pureBlack: pureBlack);
+    final colors = _LogColors.of(context.colorScheme);
     final debug = ref.watch(
       patchClashConfigProvider.select(
         (state) => state.logLevel == LogLevel.debug,
       ),
     );
-    final dnsSelected = debug && filter.module == _dnsModule;
-    final module = dnsSelected ? null : filter.module;
-    return SizedBox(
-      height: 40,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  spacing: 6,
-                  children: [
-                    _SourceTabs(
-                      source: filter.source,
-                      showDns: debug,
-                      dnsSelected: dnsSelected,
-                      onChanged: (source, module) => notifier.setScope(
-                        source: source,
-                        module:
-                            module ??
-                            (filter.module == _dnsModule
-                                ? null
-                                : filter.module),
-                      ),
-                    ),
-                    for (final (level, count, color) in [
-                      (LogLevel.error, errors, colors.error),
-                      (LogLevel.warning, warnings, colors.warning),
-                    ])
-                      _FilterPill(
-                        label: compact ? '$count' : '$count ${level.label}',
-                        tooltip: level.label,
-                        color: color,
-                        selected: filter.levels.contains(level),
-                        faded: count == 0,
-                        leading: Container(
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        onTap: () => notifier.toggleLevel(level),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            if (module != null)
-              Padding(
-                padding: const EdgeInsetsDirectional.only(start: 6),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 140),
-                  child: _FilterPill(
-                    label: module,
-                    tooltip: appLocalizations.clearFilter,
-                    color: context.colorScheme.primary,
-                    selected: true,
-                    trailing: const Icon(Icons.close_rounded, size: 14),
-                    onTap: () => notifier.setModule(null),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SourceTabs extends StatelessWidget {
-  static const _height = 32.0;
-  static const _padding = 10.0;
-
-  final LogSource? source;
-  final bool showDns;
-  final bool dnsSelected;
-  final void Function(LogSource? source, String? module) onChanged;
-
-  const _SourceTabs({
-    required this.source,
-    required this.showDns,
-    required this.dnsSelected,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = context.colorScheme;
-    final style = context.textTheme.labelLarge ?? const TextStyle(fontSize: 14);
-    final textScaler = MediaQuery.textScalerOf(context);
+    final dnsSelected = debug && filterModule == _dnsModule;
+    final module = dnsSelected ? null : filterModule;
     final tabs = [
       (null, null, appLocalizations.categoryAll),
       (LogSource.app, null, appLocalizations.app),
       (LogSource.core, null, appLocalizations.core),
-      if (showDns) (null, _dnsModule, _dnsModule),
+      if (debug) (null, _dnsModule, _dnsModule),
     ];
-    final widths = <double>[];
-    for (final (_, _, label) in tabs) {
-      final painter = TextPainter(
-        text: TextSpan(text: label, style: style),
-        textDirection: Directionality.of(context),
-        textScaler: textScaler,
-        maxLines: 1,
-      )..layout();
-      widths.add(painter.width.ceilToDouble());
-      painter.dispose();
-    }
-    final selected = dnsSelected
+    final selectedTab = dnsSelected
         ? tabs.length - 1
-        : tabs.indexWhere((tab) => tab.$2 == null && tab.$1 == source);
-    var start = _padding;
-    for (var i = 0; i < selected; i++) {
-      start += widths[i] + _padding * 2;
-    }
-    return Container(
-      height: _height + 2,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
+        : tabs.indexWhere((tab) => tab.$2 == null && tab.$1 == filterSource);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Row(
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final (index, (value, module, label)) in tabs.indexed)
-                InkWell(
-                  onTap: () => onChanged(value, module),
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    width: widths[index] + _padding * 2,
-                    height: _height,
-                    child: Align(
-                      alignment: const Alignment(0, -0.35),
-                      child: AnimatedDefaultTextStyle(
-                        duration: kThemeAnimationDuration,
-                        style: style.copyWith(
-                          color: index == selected
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                spacing: 8,
+                children: [
+                  Row(
+                    spacing: 2,
+                    children: [
+                      for (final (index, (source, tabModule, label))
+                          in tabs.indexed)
+                        SegmentButton(
+                          label: label,
+                          selected: index == selectedTab,
+                          first: index == 0,
+                          last: index == tabs.length - 1,
+                          onTap: () => notifier.setScope(
+                            source: source,
+                            module:
+                                tabModule ??
+                                (filterModule == _dnsModule
+                                    ? null
+                                    : filterModule),
+                          ),
                         ),
-                        child: Text(label, maxLines: 1, softWrap: false),
-                      ),
-                    ),
+                    ],
                   ),
-                ),
-            ],
-          ),
-          AnimatedPositionedDirectional(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOutCubic,
-            start: start,
-            bottom: 2,
-            width: widths[selected],
-            height: 3,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterPill extends StatelessWidget {
-  final String label;
-  final String tooltip;
-  final Color color;
-  final bool selected;
-  final bool faded;
-  final Widget? leading;
-  final Widget? trailing;
-  final VoidCallback onTap;
-
-  const _FilterPill({
-    required this.label,
-    required this.tooltip,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-    this.faded = false,
-    this.leading,
-    this.trailing,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = context.colorScheme;
-    final foreground = selected ? color : scheme.onSurfaceVariant;
-    return Tooltip(
-      message: tooltip,
-      child: Opacity(
-        opacity: faded && !selected ? 0.5 : 1,
-        child: Material(
-          color: selected ? color.withValues(alpha: 0.12) : Colors.transparent,
-          shape: StadiumBorder(
-            side: BorderSide(color: selected ? color : scheme.outlineVariant),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: IconTheme.merge(
-                data: IconThemeData(color: foreground),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  spacing: 6,
-                  children: [
-                    ?leading,
-                    Flexible(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.textTheme.labelLarge?.copyWith(
-                          color: foreground,
+                  for (final (level, count, color) in [
+                    (LogLevel.error, errors, colors.error),
+                    (LogLevel.warning, warnings, colors.warning),
+                  ])
+                    SegmentButton(
+                      label: compact ? '$count' : '$count ${level.label}',
+                      tooltip: level.label,
+                      color: color,
+                      selected: filterLevels.contains(level),
+                      faded: count == 0,
+                      leading: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
                         ),
                       ),
+                      onTap: () => notifier.toggleLevel(level),
                     ),
-                    ?trailing,
-                  ],
-                ),
+                ],
               ),
             ),
           ),
-        ),
+          if (module != null)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 8),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 140),
+                child: SegmentButton(
+                  label: module,
+                  tooltip: appLocalizations.clearFilter,
+                  selected: true,
+                  trailing: Icon(
+                    context.resolveIcon(Icons.close_rounded),
+                    size: 14,
+                  ),
+                  onTap: () => notifier.setModule(null),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1338,7 +1202,7 @@ class _NewLogsPill extends StatelessWidget {
             spacing: 4,
             children: [
               Icon(
-                Icons.arrow_upward_rounded,
+                context.resolveIcon(Icons.arrow_upward_rounded),
                 size: 14,
                 color: scheme.onSecondaryContainer,
               ),

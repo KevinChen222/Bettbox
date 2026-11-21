@@ -3,14 +3,19 @@ import 'dart:math';
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
+import 'package:bett_box/pages/toolbox/traffic_stats.dart';
 import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
 import 'package:bett_box/widgets/widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'tile.dart';
+
 class TrafficUsage extends ConsumerStatefulWidget {
-  const TrafficUsage({super.key});
+  final DashboardTileSize? size;
+
+  const TrafficUsage({super.key, this.size});
 
   @override
   ConsumerState<TrafficUsage> createState() => _TrafficUsageState();
@@ -88,6 +93,117 @@ class _TrafficUsageState extends ConsumerState<TrafficUsage> {
     );
   }
 
+  Widget _legend(BuildContext context, Color color, String label, String v) {
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: context.textTheme.bodySmall?.copyWith(
+            color: context.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            v,
+            maxLines: 1,
+            textAlign: TextAlign.end,
+            overflow: TextOverflow.ellipsis,
+            style: context.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWide(BuildContext context, DashboardTileSize size) {
+    final primaryColor = globalState.theme.darken3PrimaryContainer;
+    final secondaryColor = globalState.theme.darken2SecondaryContainer;
+    return SizedBox(
+      height: getWidgetHeight(context, size.rows),
+      child: CommonCard(
+        onPressed: () => BaseNavigator.push(context, const TrafficStatsPage()),
+        child: DashboardDecor(
+          mark: DashboardDecor.icon(context, Icons.data_saver_off, 80),
+          bottom: true,
+          angle: 0.12,
+          child: ValueListenableBuilder<int>(
+            valueListenable: dashboardRefreshManager.tick1s,
+            builder: (_, _, _) {
+              final totalTraffic = ref.read(totalTrafficProvider);
+              final up = totalTraffic.up;
+              final down = totalTraffic.down;
+              final total = TrafficValue(value: up.value + down.value);
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 72, 10),
+                child: Row(
+                  children: [
+                    AspectRatio(
+                      aspectRatio: 1,
+                      child: DonutChart(
+                        key: _donutKey,
+                        trackColor: context.colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.35),
+                        data: [
+                          DonutChartData(
+                            value: up.value.toDouble(),
+                            color: primaryColor,
+                          ),
+                          DonutChartData(
+                            value: down.value.toDouble(),
+                            color: secondaryColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 28),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _legend(
+                            context,
+                            primaryColor,
+                            appLocalizations.upload,
+                            up.show,
+                          ),
+                          _legend(
+                            context,
+                            secondaryColor,
+                            appLocalizations.download,
+                            down.show,
+                          ),
+                          _legend(
+                            context,
+                            context.colorScheme.onSurfaceVariant.withValues(
+                              alpha: 0.4,
+                            ),
+                            appLocalizations.dashboardTotal,
+                            total.show,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<PageLabel>(currentPageLabelProvider, (prev, next) {
@@ -96,6 +212,7 @@ class _TrafficUsageState extends ConsumerState<TrafficUsage> {
       }
     });
 
+    if (widget.size case final size?) return _buildWide(context, size);
     final primaryColor = globalState.theme.darken3PrimaryContainer;
     final secondaryColor = globalState.theme.darken2SecondaryContainer;
     return SizedBox(
@@ -105,7 +222,7 @@ class _TrafficUsageState extends ConsumerState<TrafficUsage> {
           label: appLocalizations.trafficUsage,
           iconData: Icons.data_saver_off,
         ),
-        onPressed: () {},
+        onPressed: () => BaseNavigator.push(context, const TrafficStatsPage()),
         child: ValueListenableBuilder<int>(
           valueListenable: dashboardRefreshManager.tick1s,
           builder: (_, _, _) {
@@ -222,13 +339,21 @@ class _TrafficUsageState extends ConsumerState<TrafficUsage> {
                   ),
                   _buildTrafficDataItem(
                     context,
-                    Icon(Icons.arrow_upward, color: primaryColor, size: 14),
+                    Icon(
+                      context.resolveIcon(Icons.arrow_upward),
+                      color: primaryColor,
+                      size: 14,
+                    ),
                     upTotalTrafficValue,
                   ),
                   const SizedBox(height: 8),
                   _buildTrafficDataItem(
                     context,
-                    Icon(Icons.arrow_downward, color: secondaryColor, size: 14),
+                    Icon(
+                      context.resolveIcon(Icons.arrow_downward),
+                      color: secondaryColor,
+                      size: 14,
+                    ),
                     downTotalTrafficValue,
                   ),
                 ],

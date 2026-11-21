@@ -5,16 +5,11 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-Future<ProcessResult> git(
-  List<String> args,
-  String cwd, {
-  Map<String, String>? environment,
-}) async {
+Future<ProcessResult> git(List<String> args, String cwd) async {
   final result = await Process.run(
     'git',
     ['-c', 'safe.directory=${cwd.replaceAll('\\', '/')}', ...args],
     workingDirectory: cwd,
-    environment: environment,
     stdoutEncoding: utf8,
     stderrEncoding: utf8,
   );
@@ -49,8 +44,8 @@ Future<void> main(List<String> args) async {
 
   if (args.contains('--refresh-patch')) {
     // Only operate on the disposable generated checkout, never the app index.
-    await git(['diff', '--check'], generated);
     await git(['add', '--all'], generated);
+    await git(['diff', '--cached', '--check', 'HEAD'], generated);
     final diff = await git([
       'diff',
       '--cached',

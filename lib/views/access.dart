@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
@@ -11,10 +12,48 @@ import 'package:bett_box/widgets/widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 
-// Force refresh icon flag
-final forceRefreshIconProvider = StateProvider<bool>((ref) => false);
+final _packageNameRegex = RegExp(r'^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$');
+final _packageSplitRegex = RegExp(r'[\n,\s]+');
+
+final _packageIconPathCache = <String, String?>{};
+final _packageIconPathPending = <String, Future<String?>>{};
+const _maxPackageIconCacheSize = 256;
+
+void _cachePackageIconPath(String packageName, String? path) {
+  _packageIconPathCache.remove(packageName);
+  while (_packageIconPathCache.length >= _maxPackageIconCacheSize) {
+    _packageIconPathCache.remove(_packageIconPathCache.keys.first);
+  }
+  _packageIconPathCache[packageName] = path;
+}
+
+Future<String?> _getPackageIconPath(
+  String packageName, {
+  bool forceRefresh = false,
+}) {
+  if (forceRefresh) {
+    _packageIconPathCache.remove(packageName);
+    _packageIconPathPending.remove(packageName);
+  }
+  if (_packageIconPathCache.containsKey(packageName)) {
+    final path = _packageIconPathCache[packageName];
+    _cachePackageIconPath(packageName, path);
+    return Future.value(path);
+  }
+  return _packageIconPathPending.putIfAbsent(packageName, () async {
+    try {
+      final path = await app.getPackageIconPath(
+        packageName,
+        forceRefresh: forceRefresh,
+      );
+      _cachePackageIconPath(packageName, path);
+      return path;
+    } finally {
+      unawaited(_packageIconPathPending.remove(packageName));
+    }
+  });
+}
 
 class AccessView extends ConsumerStatefulWidget {
   const AccessView({super.key});
@@ -81,7 +120,7 @@ class _AccessViewState extends ConsumerState<AccessView>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
+            AppIcon(
               Icons.apps_outlined,
               size: 72,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -111,7 +150,7 @@ class _AccessViewState extends ConsumerState<AccessView>
                     _requestedPackageListPermission = true;
                     await app.requestPackageListPermission();
                   },
-                  icon: const Icon(Icons.settings),
+                  icon: const AppIcon(Icons.settings),
                   label: Text(appLocalizations.openSettings),
                 ),
               ],
@@ -283,7 +322,7 @@ class _AccessViewState extends ConsumerState<AccessView>
           }
         });
       },
-      icon: const Icon(Icons.search),
+      icon: const AppIcon(Icons.search),
     );
   }
 
@@ -300,15 +339,17 @@ class _AccessViewState extends ConsumerState<AccessView>
         // Reload app list (auto-checks and requests permissions)
         await globalState.appController.safeRun(() async {
           // Clear cache, force reload
+          _packageIconPathCache.clear();
+          _packageIconPathPending.clear();
           // Mark as force refresh mode
-          ref.read(forceRefreshIconProvider.notifier).state = true;
+          ref.read(forceRefreshIconProvider.notifier).value = true;
           await _checkPermissionAndLoadPackages(
             interactive: true,
             forceReload: true,
           );
           // Reset force refresh flag
           if (mounted) {
-            ref.read(forceRefreshIconProvider.notifier).state = false;
+            ref.read(forceRefreshIconProvider.notifier).value = false;
           }
         }, needLoading: true);
 
@@ -318,70 +359,55 @@ class _AccessViewState extends ConsumerState<AccessView>
           });
         }
       },
-      icon: const Icon(Icons.sync),
+      icon: const AppIcon(Icons.sync),
     );
   }
 
-  Widget _buildSelectedAllButton({
-    required bool isSelectedAll,
-    required List<String> allValueList,
-  }) {
-    final tooltip = isSelectedAll
-        ? appLocalizations.cancelSelectAll
-        : appLocalizations.selectAll;
+  Widget _buildIntelligentButton() {
     return IconButton(
-      tooltip: tooltip,
-      onPressed: () {
-        ref.read(vpnSettingProvider.notifier).updateState((state) {
-          final isAccept =
-              state.accessControl.mode == AccessControlMode.acceptSelected;
-          if (isSelectedAll) {
-            return switch (isAccept) {
-              true => state.copyWith.accessControl(acceptList: []),
-              false => state.copyWith.accessControl(rejectList: []),
-            };
-          } else {
-            return switch (isAccept) {
-              true => state.copyWith.accessControl(acceptList: allValueList),
-              false => state.copyWith.accessControl(rejectList: allValueList),
-            };
-          }
-        });
+      tooltip: appLocalizations.intelligentSelected,
+      onPressed: () async {
+        final res = await globalState.showMessage(
+          title: appLocalizations.tip,
+          message: TextSpan(text: appLocalizations.intelligentSelectedConfirm),
+        );
+        if (res != true) return;
+        await _intelligentSelected();
       },
-      icon: isSelectedAll
-          ? const Icon(Icons.deselect)
-          : const Icon(Icons.select_all),
+      icon: const AppIcon(Icons.auto_awesome),
     );
   }
 
   Future<void> _intelligentSelected() async {
-    final packageNames = ref.read(
-      packageListSelectorStateProvider.select(
-        (state) => state.list.map((item) => item.packageName),
-      ),
-    );
     final commonScaffoldState = context.commonScaffoldState;
     if (commonScaffoldState?.mounted != true) return;
-    final selectedPackageNames =
-        (await globalState.appController.safeRun<List<String>>(
-          needLoading: true,
-          () async {
-            return await app.getChinaPackageNames();
-          },
-        ))?.toSet() ??
-        {};
-    final acceptList = packageNames
-        .where((item) => !selectedPackageNames.contains(item))
-        .toList();
-    final rejectList = packageNames
-        .where((item) => selectedPackageNames.contains(item))
-        .toList();
+    final chinaPackageNames = await globalState.appController
+        .safeRun<List<String>>(needLoading: true, () async {
+          return await app.getChinaPackageNames();
+        });
+    if (chinaPackageNames == null || !mounted) return;
+    final china = chinaPackageNames.toSet();
+    final visible = ref
+        .read(packageListSelectorStateProvider)
+        .list
+        .map((item) => item.packageName)
+        .toSet();
+    List<String> withVisible(List<String> list, bool Function(String) test) => [
+      ...list.where((item) => !visible.contains(item)),
+      ...visible.where(test),
+    ];
     ref
         .read(vpnSettingProvider.notifier)
         .updateState(
           (state) => state.copyWith.accessControl(
-            acceptList: acceptList,
-            rejectList: rejectList,
+            acceptList: withVisible(
+              state.accessControl.acceptList,
+              (item) => !china.contains(item),
+            ),
+            rejectList: withVisible(
+              state.accessControl.rejectList,
+              china.contains,
+            ),
           ),
         );
   }
@@ -389,7 +415,7 @@ class _AccessViewState extends ConsumerState<AccessView>
   Widget _buildSettingButton() {
     return IconButton(
       onPressed: () async {
-        final res = await showSheet<int>(
+        await showSheet<int>(
           context: context,
           props: SheetProps(isScrollControlled: true),
           builder: (_, type) {
@@ -400,20 +426,19 @@ class _AccessViewState extends ConsumerState<AccessView>
             );
           },
         );
-        if (res == 1) {
-          _intelligentSelected();
-        }
       },
-      icon: const Icon(Icons.tune),
+      icon: const AppIcon(Icons.tune),
     );
   }
 
-  void _handleSelected(List<String> valueList, Package package, bool? value) {
+  void _handleSelected(Set<String> selectedSet, Package package, bool? value) {
+    final newSelectedSet = Set<String>.of(selectedSet);
     if (value == true) {
-      valueList.add(package.packageName);
+      newSelectedSet.add(package.packageName);
     } else {
-      valueList.remove(package.packageName);
+      newSelectedSet.remove(package.packageName);
     }
+    final valueList = newSelectedSet.toList();
     ref.read(vpnSettingProvider.notifier).updateState((state) {
       final currentManualList = state.accessControl.manualList;
       final newManualList =
@@ -445,8 +470,13 @@ class _AccessViewState extends ConsumerState<AccessView>
           : rejectList,
     );
     final currentList = accessControl.currentList;
-    final packageNameList = packages.map((e) => e.packageName).toList();
-    final valueList = currentList.intersection(packageNameList);
+    final currentSet = currentList.toSet();
+    final selectedSet = <String>{};
+    for (final package in packages) {
+      if (currentSet.contains(package.packageName)) {
+        selectedSet.add(package.packageName);
+      }
+    }
     final describe = accessControlMode == AccessControlMode.acceptSelected
         ? '${appLocalizations.accessControlAllowDesc} (${appLocalizations.whitelistMode})'
         : '${appLocalizations.accessControlNotAllowDesc} (${appLocalizations.blacklistMode})';
@@ -520,9 +550,9 @@ class _AccessViewState extends ConsumerState<AccessView>
                                                   .textTheme
                                                   .labelLarge
                                                   ?.copyWith(
-                                                    color: Theme.of(
-                                                      context,
-                                                    ).colorScheme.primary,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary,
                                                   ),
                                             ),
                                           ),
@@ -531,14 +561,14 @@ class _AccessViewState extends ConsumerState<AccessView>
                                           ),
                                           Flexible(
                                             child: Text(
-                                              '${valueList.length}',
+                                              '${selectedSet.length}',
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .labelLarge
                                                   ?.copyWith(
-                                                    color: Theme.of(
-                                                      context,
-                                                    ).colorScheme.primary,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary,
                                                   ),
                                             ),
                                           ),
@@ -555,14 +585,7 @@ class _AccessViewState extends ConsumerState<AccessView>
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
                                 Flexible(child: _buildSearchButton()),
-                                Flexible(
-                                  child: _buildSelectedAllButton(
-                                    isSelectedAll:
-                                        valueList.length ==
-                                        packageNameList.length,
-                                    allValueList: packageNameList,
-                                  ),
-                                ),
+                                Flexible(child: _buildIntelligentButton()),
                                 Flexible(child: _buildSettingButton()),
                               ],
                             ),
@@ -592,53 +615,39 @@ class _AccessViewState extends ConsumerState<AccessView>
                           ? NullStatus(label: appLocalizations.noData)
                           : CommonScrollBar(
                               controller: _controller,
-                              child: ListView.separated(
+                              child: ListView.builder(
                                 controller: _controller,
                                 itemCount: packages.length,
+                                addAutomaticKeepAlives: false,
                                 padding: const EdgeInsets.only(
                                   bottom: 24,
                                   top: 4,
                                 ),
+                                prototypeItem: _PackageRow(
+                                  package: packages.first,
+                                  value: false,
+                                  isActive: accessControl.enable,
+                                  onChanged: (_) {},
+                                ),
                                 itemBuilder: (_, index) {
                                   final package = packages[index];
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
+                                  return _PackageRow(
+                                    key: Key(package.packageName),
+                                    package: package,
+                                    value: selectedSet.contains(
+                                      package.packageName,
                                     ),
-                                    child: PackageListItem(
-                                      key: Key(package.packageName),
-                                      package: package,
-                                      value: valueList.contains(
-                                        package.packageName,
-                                      ),
-                                      isActive: accessControl.enable,
-                                      onChanged: (value) {
-                                        _handleSelected(
-                                          valueList,
-                                          package,
-                                          value,
-                                        );
-                                      },
-                                    ),
+                                    isActive: accessControl.enable,
+                                    showDivider: index < packages.length - 1,
+                                    onChanged: (value) {
+                                      _handleSelected(
+                                        selectedSet,
+                                        package,
+                                        value,
+                                      );
+                                    },
                                   );
                                 },
-                                separatorBuilder: (context, _) => Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                  ),
-                                  child: Divider(
-                                    height: 1,
-                                    thickness: 1,
-                                    color: context.colorScheme.outlineVariant
-                                        .withValues(
-                                          alpha:
-                                              context.colorScheme.brightness ==
-                                                  Brightness.light
-                                              ? 0.3
-                                              : 0.2,
-                                        ),
-                                  ),
-                                ),
                               ),
                             );
                     },
@@ -653,7 +662,54 @@ class _AccessViewState extends ConsumerState<AccessView>
   }
 }
 
-class PackageListItem extends ConsumerWidget {
+class _PackageRow extends StatelessWidget {
+  final Package package;
+  final bool value;
+  final bool isActive;
+  final bool showDivider;
+  final void Function(bool?) onChanged;
+
+  const _PackageRow({
+    super.key,
+    required this.package,
+    required this.value,
+    required this.isActive,
+    required this.onChanged,
+    this.showDivider = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PackageListItem(
+            package: package,
+            value: value,
+            isActive: isActive,
+            onChanged: onChanged,
+          ),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: showDivider
+                ? colorScheme.outlineVariant.withValues(
+                    alpha: colorScheme.brightness == Brightness.light
+                        ? 0.3
+                        : 0.2,
+                  )
+                : Colors.transparent,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PackageListItem extends StatelessWidget {
   final Package package;
   final bool value;
   final bool isActive;
@@ -668,60 +724,69 @@ class PackageListItem extends ConsumerWidget {
   });
 
   @override
+  Widget build(BuildContext context) {
+    return ActivateBox(
+      active: isActive,
+      child: ListItem.checkbox(
+        leading: PackageIcon(packageName: package.packageName),
+        title: EmojiText(
+          package.label,
+          style: const TextStyle(overflow: TextOverflow.ellipsis),
+          maxLines: 1,
+        ),
+        subtitle: Text(
+          package.packageName,
+          style: const TextStyle(overflow: TextOverflow.ellipsis),
+          maxLines: 1,
+        ),
+        delegate: CheckboxDelegate(
+          value: value,
+          onChanged: onChanged,
+          onLongPress: _openDetails,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openDetails() async {
+    if (await app.openAppDetails(package.packageName)) return;
+    globalState.showNotifier(appLocalizations.appNotInstalled);
+  }
+}
+
+class PackageIcon extends ConsumerWidget {
+  final String packageName;
+
+  const PackageIcon({super.key, required this.packageName});
+
+  @override
   Widget build(BuildContext context, WidgetRef ref) {
     final forceRefresh = ref.watch(forceRefreshIconProvider);
-
-    return GestureDetector(
-      onLongPress: () {
-        Clipboard.setData(ClipboardData(text: package.packageName));
-        globalState.showNotifier(
-          '${appLocalizations.copiedPackageName}: ${package.packageName}',
-        );
-      },
-      child: ActivateBox(
-        active: isActive,
-        child: ListItem.checkbox(
-          leading: SizedBox(
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: FutureBuilder<String?>(
+        initialData: _packageIconPathCache[packageName],
+        future: _getPackageIconPath(packageName, forceRefresh: forceRefresh),
+        builder: (context, snapshot) {
+          final path = snapshot.data;
+          if (path == null || path.isEmpty) return _buildDefaultIcon(context);
+          return Image.file(
+            File(path),
+            gaplessPlayback: true,
             width: 48,
             height: 48,
-            child: FutureBuilder<Uint8List?>(
-              future: app.getPackageIcon(
-                package.packageName,
-                forceRefresh: forceRefresh,
-              ),
-              builder: (context, snapshot) {
-                if (snapshot.hasData && snapshot.data != null) {
-                  final devicePixelRatio = MediaQuery.of(
-                    context,
-                  ).devicePixelRatio;
-                  final cacheSize = (48 * devicePixelRatio).ceil();
-
-                  return Image.memory(
-                    snapshot.data!,
-                    gaplessPlayback: true,
-                    width: 48,
-                    height: 48,
-                    cacheWidth: cacheSize,
-                    cacheHeight: cacheSize,
-                    errorBuilder: (_, _, _) => _buildDefaultIcon(context),
-                  );
-                }
-                return _buildDefaultIcon(context);
-              },
-            ),
-          ),
-          title: EmojiText(
-            package.label,
-            style: const TextStyle(overflow: TextOverflow.ellipsis),
-            maxLines: 1,
-          ),
-          subtitle: Text(
-            package.packageName,
-            style: const TextStyle(overflow: TextOverflow.ellipsis),
-            maxLines: 1,
-          ),
-          delegate: CheckboxDelegate(value: value, onChanged: onChanged),
-        ),
+            cacheWidth: 48,
+            cacheHeight: 48,
+            useLogicalCacheSize: true,
+            errorBuilder: (_, _, _) {
+              if (_packageIconPathCache[packageName] == path) {
+                _packageIconPathCache.remove(packageName);
+              }
+              return _buildDefaultIcon(context);
+            },
+          );
+        },
       ),
     );
   }
@@ -729,19 +794,241 @@ class PackageListItem extends ConsumerWidget {
   Widget _buildDefaultIcon(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: context.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(
-        Icons.apps,
+        context.resolveIcon(Icons.apps),
         size: 24,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        color: context.colorScheme.onSurfaceVariant,
       ),
     );
   }
 }
 
-class AccessControlSearchDelegate extends SearchDelegate {
+Future<String?> showPackagePicker(BuildContext context) async {
+  await context.dismissKeyboard();
+  if (!context.mounted) return null;
+  return showSheet<String>(
+    context: context,
+    props: const SheetProps(isScrollControlled: true),
+    builder: (_, type) => AdaptiveSheetScaffold(
+      type: type,
+      title: appLocalizations.appAccessControl,
+      body: const PackagePickerPanel(),
+    ),
+  );
+}
+
+class PackagePickerPanel extends ConsumerStatefulWidget {
+  const PackagePickerPanel({super.key});
+
+  @override
+  ConsumerState<PackagePickerPanel> createState() => _PackagePickerPanelState();
+}
+
+class _PackagePickerPanelState extends ConsumerState<PackagePickerPanel> {
+  bool _ready = false;
+  bool _denied = false;
+  String _query = '';
+  final _queryController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.afterRouteTransition(_load);
+    });
+  }
+
+  @override
+  void dispose() {
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    var denied = false;
+    try {
+      if (await app.hasPackageListPermission()) {
+        await globalState.appController.getPackages();
+      } else {
+        denied = true;
+      }
+    } catch (_) {
+      denied = true;
+    }
+    if (!mounted) return;
+    setState(() {
+      _denied = denied || ref.read(packagesProvider).isEmpty;
+      _ready = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready) {
+      return const SizedBox(
+        height: 240,
+        child: Center(
+          child: SyncedLoading(size: 40, child: CircularProgressIndicator()),
+        ),
+      );
+    }
+    if (_denied) {
+      return SizedBox(
+        height: 240,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 12,
+              children: [
+                Text(
+                  appLocalizations.packageListPermissionRequired,
+                  textAlign: TextAlign.center,
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: app.requestPackageListPermission,
+                  icon: const AppIcon(Icons.settings),
+                  label: Text(appLocalizations.openSettings),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    final state = ref.watch(packageListSelectorStateProvider);
+    final accessControl = state.accessControl;
+    final isAccept = accessControl.mode == AccessControlMode.acceptSelected;
+    final active = accessControl.enable;
+    final currentList = accessControl.currentList;
+    final currentSet = currentList.toSet();
+    final all = state.getSortList(active ? currentList : const []);
+    final query = _query.trim().toLowerCase();
+    final packages = query.isEmpty
+        ? all
+        : all
+              .where(
+                (item) =>
+                    item.label.toLowerCase().contains(query) ||
+                    item.packageName.toLowerCase().contains(query),
+              )
+              .toList();
+    final colorScheme = context.colorScheme;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await context.dismissKeyboard();
+        if (!context.mounted) return;
+        Navigator.of(context).pop();
+      },
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: TextField(
+              controller: _queryController,
+              onChanged: (value) => setState(() => _query = value),
+              decoration: InputDecoration(
+                hintText: appLocalizations.search,
+                prefixIcon: Icon(context.resolveIcon(Icons.search)),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: Icon(context.resolveIcon(Icons.clear)),
+                        onPressed: () {
+                          _queryController.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
+              ),
+            ),
+          ),
+          if (active)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    context.resolveIcon(
+                      isAccept ? Icons.adjust_outlined : Icons.block_outlined,
+                    ),
+                    size: 18,
+                    color: colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${isAccept ? appLocalizations.whitelistMode : appLocalizations.blacklistMode} · ${appLocalizations.selected} ${currentSet.length}',
+                      style: context.textTheme.labelLarge?.copyWith(
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: packages.isEmpty
+                ? NullStatus(label: appLocalizations.noData)
+                : ListView.builder(
+                    itemCount: packages.length,
+                    itemExtent: 72,
+                    padding: const EdgeInsets.only(bottom: 24),
+                    itemBuilder: (context, index) {
+                      final package = packages[index];
+                      final inList =
+                          active && currentSet.contains(package.packageName);
+                      return RepaintBoundary(
+                        key: Key(package.packageName),
+                        child: ListItem(
+                          leading: PackageIcon(
+                            packageName: package.packageName,
+                          ),
+                          title: EmojiText(
+                            package.label,
+                            style: const TextStyle(
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            maxLines: 1,
+                          ),
+                          subtitle: Text(
+                            package.packageName,
+                            style: const TextStyle(
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            maxLines: 1,
+                          ),
+                          trailing: inList
+                              ? AppIcon(
+                                  isAccept
+                                      ? Icons.adjust_outlined
+                                      : Icons.block_outlined,
+                                  color: colorScheme.primary,
+                                )
+                              : null,
+                          onTap: () async {
+                            await context.dismissKeyboard();
+                            if (!context.mounted) return;
+                            Navigator.of(context).pop(package.packageName);
+                          },
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AccessControlSearchDelegate extends SearchDelegate<dynamic> {
   List<String> acceptList = [];
   List<String> rejectList = [];
 
@@ -761,7 +1048,7 @@ class AccessControlSearchDelegate extends SearchDelegate {
           }
           query = '';
         },
-        icon: const Icon(Icons.clear),
+        icon: const AppIcon(Icons.clear),
       ),
       const SizedBox(width: 8),
     ];
@@ -773,21 +1060,23 @@ class AccessControlSearchDelegate extends SearchDelegate {
       onPressed: () {
         close(context, null);
       },
-      icon: const Icon(Icons.arrow_back),
+      icon: const AppIcon(Icons.arrow_back),
     );
   }
 
   void _handleSelected(
     WidgetRef ref,
-    List<String> valueList,
+    Set<String> selectedSet,
     Package package,
     bool? value,
   ) {
+    final newSelectedSet = Set<String>.of(selectedSet);
     if (value == true) {
-      valueList.add(package.packageName);
+      newSelectedSet.add(package.packageName);
     } else {
-      valueList.remove(package.packageName);
+      newSelectedSet.remove(package.packageName);
     }
+    final valueList = newSelectedSet.toList();
     ref.read(vpnSettingProvider.notifier).updateState((state) {
       final currentManualList = state.accessControl.manualList;
       final newManualList =
@@ -812,20 +1101,19 @@ class AccessControlSearchDelegate extends SearchDelegate {
     final lowQuery = query.toLowerCase();
     return Consumer(
       builder: (context, ref, _) {
-        final vm3 = ref.watch(
+        final (packages, isAccessControl, currentList) = ref.watch(
           packageListSelectorStateProvider.select(
-            (state) => VM3(
-              a: state.getSortList(
+            (state) => (
+              state.getSortList(
                 state.accessControl.mode == AccessControlMode.acceptSelected
                     ? acceptList
                     : rejectList,
               ),
-              b: state.accessControl.enable,
-              c: state.accessControl.currentList,
+              state.accessControl.enable,
+              state.accessControl.currentList,
             ),
           ),
         );
-        final packages = vm3.a;
 
         // Search filter (inside Consumer, auto-responds to query changes)
         final queryPackages = query.isEmpty
@@ -838,10 +1126,13 @@ class AccessControlSearchDelegate extends SearchDelegate {
                   )
                   .toList();
 
-        final isAccessControl = vm3.b;
-        final currentList = vm3.c;
-        final packageNameList = packages.map((e) => e.packageName).toList();
-        final valueList = currentList.intersection(packageNameList);
+        final currentSet = currentList.toSet();
+        final selectedSet = <String>{};
+        for (final package in packages) {
+          if (currentSet.contains(package.packageName)) {
+            selectedSet.add(package.packageName);
+          }
+        }
 
         return DisabledMask(
           status: !isAccessControl,
@@ -853,10 +1144,10 @@ class AccessControlSearchDelegate extends SearchDelegate {
               return PackageListItem(
                 key: Key(package.packageName),
                 package: package,
-                value: valueList.contains(package.packageName),
+                value: selectedSet.contains(package.packageName),
                 isActive: isAccessControl,
                 onChanged: (value) {
-                  _handleSelected(ref, valueList, package, value);
+                  _handleSelected(ref, selectedSet, package, value);
                 },
               );
             },
@@ -1008,11 +1299,11 @@ class _AccessControlPanelState extends ConsumerState<AccessControlPanel> {
           scrollDirection: Axis.horizontal,
           child: Consumer(
             builder: (_, ref, _) {
-              final vm2 = ref.watch(
+              final (isFilterSystemApp, isFilterNonInternetApp) = ref.watch(
                 vpnSettingProvider.select(
-                  (state) => VM2(
-                    a: state.accessControl.isFilterSystemApp,
-                    b: state.accessControl.isFilterNonInternetApp,
+                  (state) => (
+                    state.accessControl.isFilterSystemApp,
+                    state.accessControl.isFilterNonInternetApp,
                   ),
                 ),
               );
@@ -1021,26 +1312,26 @@ class _AccessControlPanelState extends ConsumerState<AccessControlPanel> {
                 children: [
                   SettingTextCard(
                     appLocalizations.systemApp,
-                    isSelected: vm2.a == false,
+                    isSelected: isFilterSystemApp == false,
                     onPressed: () {
                       ref
                           .read(vpnSettingProvider.notifier)
                           .updateState(
                             (state) => state.copyWith.accessControl(
-                              isFilterSystemApp: !vm2.a,
+                              isFilterSystemApp: !isFilterSystemApp,
                             ),
                           );
                     },
                   ),
                   SettingTextCard(
                     appLocalizations.noNetworkApp,
-                    isSelected: vm2.b == false,
+                    isSelected: isFilterNonInternetApp == false,
                     onPressed: () {
                       ref
                           .read(vpnSettingProvider.notifier)
                           .updateState(
                             (state) => state.copyWith.accessControl(
-                              isFilterNonInternetApp: !vm2.b,
+                              isFilterNonInternetApp: !isFilterNonInternetApp,
                             ),
                           );
                     },
@@ -1071,13 +1362,14 @@ class _AccessControlPanelState extends ConsumerState<AccessControlPanel> {
 
       AccessControl newAccessControl;
       try {
-        newAccessControl = AccessControl.fromJson(json.decode(text));
+        newAccessControl = AccessControl.fromJson(
+          json.decode(text) as Map<String, Object?>,
+        );
       } catch (_) {
-        final packageNameRegex = RegExp(r'^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$');
         final packages = text
-            .split(RegExp(r'[\n,\s]+'))
+            .split(_packageSplitRegex)
             .map((e) => e.trim())
-            .where((e) => packageNameRegex.hasMatch(e))
+            .where((e) => _packageNameRegex.hasMatch(e))
             .toList();
 
         final currentState = ref.read(vpnSettingProvider).accessControl;
@@ -1120,19 +1412,12 @@ class _AccessControlPanelState extends ConsumerState<AccessControlPanel> {
             spacing: 16,
             children: [
               CommonChip(
-                avatar: const Icon(Icons.auto_awesome),
-                label: appLocalizations.intelligentSelected,
-                onPressed: () {
-                  Navigator.of(context).pop(1);
-                },
-              ),
-              CommonChip(
-                avatar: const Icon(Icons.paste),
+                avatar: const AppIcon(Icons.paste),
                 label: appLocalizations.clipboardImport,
                 onPressed: _pasteToClipboard,
               ),
               CommonChip(
-                avatar: const Icon(Icons.content_copy),
+                avatar: const AppIcon(Icons.content_copy),
                 label: appLocalizations.clipboardExport,
                 onPressed: _copyToClipboard,
               ),
@@ -1149,7 +1434,9 @@ class _AccessControlPanelState extends ConsumerState<AccessControlPanel> {
       builder: (_, rise) => SingleChildScrollView(
         padding: EdgeInsets.only(top: 8 + rise),
         child: Padding(
-          padding: const EdgeInsets.only(bottom: 32),
+          padding: EdgeInsets.only(
+            bottom: 32 + MediaQuery.paddingOf(context).bottom,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,

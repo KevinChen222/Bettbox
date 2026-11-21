@@ -51,23 +51,16 @@ class _FcmStatusState extends State<FcmStatus> {
     _isUpdating = true;
 
     try {
-      final connections = await clashCore.getConnections();
+      final summary = await clashCore.getConnectionsSummary(
+        maxAge: const Duration(seconds: 4),
+      );
 
-      final fcmConnections = connections.where((conn) {
-        final host = conn.metadata.host.toLowerCase();
-        final port = conn.metadata.destinationPort;
-        return host.contains('google.com') &&
-            (port == '5228' || port == '5229' || port == '5230');
-      }).toList();
-
-      if (fcmConnections.isEmpty) {
+      if (summary.fcmStart <= 0) {
         _fcmStatusNotifier.value = const FcmStatusData(isConnected: false);
       } else {
-        final longestConnection = fcmConnections.reduce(
-          (a, b) => a.start.isBefore(b.start) ? a : b,
-        );
-        final duration = DateTime.now().difference(longestConnection.start);
-        final minutes = duration.inMinutes;
+        final start = DateTime.fromMillisecondsSinceEpoch(summary.fcmStart);
+        final duration = DateTime.now().difference(start);
+        final minutes = duration.inMinutes + 1;
         _fcmStatusNotifier.value = FcmStatusData(
           minutes: minutes,
           isConnected: true,
@@ -92,7 +85,11 @@ class _FcmStatusState extends State<FcmStatus> {
             child: Text(appLocalizations.confirm),
           ),
         ],
-        child: Text(appLocalizations.fcmTip),
+        child: Text(
+          system.isAndroid
+              ? '${appLocalizations.fcmTip}${appLocalizations.fcmAndroidTip}'
+              : appLocalizations.fcmTip,
+        ),
       ),
     );
   }
@@ -102,7 +99,7 @@ class _FcmStatusState extends State<FcmStatus> {
     return SizedBox(
       height: getWidgetHeight(context, 1),
       child: CommonCard(
-        onLongPress: system.isAndroid ? () => app.openFcmDiagnostics() : null,
+        onPressed: system.isAndroid ? () => app.openFcmDiagnostics() : null,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -112,7 +109,7 @@ class _FcmStatusState extends State<FcmStatus> {
               child: Row(
                 mainAxisSize: MainAxisSize.max,
                 children: [
-                  Icon(
+                  AppIcon(
                     Icons.cloud_outlined,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -136,7 +133,7 @@ class _FcmStatusState extends State<FcmStatus> {
                     child: IconButton(
                       padding: EdgeInsets.zero,
                       onPressed: () => _showFcmInfoDialog(context),
-                      icon: Icon(
+                      icon: AppIcon(
                         size: 16.ap,
                         Icons.info_outline,
                         color: context.colorScheme.onSurfaceVariant,

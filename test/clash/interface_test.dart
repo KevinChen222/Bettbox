@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:bett_box/clash/interface.dart';
+import 'package:bett_box/common/constant.dart' show commonDuration;
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,14 +11,16 @@ import 'package:flutter_test/flutter_test.dart';
 class _FakeHandler extends ClashHandlerInterface {
   Object? channel = Object();
   bool disconnected = false;
-  final sent = <String>[];
+  final actions = <Map<String, dynamic>>[];
+  List<String> get sent =>
+      actions.map((action) => action['id'] as String).toList();
 
   @override
   Future<Object?> sendMessage(String message) async {
     if (disconnected) {
       throw const CoreDisconnectedException();
     }
-    sent.add(json.decode(message)['id'] as String);
+    actions.add(json.decode(message) as Map<String, dynamic>);
     return channel;
   }
 
@@ -37,14 +40,137 @@ class _FakeHandler extends ClashHandlerInterface {
   FutureOr<bool> destroy() => true;
 }
 
+String _frame(Map<String, Object?> header, String payload) =>
+    '${json.encode(header)}\n$payload';
+
 void main() {
+  group('decodeActionResult', () {
+    test('keeps raw payloads verbatim', () {
+      const payload = '{"connections":[{"id":"a\\nb"}]}\nsecond line';
+      final result = decodeActionResult(
+        _frame({
+          'id': 'getConnections#1',
+          'method': 'getConnections',
+          'code': 0,
+          'raw': true,
+        }, payload),
+      );
+      expect(result?.id, 'getConnections#1');
+      expect(result?.method, ActionMethod.getConnections);
+      expect(result?.data, payload);
+    });
+
+    test('decodes json payloads', () {
+      final result = decodeActionResult(
+        _frame({
+          'id': 'getConfig#1',
+          'method': 'getConfig',
+          'code': -1,
+        }, '{"k":[1,true]}'),
+      );
+      expect(result?.code, ResultType.error);
+      expect(result?.data, {
+        'k': [1, true],
+      });
+    });
+
+    test('rejects frames without a header', () {
+      expect(decodeActionResult('{"id":"x"}'), isNull);
+    });
+  });
+
+  test(
+    'forwards the LightGBM update over the existing resource action',
+    () async {
+      final handler = _FakeHandler();
+      final result = handler.updateGeoData(
+        const UpdateGeoDataParams(geoType: 'LightGBM', geoName: 'Model.bin'),
+      );
+      await pumpEventQueue();
+      final action = handler.actions.single;
+      expect(action['method'], 'updateGeoData');
+      expect(json.decode(action['data'] as String), {
+        'geo-type': 'LightGBM',
+        'geo-name': 'Model.bin',
+      });
+      handler.handleResult(
+        ActionResult(
+          method: ActionMethod.updateGeoData,
+          data: '',
+          id: action['id'],
+        ),
+      );
+      expect(await result, isEmpty);
+    },
+  );
+
+  testWidgets('LightGBM update times out after two minutes', (tester) async {
+    final handler = _FakeHandler();
+    final future = handler.updateGeoData(
+      const UpdateGeoDataParams(geoType: 'LightGBM', geoName: 'Model.bin'),
+    );
+    final expectation = expectLater(future, throwsA(isA<TimeoutException>()));
+    await tester.pump();
+    await tester.pump(const Duration(minutes: 1));
+    expect(handler.callbackCompleterMap, isNotEmpty);
+    await tester.pump(const Duration(minutes: 1));
+    await expectation;
+    await tester.pump(commonDuration);
+    expect(handler.callbackCompleterMap, isEmpty);
+  });
+
   group('ClashHandlerInterface', () {
+    test('completes requests from raw frames', () async {
+      final handler = _FakeHandler();
+      final future = handler.invoke<String>(method: ActionMethod.getMemory);
+      await pumpEventQueue();
+      await handler.handleResultMessage(
+        _frame({
+          'id': handler.sent.single,
+          'method': 'getMemory',
+          'code': 0,
+          'raw': true,
+        }, '42'),
+      );
+      expect(await future, '42');
+    });
+
+    test('decodes large json payloads off the caller', () async {
+      final handler = _FakeHandler();
+      final future = handler.invoke<dynamic>(method: ActionMethod.getProxies);
+      await pumpEventQueue();
+      final items = List.generate(20000, (index) => 'item-$index');
+      await handler.handleResultMessage(
+        _frame({
+          'id': handler.sent.single,
+          'method': 'getProxies',
+          'code': 0,
+        }, json.encode({'items': items})),
+      );
+      expect((await future as Map<String, dynamic>)['items'], items);
+    });
+
+    test('ignores malformed frames', () async {
+      final handler = _FakeHandler();
+      await handler.handleResultMessage('not a frame');
+      expect(handler.callbackCompleterMap, isEmpty);
+    });
+
     test('returns the reply while the channel is alive', () async {
       final handler = _FakeHandler();
       final future = handler.invoke<String>(method: ActionMethod.getMemory);
       await pumpEventQueue();
       handler.reply(handler.sent.single, '42');
       expect(await future, '42');
+    });
+
+    test('completes string requests that receive non-string data', () async {
+      final handler = _FakeHandler();
+      final future = handler.invoke<String>(method: ActionMethod.getMemory);
+      await pumpEventQueue();
+      handler.reply(handler.sent.single, true);
+      expect(await future.timeout(const Duration(seconds: 1)), 'true');
+      expect(handler.callbackCompleterMap, isEmpty);
     });
 
     test('releases the completer as soon as the reply arrives', () async {

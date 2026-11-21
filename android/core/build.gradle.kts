@@ -8,7 +8,7 @@ android {
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 24
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -57,7 +57,9 @@ val copyNativeLibs by tasks.register<Copy>("copyNativeLibs") {
     doFirst {
         delete("src/main/jniLibs")
     }
-    from("../../libclash/android")
+    from("../../libclash/android") {
+        include("arm64-v8a/libmeta.so", "arm64-v8a/libmeta.h")
+    }
     into("src/main/jniLibs")
 }
 

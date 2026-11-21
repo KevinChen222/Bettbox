@@ -3,40 +3,43 @@
 </h4>
 
 <h1 align="center">⚡ Bettbox</h1>
+
+> This is a personal-use fork. The introduction and platform list below describe upstream Bettbox. See the [fork notice and downloads](../README.md) and the [upgrade guide for existing users (Chinese)](Fork-Features.md#从旧版升级).
 <p align="center">
-  <strong>Another Better Mihomo Client</strong>
+  <strong>Another Better Network Toolbox</strong>
 </p>
 
-**Bettbox is a cross-platform network traffic routing and DNS debugging tool, deeply built on the powerful Mihomo core. We focus on ultimate user experience, strict privacy and security, and refined feature craftsmanship, dedicated to delivering a more lightweight, smooth, and modern client experience that runs stably over the long term with minimal resource consumption.**
+**Bettbox is a cross-platform network traffic routing and DNS debugging tool built on the Mihomo core. It focuses on an outstanding user experience, is built for long-term stable operation, stays lightweight on resources, and collects no data at all.**
 
-Guided by the design philosophy of **"Better Experience, Out of the box"**, Bettbox deeply taps into system and hardware potential, achieving high frame rates with silky-smooth foreground animations alongside low power consumption and minimal background resource usage. The project has pioneered manual security provenance review by the SignPath Foundation, and the Windows client is signed with an official authoritative OV digital certificate.
+Bettbox stands for Better Network Toolbox. The project has passed the manual security review of the SignPath Foundation, and the Windows build is signed with an OV code-signing certificate.
 
 [![Latest Release](https://img.shields.io/github/v/release/appshubcc/Bettbox?style=for-the-badge&logo=github&color=238636&label=Release)](https://github.com/appshubcc/Bettbox/releases/latest) [![Core](https://img.shields.io/github/v/release/MetaCubeX/mihomo?style=for-the-badge&logo=go&logoColor=white&color=8A2BE2&label=Mihomo)](https://github.com/MetaCubeX/mihomo/releases/latest)
 
 <p align="center">
-  <img src="../snapshots/home.png" alt="Bettbox" />
+  <img src="../snapshots/home.jpg" alt="Bettbox" />
 </p>
 
 ---
 ### ✈️ Telegram Community
 
-[![Telegram Group](https://img.shields.io/badge/Bettbox-Chat-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/appshub_chat) [![Telegram Channel](https://img.shields.io/badge/Bettbox-Channel-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/appshub_channel)
+[![Telegram Group](https://img.shields.io/badge/Bettbox-Chat-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/bettbox_chat) [![Telegram Channel](https://img.shields.io/badge/Bettbox-Channel-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/appshub_channel)
 
 ---
 ## 🚀 Core Features
 
-* **Out-of-the-Box**: Comprehensive permission guidance and smooth TUN / VPN experience with well-tuned presets, ready for optimal use right after installation.
-* **Lightweight & Smooth**: Deeply optimized system and rendering pipeline, delivering high FPS, clean and fluid foreground animations, ultra-low mobile power consumption, and minimal desktop resource usage.
-* **Security & Trustworthy**: Core closely tracks the upstream Mihomo branch, adheres to the principle of least privilege across platforms, passed SignPath security audit, and comes loaded with an official Windows OV digital certificate.
-* **Stability & Fault Tolerance**: Optimized edge-case behavior in extreme multi-platform network environments, featuring built-in dual configuration verification and protection mechanisms for enterprise-grade long-term stability.
-* **Architecture Optimization**: Deep native desktop ARM64 support with hardware performance tiering, alongside continuous maintenance of Compatible editions for legacy devices.
-* **Smart Daemon**: Supports seamless smart start/stop across platforms, mobile low-power sleep policies, one-click QUIC disabling, and multi-dimensional tray menu quick controls.
-* **Visual Settings**: Rich and in-depth visual parameter tuning interface with instant-effect toggles, freeing you from tedious manual configuration editing.
-* **Home Widgets**: Multiple beautifully crafted built-in widgets, providing at-a-glance control over real-time network speeds, active connections, and overall operational status on the home screen.
-* **Personalization**: Rich color themes, custom icons and titles, along with 30 exquisite speedtest animations.
-* **Ecosystem & Extension**: Supports visual UI adaptation for external JS override scripts, and includes a deeply refactored high-performance Code-forge editor.
-* **Zero Privacy Risk**: Fully open-source and transparent code, completely ad-free, automated CI/CD pipelines subject to comprehensive audit, and zero background telemetry.
-* **Community Driven**: We thoughtfully evaluate community feedback, actively respond to high-quality issues, and evolve together with an active user community.
+* **Out-of-the-Box**: Permission guidance, TUN, and managed routing mode come preconfigured, ready to use right after installation.
+* **Lightweight & Smooth**: Low power consumption on mobile, low background usage on desktop, and smooth interface animations.
+* **Security & Trustworthy**: The core tracks upstream Mihomo, and each platform requests only the minimum privileges it needs.
+* **Stability & Fault Tolerance**: Optimized edge-case behavior in extreme network environments across platforms; dual configuration verification suits long-term operation.
+* **Architecture Optimization**: Native ARM64 support on desktop, with continued maintenance of the Compatible edition for legacy devices.
+* **Smart Daemon**: Smart start/stop across platforms, adaptation to mobile Doze sleep, and quick controls from the tray on desktop platforms.
+* **Visual Settings**: Visual parameter tuning with instant effect, so even beginners never need to edit configuration by hand.
+* **Home Widgets**: Several beautifully crafted built-in widgets let you monitor overall operating status right from the home screen.
+* **All-in-One Toolbox**: Built-in professional-grade network and DNS routing debugging tools make your network status clear at a glance.
+* **Personalization**: Material Design–style color themes, custom icons, and speedtest animations.
+* **Ecosystem & Extension**: External JS override scripts can adapt to a graphical interface, and a high-performance Code-forge editor is built in.
+* **Zero Privacy Risk**: Open-source code, no ads, fully automated and publicly auditable CI/CD, and no background data collection.
+* **Community Driven**: We take community feedback seriously, evolve together with an active user community, and respond promptly to high-quality issues.
 
 ---
 ## 🛠️ Installation & Downloads
@@ -48,19 +51,19 @@ Please visit the **[[Releases]](https://github.com/appshubcc/Bettbox/releases)**
   * **Linux Kernel 5.4+:** (x64 / arm64)
   * **macOS 12.0+:** (Intel / Apple Silicon)
 * **Mobile & Others**:
-  * **Android 8.0+:** (ARMv8 / ARMv7 / x86_64 / Universal)
+  * **Android 7.0+ (upstream API 24):** (ARMv8 / ARMv7 / x86_64 / Universal)
   * **Android TV:** Full large-screen adaptation, optional ARMv7 32-bit version
   * **HarmonyOS NEXT:** Can be used stably with [[ZhuoYiTong]](https://harmonyos.cool/android-app)
 
 **Linux Community Packages:**<br>
 * **ArchLinux:** <code>yay -S bettbox-bin</code> or <code>paru -S bettbox-bin</code> (Maintained by [lyj404](https://github.com/lyj404/bettbox-aur))<br>
-* **AMD64=v1 (Legacy Hardware Compatibility):** <code>yay -S bettbox-compatible-bin</code> or <code>paru -S bettbox-compatible-bin</code> (Maintained by [VillagerTom](https://github.com/VillagerTom))
+* **AMD64=v1 (Compatible):** <code>yay -S bettbox-compatible-bin</code> or <code>paru -S bettbox-compatible-bin</code> (Maintained by [VillagerTom](https://github.com/VillagerTom))
 
 ---
 ## 💡 Frequently Asked Questions
 
 1. **System Requirements & Compatibility**:
-   - For Android devices, ensure sufficient background execution permissions are granted; system must meet Android 8.0+.
+   - For Android devices, ensure sufficient background execution permissions are granted; system must meet Android 7.0+ for upstream builds.
    - For legacy desktop hardware, please choose the corresponding Compatible build based on CPU instruction set architecture.
    - Security: Bettbox is fully open-source and transparent; the code has passed the authoritative SignPath security audit with zero privacy collection.
 
@@ -86,7 +89,7 @@ Please visit the **[[Releases]](https://github.com/appshubcc/Bettbox/releases)**
 Taking Windows build as an example:
 
 * System Requirements: Windows 10 or later
-* Dependencies: Git, Visual Studio, Flutter 3.47.x, Golang, Inno Setup, Rust
+* Dependencies: Git, Visual Studio, Flutter 3.50.1, Go, Inno Setup, Rust
 ```bash
 * flutter pub get (fetch dependencies)
 * dart .\setup.dart windows --arch amd64 --out core (build Core only)
@@ -148,6 +151,19 @@ const Compatible_With_Bettbox = {
 Thanks to all [Contributors](https://github.com/appshubcc/Bettbox/graphs/contributors) who have contributed to this project, as well as the following open-source projects for their inspiration and reference:
 
 [Zashboard](https://github.com/Zephyruso/zashboard), [CMFA](https://github.com/MetaCubeX/ClashMetaForAndroid), [Sparkle](https://github.com/xishang0128/sparkle), [SFA](https://github.com/SagerNet/sing-box-for-android), [HUSI](https://github.com/xchacha20-poly1305/husi), [V2rayN](https://github.com/2dust/v2rayN), [Bett-rules](https://github.com/appshubcc/bett-rules)
+
+---
+## 📈 Project Popularity
+
+<p align="center">
+  <a href="https://www.star-history.com/?repos=appshubcc%2FBettbox&type=timeline&legend=top-left">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=appshubcc/Bettbox&type=date&theme=dark&legend=top-left" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=appshubcc/Bettbox&type=date&legend=top-left" />
+      <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=appshubcc/Bettbox&type=date&legend=top-left" />
+    </picture>
+  </a>
+</p>
 
 ---
 ## 📄 License

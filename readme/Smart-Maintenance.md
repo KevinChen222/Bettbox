@@ -28,18 +28,16 @@
 - 资源页面提供 LightGBM 同步按钮。桥接复用 `updateGeoData` 的 `LightGBM` 类型，调用原生模型更新器，校验后写 `HomeDir/Model.bin` 并重新加载。默认来源如上；配置的 `lgbm-url` 可覆盖。
 - `core/common.go` 保留 Smart 使用的 GeoIP/ASN 数据，不能让原内存清理卸载它们。
 - `core/smart_test.go` 验证组、选择、Geo 数据、模型更新和单次 Smart 延迟请求；`test/smart_group_test.dart` 验证客户端模型及虚拟节点解析，`test/views/proxies/smart_delay_test.dart` 验证整组测速、嵌套卡片单次测速和失败状态清理。保留 Smart 组自身测速全部成员并恢复自动选路、其他组中 Smart 卡片单次测速且不清除固定选择的区别。
-- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包与 Android arm64-v8a 单架构 APK。Ubuntu 24.04 Linux x64 DEB 由本机 `tool/build-linux-local.sh` 构建并检查；Rust target 为 x86_64-unknown-linux-gnu，内核为 AMD64 v3，只使用 flutter_distributor 的 deb 目标。工作流显示名 `Build Smart`。完整历史用于三方合并。Android 只编译和发布 arm64-v8a，不生成通用包、armeabi-v7a 或 x86_64 包。内核使用 `dart setup.dart android --arch arm64 --out core`，APK 使用 `--split-per-abi --target-platform android-arm64`；Rust 只安装 Android 的 `aarch64-linux-android` target。`android/core` 的 `ndk.abiFilters` 也只保留 arm64-v8a，避免 Gradle 额外编译其他 ABI。1.19.5 已移除 `flutter_qjs`，脚本引擎由 `code_forge` 的 Rust 模块提供。不能先编译全部架构再改名或删除已签名 APK 中的文件。
+- `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包与 Android arm64-v8a 单架构 APK。Ubuntu 24.04 Linux x64 DEB 由本机 `tool/build-linux-local.sh` 构建并检查；Rust target 为 x86_64-unknown-linux-gnu，内核为 AMD64 v3，只使用 flutter_distributor 的 deb 目标。工作流显示名 `Build Smart`。完整历史用于三方合并。Android 只编译和发布 arm64-v8a，不生成通用包、armeabi-v7a 或 x86_64 包。内核使用 `dart setup.dart android --arch arm64 --out core --standard`，APK 使用 `--split-per-abi --target-platform android-arm64`；Rust 只安装 Android 的 `aarch64-linux-android` target。`android/core` 的 `ndk.abiFilters` 也只保留 arm64-v8a，避免 Gradle 额外编译其他 ABI。1.19.5 已移除 `flutter_qjs`，脚本引擎由 `code_forge` 的 Rust 模块提供。不能先编译全部架构再改名或删除已签名 APK 中的文件。
 - `.test/` 与生成目录都不能提交；密钥与密码不能进入 Git、文档、日志、构建 Artifact 或 Release。
 
-### 独立客户端扩展：代理链路
+### 节点库、落地代理与聚合订阅
 
-本 fork 现已增加 Avalon 的链路创建能力，完整使用、结构、接入点、来源和后续适配说明见 [代理链路维护说明](Proxy-Chains.md)。新增模块集中在 `lib/features/chains/`，没有修改原始内核或 Smart 补丁。Avalon 只作为编译器的只读参考，不整体合并其分支，也不自动开启第三套上游更新/发布流程。
+当前合并目标 `upstream/main` 为 `1f5318f7`（Bettbox 1.19.9）。节点库和落地功能来自 `7f4293ce`，订阅合并及托管脚本来自 `389cd5fd`。使用和旧版迁移见 [使用与升级](Fork-Features.md)。Avalon 的来源和许可作为历史贡献保存在根目录 `NOTICE`。
 
-合并 Bettbox 更新时保留三处接入：`lib/views/tools.dart` 的独立入口及搜索项；`lib/state.dart` 在脚本/过滤之后、加载内核之前兼容旧版未落盘链路；`lib/controller.dart` 的链路库备份、恢复及清空处理。UI 改版时移动入口即可，不能用旧 Avalon UI 覆盖 Bettbox 的新 UI。直接保存链路写入来源 YAML，管理操作按 `x-bettbox-chain-*` 标记更新和撤回生成内容；只有明确创建本地配置才新增文件，快照不带管理标记。`proxy-chains.json` 跟随应用数据目录与备份，更新应用时不能删除。
-
-移植来源记录在 `lib/features/chains/avalon-source.json`；保留编译器的 Avalon 版权头、模块内 AGPL 许可及根目录 `NOTICE`，原项目 GPL 许可和个人自用声明仍须保留。链路默认不改变原规则/选中节点。多跳链路第一跳直接引用原节点或策略组，前置组跟随实时选择（含 Smart 自动选路），不能再展开前置成员或重命名前置。后续节点生成副本，出口组按实际落地节点展开；两跳链路的选项数只取决于落地节点数。创建本地配置/导出 YAML 保留原规则，切换本地配置前继承源配置已有的 HTTP provider/规则集缓存，不能因新配置 ID 强制重新下载。
-
-`Build Smart` 会把模块许可和根目录 `NOTICE` 打包进 Flutter 的 `assets/data/avalon-chain-LICENSE.txt` 与 `avalon-chain-NOTICE.txt`。发布检查时核实 Windows ZIP、arm64-v8a APK 和 Linux DEB 都包含这两项，不能在已签名 APK 上直接补文件。
+- 节点页与配置绑定见 `lib/views/profiles/nodes.dart`、`edit_node.dart`、`lib/models/node.dart`。`core/nodes.go` 在运行配置中处理节点、`dialer-proxy` 和组成员，检查前置失效及循环时的行为。合并时核对实际出站路径和普通／托管配置的绑定。
+- 聚合入口在 `lib/views/profiles/merge_profile.dart`。客户端先应用托管脚本，内核通过 `core/provider_expand.go` 和 `core/profile_merge.go` 处理 Provider 与合并结果。检查成员更新、Provider 缓存、规则、节点去重及名称重写。兼容备份恢复实现位于 `lib/common/profile_recovery.dart`，覆盖同 URL 配置的 ID 保留和合并。
+- 上游 Android 应用和核心声明 `minSdk = 24`。发布前另查 Smart APK 的实际最低版本、arm64-v8a 原生库和 Android 7.x 启动及 VPN 表现，再确认可用范围。
 
 ## 1. 检查账号、工作区和远端
 
@@ -70,7 +68,7 @@ git merge --ff-only origin/feat/smart-core
 
 ## 2. 同时检查两个上游
 
-读取 `core/smart-source.json`。分别获取最新 Bettbox `main` 和 Smart `Alpha`，比较实际 SHA，不依赖 Release 标题或日期。记录旧/新 SHA 和相关 changelog。
+合并开始前可按以下命令获取和审阅变更。若已有 `MERGE_HEAD`，从当前合并继续处理冲突。
 
 ```sh
 git fetch upstream main
@@ -79,7 +77,7 @@ git diff --stat HEAD...upstream/main
 git merge upstream/main
 ```
 
-先解决普通客户端/构建冲突，保留本 fork 的来源、更新地址、Smart 枚举、模型按钮和责任声明。再运行：
+读取 `core/smart-source.json`，分别比较 Bettbox `main` 与 Smart `Alpha` 的实际 SHA。记录旧、新 SHA 和相关 changelog。先解决普通客户端/构建冲突，保留本 fork 的来源、更新地址、Smart 枚举、模型按钮和责任声明。
 
 ```sh
 flutter pub get
@@ -107,7 +105,7 @@ dart tool/prepare_smart_core.dart --refresh-patch
 
 ## 3. 依赖、生成代码和本地验证
 
-按需升级不符合项目要求的工具/依赖，不做无关全面升级。基线需要 Flutter 3.47.7（Dart 3.13.5）、Go 1.25+、Rust；Android JDK 17、Gradle 9.3.1（AGP 9.1）、NDK 28.2.13676358、CMake 3.22.1；Windows 需要 Visual Studio C++。以后以合入后的 SDK/Gradle/pubspec/Go 要求为准，同时更新 workflow 和说明。`android/gradle/` 是 Flutter 生成且被忽略的本机文件；升级旧工作区时若仍指向 Gradle 8.13，将 `gradle/wrapper/gradle-wrapper.properties` 的 `distributionUrl` 更新为 `https\://services.gradle.org/distributions/gradle-9.3.1-all.zip`，与 Flutter 3.47.7 新工作区的默认值一致。
+按需升级工具和依赖。Bettbox 1.19.9 的 `pubspec.yaml` 要求 Dart 3.14+，上游 CI 使用 Flutter 3.50.1。Smart 本机构建和 Actions 均需使用满足依赖的 SDK。另需 Go 1.25+、Rust、Android JDK 21、Gradle 9.5.0（AGP 9.3.1）、NDK 28.2.13676358 和 CMake 3.22.1。Windows 需要 Visual Studio C++。检查当前 Gradle wrapper 与 `android/settings.gradle.kts`，用与项目 AGP 兼容的版本。
 
 运行前确认实际使用的工具版本与 PATH，不假设本机 SDK 满足要求。PowerShell 使用安全的参数数组和 `pwsh`；调用 `.bat` 时保持正常参数边界。
 
@@ -115,9 +113,9 @@ dart tool/prepare_smart_core.dart --refresh-patch
 
 默认在本机 Ubuntu 24.04 x86_64 的 `/home/kevin-chen/project/bettbox_smart` 维护客户端和 Smart 内核。日常本机测试只构建 Linux x64 客户端/DEB 与 Android arm64-v8a APK，先跑变更相关的定向测试，再交付维护者实测。Android 日常构建固定使用 `bash tool/build-android-local.sh --require-signing`，不回退到 debug 签名。Windows x64 安装包由 `smart.yaml` 的 Windows runner 构建，不要求本机构建 Windows 客户端；Windows 原生界面和系统功能需在 Windows 上验证。
 
-本机 SDK 放在 `~/development/bettbox-toolchains/`，Pub、Go 和 Gradle 下载缓存放在 `~/.cache/bettbox/`。终端启动时读取 `~/.config/bettbox/linux-env.sh`；项目中的 `tool/linux-env.sh` 保存相同配置，换机后可在安装 SDK 后执行 `source tool/linux-env.sh`。固定使用 Flutter 3.47.7（Dart 3.13.5）、Go 1.25.x、Rust stable、JDK 17、Android API 36、Build Tools 36.0.0、NDK 28.2.13676358 和 Android CMake 3.22.1。`BETTBOX_TOOLCHAIN_DIR`、`BETTBOX_JAVA_HOME` 可覆盖 SDK/JDK 安装位置。
+本机 SDK 放在 `~/development/bettbox-toolchains/`，Pub、Go 和 Gradle 下载缓存放在 `~/.cache/bettbox/`。终端启动时读取 `~/.config/bettbox/linux-env.sh`，也可运行 `source tool/linux-env.sh`。按上节要求更新 Flutter，并使用 Go 1.25.x、Rust stable、Linux JDK 17、Android JDK 21、Android API 36、Build Tools 36.0.0、NDK 28.2.13676358 和 Android CMake 3.22.1。`BETTBOX_TOOLCHAIN_DIR`、`BETTBOX_JAVA_HOME` 可覆盖 SDK/JDK 安装位置。
 
-Ubuntu 系统依赖：`build-essential clang cmake ninja-build pkg-config libgtk-3-dev libstdc++-12-dev libayatana-appindicator3-dev libkeybinder-3.0-dev libcurl4-openssl-dev liblzma-dev libsecret-1-dev libx11-dev libgl1-mesa-dev openjdk-17-jdk unzip zip xz-utils git curl gh`。GitHub CLI 登录用 `gh auth login`，签名和凭据不写进环境脚本或版本控制。
+Ubuntu 系统依赖：`build-essential clang cmake ninja-build pkg-config libgtk-3-dev libstdc++-12-dev libayatana-appindicator3-dev libkeybinder-3.0-dev libcurl4-openssl-dev liblzma-dev libsecret-1-dev libx11-dev libgl1-mesa-dev openjdk-17-jdk openjdk-21-jdk-headless unzip zip xz-utils git curl gh`。GitHub CLI 登录用 `gh auth login`，签名和凭据不写进环境脚本或版本控制。
 
 从 Windows 迁移时重新运行 `flutter pub get`，不要复用 Windows 的 `.dart_tool`、插件路径、构建缓存和 Android `local.properties` 中的 SDK 路径。保留签名配置及用户修改。Linux 工作区使用 `core.autocrlf=false`，Shell 脚本和 Smart 补丁由 `.gitattributes` 固定 LF。NTFS 备份保留 `core.filemode=false`；本机已核实支持符号链接并启用 `core.symlinks=true`。**当前 `/mnt/shared` 的 NTFS 挂载配置使用 `fmask=0133` 且未启用逐文件权限，屏蔽执行位并忽略 `chmod`，因此当前配置不能直接完整构建/运行**；这是挂载配置限制，不是所有 NTFS 都无法构建。按维护者要求，唯一日常开发目录已迁移为 ext4 上的 `/home/kevin-chen/project/bettbox_smart`（`~/project/bettbox_smart`），共享盘原目录只保留备份，旧 `~/development/Bettbox` 开发副本已移走。不要在旧目录继续修改源码。复制到新路径后重新运行 `flutter pub get`，不复制 `.dart_tool`、`build`、`ephemeral`、`.cxx` 或 Rust `target` 缓存。
 
@@ -139,22 +137,20 @@ flutter run -d linux --dart-define=APP_DEV=true
 
 沿用项目的 `flutter_distributor` DEB 打包器和 `linux/packaging/deb/make_config.yaml`。包名为 `bettbox-smart`，桌面显示 Bettbox Smart，运行时依赖采用 Ubuntu 24.04 的库包，不要求用户安装开发头文件。JNI 使用 `/usr/lib/jvm/java-17-openjdk-amd64/lib/server`，DEB 依赖 `openjdk-17-jre-headless`；CI 也使用 Ubuntu 的 OpenJDK 17，避免把 runner 私有的 Temurin 路径写进产物。可执行文件和安装目录仍沿用上游 `/usr/share/Bettbox/`，因此声明与上游 `bettbox` 包冲突，不承诺与原版共存；不要更改当前应用数据目录或在更新/卸载时删除配置。DEB 中 `BettboxCore` 保持 root 所有权、0755 执行权限，不预置 setuid；安装脚本通过 `libcap2-bin` 设置 `cap_net_admin,cap_net_bind_service,cap_net_raw=+ep`。包内 `90-bettbox.rules` 仅允许本地活动会话执行所需的四项 systemd-resolved DNS 操作，运行时支持 Linux 系统 DNS 设置及恢复。核实包内权限和安装脚本；安装后的 capabilities/TUN 授权需实机确认。App 更新链接保持进入 fork 正式版 Release 页面，不设置上游格式的 `APP_ASSET_SUFFIX`，以免指向错误文件名。
 
-在本机加载工具链，准备依赖、生成代码和链路许可后，仅构建 Linux 内核并打包 DEB：
+加载工具链并生成代码后，构建 Linux 内核并打包 DEB。
 
 ```sh
 source tool/linux-env.sh
 flutter pub get
 dart run build_runner build -d
-cp lib/features/chains/LICENSE assets/data/avalon-chain-LICENSE.txt
-cp NOTICE assets/data/avalon-chain-NOTICE.txt
-dart setup.dart linux --arch amd64 --out core
+dart setup.dart linux --arch amd64 --out core --standard
 dart pub global activate --source path plugins/flutter_distributor/packages/flutter_distributor
-dart pub global run flutter_distributor:main package --skip-clean --platform linux --targets deb --description x64 --build-target-platform linux-x64 --build-dart-define=APP_ENV=pre
+dart pub global run flutter_distributor:main package --skip-clean --platform linux --targets deb --description x64 --build-target-platform linux-x64 --build-dart-define=APP_ENV=pre --build-dart-define=APP_STANDARD=true
 ```
 
 上述步骤及包检查封装在 `bash tool/build-linux-local.sh`。脚本将 DEB 和本机构建来源记录写入 `dist/smart-local/<提交SHA>/`，包名为 `Bettbox-smart-linux-x64.deb`。不要直接运行未指定 `--out core` 的 `dart setup.dart linux`，它会安装额外系统依赖并构建 DEB/RPM/AppImage。本地打包不提交、不推送、不安装、不发布、不修改版本号；需要试装时由维护者运行 `sudo apt install ./Bettbox-smart-linux-x64.deb`（或本地实际文件路径），由 apt 处理运行时依赖。
 
-以后按 AI 更新入口更新时，Linux 与 Windows/Android 使用同一 App 提交、版本号、Bettbox SHA、Smart SHA 和发布轮换规则。发布前核实 DEB 的 `Package=bettbox-smart`、`Architecture=amd64`、版本含本次构建号，包含界面、Smart 内核、链路许可及 NOTICE，所有 ELF 依赖均可解析。Linux 实机验证包括启动、托盘、系统代理、TUN 授权/连接、Smart 选路与模型同步；没有执行时如实注明，构建成功不能替代这些验证。旧测试版转正时保持旧资产，不给它补装新 Linux 包。
+以后按 AI 更新入口更新时，Linux 与 Windows/Android 使用同一 App 提交、版本号、Bettbox SHA、Smart SHA 和发布轮换规则。发布前核实 DEB 的 `Package=bettbox-smart`、`Architecture=amd64`、版本含本次构建号，包含界面及 Smart 内核，所有 ELF 依赖均可解析。Linux 实机验证包括启动、托盘、系统代理、TUN 授权/连接、Smart 选路与模型同步；没有执行时如实注明，构建成功不能替代这些验证。旧测试版转正时保持旧资产，不给它补装新 Linux 包。
 
 ### 本机直接构建 Android APK
 
@@ -167,7 +163,7 @@ bash tool/build-android-local.sh
 bash tool/build-android-local.sh --require-signing
 ```
 
-脚本加载本机工具链，检查工作区执行权限，获取依赖、生成代码、复制链路许可和 NOTICE、编译 Smart 内核，再构建 **仅 arm64-v8a** 的 release-mode 测试 APK。不提交、不推送、不发布、不修改版本号。输出：`build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`。生成代码后检查 Git 差异，不顺便提交无关 provider hash/格式变化。不要同时运行两个构建或 Smart 生成器与 Go 测试。
+脚本加载本机工具链，检查工作区执行权限，获取依赖、生成代码、编译 Smart 内核，再构建 **仅 arm64-v8a** 的 release-mode 测试 APK。不提交、不推送、不发布、不修改版本号。输出：`build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`。生成代码后检查 Git 差异，不顺便提交无关 provider hash/格式变化。不要同时运行两个构建或 Smart 生成器与 Go 测试。
 
 当前本机已从维护者的原始备份恢复 `android/app/keystore.jks`，在 `android/local.properties` 配置签名参数并保留 Linux SDK 路径；两份文件均为 `600` 权限且被 Git 忽略。日常构建建议使用 `--require-signing`，防止签名配置缺失时静默回退。换机时若没有恢复持久签名，默认脚本会明确警告，Gradle 回退到本机 debug key；这种 APK 不能覆盖此前由持久 key 签名的 App，且不适合正式发布。要支持覆盖更新，**恢复原来的同一份 keystore** 到上述忽略路径，在忽略的 `android/local.properties` 中本地配置 `keyAlias`、`storePassword`、`keyPassword`，同时保留 Linux 的 `sdk.dir` 与 `flutter.sdk`。不要新建替代 key，不把密码放进脚本、聊天、Git 或日志；本地配置权限建议 `chmod 600`。
 
@@ -179,14 +175,12 @@ Linux 界面测试不替代 Windows 系统代理/托盘和 Android 真机 VPN/�
 flutter pub get
 dart run build_runner build -d
 dart tool/prepare_smart_core.dart
-flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart
-flutter test test/features/chains
-flutter test test/main_page_titles_test.dart
-dart analyze lib/features/chains test/features/chains lib/state.dart lib/views/tools.dart lib/controller.dart
+flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart
+flutter test test/clash/bundle_sync_test.dart test/common/managed_script_test.dart test/common/profile_recovery_test.dart
 dart analyze tool/prepare_smart_core.dart tool/update_smart_core.dart lib/views/resources.dart lib/clash/interface.dart
 # 在 core 中：Windows 关闭 CGO，与实际 exe 构建一致
 go test -tags=with_gvisor ./...
-# 包含 TestProxyChainConnectDirection：实际验证两跳 HTTP CONNECT 链路
+# nodes_test.go、profile_merge_test.go 等覆盖落地代理链路、订阅合并和 Provider 行为
 # 在 core/.smart-mihomo 中：
 go test -tags=with_gvisor ./common/callback ./adapter/outboundgroup ./component/smart/... ./tunnel/statistic ./listener/sing_tun
 ```
@@ -227,7 +221,7 @@ Fork 的工作流只在功能分支，手动 workflow_dispatch 的可用性取�
 gh run download <ID> --repo KevinChen222/Bettbox --dir dist/smart/<ID>
 ```
 
-将 `tool/build-linux-local.sh` 生成且来源提交一致的 `Bettbox-smart-linux-x64.deb` 复制到同一产物目录，与下载的 `Bettbox-smart-windows-x64.zip`、`Bettbox-smart-android-arm64-v8a.apk` 一起发布。核实 Windows 内核/HelperService、APK 的 `lib/` 仅含 arm64-v8a 且含 `libmeta.so`；验证 APK 沿用上一版的持久自用签名，Smart 库保持 16 KB 页对齐。核实 Linux DEB 的 amd64 架构、版本、内核权限和链路许可/NOTICE，并在 Ubuntu 24.04 检查动态库依赖。计算三个安装包 SHA256，生成 `SHA256SUMS.txt`，并写 `build-info.json` 记录 App 提交、Bettbox SHA、Smart SHA、Actions URL、本机 Linux 构建环境与来源、构建版本、产物架构和签名方式。新 Release 共五个资产：Windows ZIP、arm64-v8a APK、Linux x64 DEB、校验和与来源 JSON；上一版转正时保持其原有资产不变。不得把日志中的秘密、签名备份或源缓存打包。
+将 `tool/build-linux-local.sh` 生成且来源提交一致的 `Bettbox-smart-linux-x64.deb` 复制到同一产物目录，与下载的 `Bettbox-smart-windows-x64.zip`、`Bettbox-smart-android-arm64-v8a.apk` 一起发布。核实 Windows 内核/HelperService、APK 的 `lib/` 仅含 arm64-v8a 且含 `libmeta.so`；验证 APK 沿用上一版的持久自用签名，Smart 库保持 16 KB 页对齐。核实 Linux DEB 的 amd64 架构、版本和内核权限，并在 Ubuntu 24.04 检查动态库依赖。计算三个安装包 SHA256，生成 `SHA256SUMS.txt`，并写 `build-info.json` 记录 App 提交、Bettbox SHA、Smart SHA、Actions URL、本机 Linux 构建环境与来源、构建版本、产物架构和签名方式。新 Release 共五个资产：Windows ZIP、arm64-v8a APK、Linux x64 DEB、校验和与来源 JSON；上一版转正时保持其原有资产不变。不得把日志中的秘密、签名备份或源缓存打包。
 
 ### 测试版与正式版轮换规则
 

@@ -3,9 +3,11 @@ package com.appshub.bettbox.plugins
 import android.Manifest
 import android.app.Activity
 import android.app.ActivityManager
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.content.pm.ApplicationInfo
 import android.content.pm.ComponentInfo
 import android.content.pm.PackageManager
@@ -20,12 +22,14 @@ import androidx.core.content.getSystemService
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import com.appshub.bettbox.receivers.InstallResultReceiver
 import com.appshub.bettbox.BettboxApplication
 import com.appshub.bettbox.GlobalState
 import com.appshub.bettbox.R
 import com.appshub.bettbox.extensions.awaitResult
 import com.appshub.bettbox.extensions.getActionIntent
 import com.appshub.bettbox.models.Package
+import com.appshub.bettbox.widget.HomeWidgets
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -68,7 +72,7 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
     private val chinaPackageCache = ConcurrentHashMap<String, Boolean>()
 
     private val iconCacheDir by lazy {
-        File(BettboxApplication.getAppContext().cacheDir, "app_icons").apply {
+        File(BettboxApplication.getAppContext().noBackupFilesDir, "app_icons").apply {
             if (!exists()) mkdirs()
         }
     }
@@ -77,6 +81,8 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
         private const val ICON_SIZE_DP = 48
         private const val VPN_PERMISSION_REQUEST_CODE = 1001
         private const val NOTIFICATION_PERMISSION_REQUEST_CODE = 1002
+        private const val LOCAL_NETWORK_PERMISSION_REQUEST_CODE = 1003
+        private const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
         private const val CACHE_MAX_FILES = 500
         private const val PNG_MAGIC_SIZE = 8
 
@@ -131,6 +137,7 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
     }
 
     private var isBlockNotification = false
+    private var isBlockLocalNetwork = false
     private var isActivityAttached = false
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -201,10 +208,43 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
         }
     }
 
+    fun notifyInstallFailed() {
+        if (!::channel.isInitialized) return
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            runCatching { channel.invokeMethod("installFailed", null) }
+        }
+    }
+
+    fun invokeHomeWidget(method: String, argument: Any): Boolean {
+        if (!::channel.isInitialized) return false
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            runCatching { channel.invokeMethod(method, argument) }
+        }
+        return true
+    }
+
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
+            "updateHomeWidget" -> {
+                val data = call.arguments as? String
+                if (data != null) HomeWidgets.save(BettboxApplication.getAppContext(), data)
+                result.success(null)
+            }
+
+            "hasHomeWidgets" -> {
+                result.success(HomeWidgets.hasWidgets(BettboxApplication.getAppContext()))
+            }
+
+            "consumeHomeWidgetAction" -> {
+                result.success(HomeWidgets.consumePendingAction())
+            }
+
             "moveTaskToBack" -> {
                 activityRef?.get()?.moveTaskToBack(true)
+                result.success(true)
+            }
+            "notifyLowMemory" -> {
+                GlobalState.notifyLowMemory()
                 result.success(true)
             }
             "updateExcludeFromRecents" -> {
@@ -235,6 +275,16 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
                 }.getOrNull() ?: getDefaultIconBytes()
                 result.success(icon)
             }
+            "getPackageIconPath" -> scope.launch {
+                val packageName = call.argument<String>("packageName")
+                val forceRefresh = call.argument<Boolean>("forceRefresh") ?: false
+                val path = runCatching {
+                    packageName?.let {
+                        getPackageIconPath(it, forceRefresh)
+                    }
+                }.getOrNull()
+                result.success(path)
+            }
             "tip" -> {
                 tip(call.argument<String>("message"))
                 result.success(true)
@@ -247,10 +297,6 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
             }
             "requestIgnoreBatteryOptimizations" -> {
                 requestIgnoreBatteryOptimizations()
-                result.success(true)
-            }
-            "setLauncherIcon" -> {
-                setLauncherIcon(call.argument<Boolean>("useDarkIcon") ?: false)
                 result.success(true)
             }
             "hasPackageListPermission" -> {
@@ -267,6 +313,17 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
                 openAppSettings()
                 result.success(true)
             }
+            "openAppDetails" -> {
+                val packageName = call.arguments as? String
+                result.success(!packageName.isNullOrEmpty() && openAppDetails(packageName))
+            }
+            "installApk" -> scope.launch {
+                val path = call.arguments as? String
+                val installed = withContext(Dispatchers.IO) {
+                    runCatching { path?.let(::installApk) ?: false }.getOrDefault(false)
+                }
+                result.success(installed)
+            }
             "isAndroidTV" -> {
                 result.success(isAndroidTV())
             }
@@ -275,6 +332,31 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
             }
             else -> result.notImplemented()
         }
+    }
+
+    private fun installApk(path: String): Boolean {
+        val file = File(path)
+        if (!file.isFile) return false
+        val context = BettboxApplication.getAppContext()
+        val installer = context.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        params.setAppPackageName(context.packageName)
+        val sessionId = installer.createSession(params)
+        installer.openSession(sessionId).use { session ->
+            session.openWrite("base.apk", 0, file.length()).use { output ->
+                file.inputStream().use { it.copyTo(output) }
+                session.fsync(output)
+            }
+            val intent = Intent(context, InstallResultReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                sessionId,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+            session.commit(pendingIntent.intentSender)
+        }
+        return true
     }
 
     private fun openFcmDiagnostics(): Boolean {
@@ -334,7 +416,7 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
         return bytes.take(PNG_MAGIC_SIZE).toByteArray().contentEquals(magic)
     }
 
-    private suspend fun getPackageIconBytes(packageName: String, forceRefresh: Boolean = false): ByteArray? =
+    private suspend fun ensurePackageIconFile(packageName: String, forceRefresh: Boolean = false): File? =
         withContext(Dispatchers.IO) {
             val pm = BettboxApplication.getAppContext().packageManager ?: return@withContext null
             runCatching {
@@ -352,8 +434,7 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
                 }
 
                 if (cacheFile.exists() && cacheFile.length() > 0) {
-                    val cachedBytes = cacheFile.readBytes()
-                    if (isPngBytes(cachedBytes)) return@withContext cachedBytes
+                    if (isPngBytes(cacheFile.readBytes())) return@withContext cacheFile
                     cacheFile.delete()
                 }
 
@@ -361,11 +442,32 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
 
                 pm.getApplicationIcon(packageName)?.let { drawable ->
                     val bytes = drawableToPngBytes(drawable, getIconSizePx())
-                    runCatching { cacheFile.writeBytes(bytes) }
-                    return@withContext bytes
+                    val tempFile = File(iconCacheDir, ".tmp_${cacheKey}_${System.nanoTime()}")
+                    if (runCatching { tempFile.writeBytes(bytes) }.isFailure) {
+                        tempFile.delete()
+                        return@withContext null
+                    }
+                    if (!tempFile.renameTo(cacheFile)) {
+                        tempFile.delete()
+                        return@withContext cacheFile.takeIf { it.exists() && it.length() > 0 }
+                    }
+                    return@withContext cacheFile
                 }
             }
             null
+        }
+
+    private suspend fun getPackageIconPath(packageName: String, forceRefresh: Boolean = false): String? =
+        ensurePackageIconFile(packageName, forceRefresh)?.absolutePath
+
+    private suspend fun getPackageIconBytes(packageName: String, forceRefresh: Boolean = false): ByteArray? =
+        ensurePackageIconFile(packageName, forceRefresh)?.let { file ->
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val bytes = file.readBytes()
+                    if (isPngBytes(bytes)) bytes else null
+                }.getOrNull()
+            }
         }
 
     private suspend fun getPackages(forceRefresh: Boolean = false): List<Package> = packagesMutex.withLock {
@@ -443,12 +545,22 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
     }
 
     fun requestNotificationsPermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        if (isBlockNotification || activityRef?.get() == null) return
-        if (ContextCompat.checkSelfPermission(BettboxApplication.getAppContext(), Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
-        activityRef?.get()?.let {
-            ActivityCompat.requestPermissions(it, arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST_CODE)
+        val activity = activityRef?.get() ?: return
+        val needsNotification = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !isBlockNotification &&
+            ContextCompat.checkSelfPermission(BettboxApplication.getAppContext(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (needsNotification) {
+            ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST_CODE)
+            return
         }
+        requestLocalNetworkPermission()
+    }
+
+    private fun requestLocalNetworkPermission() {
+        if (Build.VERSION.SDK_INT < 37 || isBlockLocalNetwork) return
+        val activity = activityRef?.get() ?: return
+        if (ContextCompat.checkSelfPermission(activity, LOCAL_NETWORK_PERMISSION) == PackageManager.PERMISSION_GRANTED) return
+        ActivityCompat.requestPermissions(activity, arrayOf(LOCAL_NETWORK_PERMISSION), LOCAL_NETWORK_PERMISSION_REQUEST_CODE)
     }
 
     suspend fun getText(text: String): String? = withContext(Dispatchers.Default) {
@@ -531,13 +643,21 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
         if (requestCode == VPN_PERMISSION_REQUEST_CODE && resultCode == FlutterActivity.RESULT_OK) {
             GlobalState.initServiceEngine()
             vpnCallBack?.invoke()
+        } else if (requestCode == VPN_PERMISSION_REQUEST_CODE) {
+            ServicePlugin.notifyVpnStartFailed()
         }
         return true
     }
 
     private fun onRequestPermissionsResultListener(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
         if (!isActivityAttached) return false
-        if (requestCode == NOTIFICATION_PERMISSION_REQUEST_CODE) isBlockNotification = true
+        when (requestCode) {
+            NOTIFICATION_PERMISSION_REQUEST_CODE -> {
+                isBlockNotification = true
+                requestLocalNetworkPermission()
+            }
+            LOCAL_NETWORK_PERMISSION_REQUEST_CODE -> isBlockLocalNetwork = true
+        }
         return true
     }
 
@@ -561,27 +681,6 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
                     })
                 }
             }
-    }
-
-    private fun setLauncherIcon(useDarkIcon: Boolean) {
-        val context = BettboxApplication.getAppContext()
-        val pm = context.packageManager
-        val packageName = context.packageName
-        val defaultComponent = android.content.ComponentName(packageName, "com.appshub.bettbox.MainActivity")
-        val lightComponent = android.content.ComponentName(packageName, "com.appshub.bettbox.MainActivityLight")
-        val darkComponent = android.content.ComponentName(packageName, "com.appshub.bettbox.MainActivityDark")
-
-        if (useDarkIcon) {
-            pm.setComponentEnabledSetting(darkComponent, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
-            pm.setComponentEnabledSetting(defaultComponent, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
-            pm.setComponentEnabledSetting(lightComponent, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
-        } else {
-            pm.setComponentEnabledSetting(defaultComponent, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
-            pm.setComponentEnabledSetting(darkComponent, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
-            pm.setComponentEnabledSetting(lightComponent, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
-        }
-        com.appshub.bettbox.services.NotificationComponentCache.invalidate()
-        VpnPlugin.updateNotificationIcon()
     }
 
     private fun hasPackageListPermission(): Boolean {
@@ -608,13 +707,30 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
         ContextCompat.checkSelfPermission(BettboxApplication.getAppContext(), Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
     private fun openAppSettings() {
+        openAppDetails(BettboxApplication.getAppContext().packageName)
+    }
+
+    private fun openAppDetails(packageName: String): Boolean {
+        val context = BettboxApplication.getAppContext()
+        val pm = context.packageManager
+        val installed = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                pm.getPackageInfo(packageName, 0)
+            }
+            true
+        }.getOrDefault(false)
+        if (!installed && hasPackageListPermission()) return false
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-            data = Uri.parse("package:${BettboxApplication.getAppContext().packageName}")
+            data = Uri.parse("package:$packageName")
         }
-        activityRef?.get()?.startActivity(intent) ?: run {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            BettboxApplication.getAppContext().startActivity(intent)
-        }
+        return runCatching {
+            activityRef?.get()?.startActivity(intent) ?: run {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
+        }.isSuccess
     }
 
     private fun getSelfLastUpdateTime(): Long {

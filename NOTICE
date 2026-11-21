@@ -1,13 +1,15 @@
-This fork includes the standalone proxy-chain compiler adapted from Avalon:
+Earlier versions of this fork included a standalone proxy-chain compiler
+adapted from Avalon. This notice records that historical contribution.
 https://github.com/MasterAlanLab/avalon
 Source revision: ea4d8ffc4842535f84e8def918fbf71d3e6b5609
 Source file: lib/features/chains/chains.dart
-Local file: lib/features/chains/compiler.dart
+Former local file: lib/features/chains/compiler.dart
 
 Copyright (C) 2026 MasterAlanLab and Avalon contributors.
 Avalon-authored code is licensed under the GNU Affero General Public License
-version 3. The complete license text is in lib/features/chains/LICENSE.
-The local adaptations and integration are described in readme/Proxy-Chains.md.
+version 3. The full license for the former implementation is retained in the
+fork's Git history at 1cb94f5ed4bcb4c216aa0318494c9774789f4922,
+path lib/features/chains/LICENSE.
 
 Existing Bettbox/FlClash-derived code retains its original GNU General Public
 License version 3 notices and terms in LICENSE. Existing third-party components
