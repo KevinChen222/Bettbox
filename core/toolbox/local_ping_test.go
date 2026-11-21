@@ -28,8 +28,9 @@ func TestLocalPingICMPLoopback(t *testing.T) {
 			if state.Error != "" || state.Phase != localPingPhaseDone || state.Sent != 3 || len(state.Replies) != 3 {
 				t.Fatalf("unexpected state: %+v", state)
 			}
+			// A loopback reply can arrive within one clock tick.
 			for i, reply := range state.Replies {
-				if reply.Seq != i+1 || reply.Status != localPingStatusOK || reply.RTT <= 0 || reply.Bytes != 48 {
+				if reply.Seq != i+1 || reply.Status != localPingStatusOK || reply.RTT < 0 || reply.Bytes != 48 {
 					t.Fatalf("bad reply %d: %+v", i, reply)
 				}
 			}
@@ -61,7 +62,7 @@ func TestLocalPingTCP(t *testing.T) {
 		t.Fatalf("unexpected state: %+v", state)
 	}
 	for _, reply := range state.Replies {
-		if reply.Status != localPingStatusOK || reply.RTT <= 0 {
+		if reply.Status != localPingStatusOK || reply.RTT < 0 {
 			t.Fatalf("bad reply: %+v", reply)
 		}
 	}
@@ -73,7 +74,7 @@ func TestLocalPingTCP(t *testing.T) {
 	closedPort := closed.Addr().(*net.TCPAddr).Port
 	_ = closed.Close()
 	prober := &localTCPProber{addr: netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(closedPort))}
-	if reply := prober.ping(context.Background(), 1); reply.Status != localPingStatusClosed || reply.RTT <= 0 {
+	if reply := prober.ping(context.Background(), 1); reply.Status != localPingStatusClosed || reply.RTT < 0 {
 		t.Fatalf("closed port: %+v", reply)
 	}
 }
@@ -105,7 +106,7 @@ func TestLocalPingUDP(t *testing.T) {
 	loopback := netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), addr.Port())
 
 	dns := &localUDPProber{addr: loopback, dns: true}
-	if reply := dns.ping(context.Background(), 1); reply.Status != localPingStatusOK || reply.RTT <= 0 || reply.Bytes != len(localPingDNSQuery(0)) {
+	if reply := dns.ping(context.Background(), 1); reply.Status != localPingStatusOK || reply.RTT < 0 || reply.Bytes != len(localPingDNSQuery(0)) {
 		t.Fatalf("dns reply: %+v", reply)
 	}
 

@@ -62,7 +62,9 @@ jobs:
           echo "ANDROID_NDK=$ndk" >> "$GITHUB_ENV"
           echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang" >> "$GITHUB_ENV"
       - name: Flutter dependencies and generated models
+        shell: bash
         run: |
+          mkdir -p assets/data
           flutter pub get
           dart run build_runner build
       - name: Test Smart client integration

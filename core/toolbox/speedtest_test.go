@@ -260,7 +260,7 @@ func TestQuicClientRoundTrip(t *testing.T) {
 		}
 	})
 	rtt, resp, err := tester.latencyOnce(context.Background(), client, url+"/")
-	if err != nil || rtt <= 0 || resp.ProtoMajor != 3 {
+	if err != nil || rtt < 0 || resp.ProtoMajor != 3 {
 		t.Fatalf("quic round trip failed: rtt=%v err=%v resp=%v", rtt, err, resp)
 	}
 }
