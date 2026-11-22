@@ -236,6 +236,7 @@ func (p *localUDPProber) ping(ctx context.Context, seq int) LocalPingReply {
 		return reply
 	}
 	defer conn.Close()
+	enableLocalUDPConnReset(conn)
 	finished := make(chan struct{})
 	defer close(finished)
 	go func() {
