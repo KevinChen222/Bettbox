@@ -220,9 +220,31 @@ class Build {
     return 'alpha';
   }
 
+  static Future<void> _copyDirectoryWritable(
+    Directory source,
+    Directory destination,
+  ) async {
+    await destination.create(recursive: true);
+    await for (final entity in source.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      final relPath = relative(entity.path, from: source.path);
+      final targetPath = join(destination.path, relPath);
+      if (entity is Directory) {
+        await Directory(targetPath).create(recursive: true);
+      } else if (entity is File) {
+        final targetFile = File(targetPath);
+        await targetFile.parent.create(recursive: true);
+        await targetFile.writeAsBytes(await entity.readAsBytes());
+      }
+    }
+  }
+
   // Resolve sing-tun in the bridge module after preparing the Smart kernel.
-  // Use an overlay so the upstream TUN fix doesn't mutate Go's module cache.
-  static Future<String> _windowsTunOverlay(
+  // Use a temporary Go workspace instead of -overlay (which Go rejects for
+  // GOMODCACHE files) so the upstream TUN fix never mutates Go's module cache.
+  static Future<String> _windowsTunWorkspace(
     Directory tempDir,
     Map<String, String> environment,
   ) async {
@@ -239,8 +261,12 @@ class Build {
       );
     }
     final module = jsonDecode(result.stdout as String) as Map<String, dynamic>;
-    final source = File(join(module['Dir'] as String, 'tun_windows.go'));
-    final original = await source.readAsString();
+    final moduleDir = Directory(module['Dir'] as String);
+    final patchedDir = Directory(join(tempDir.path, 'sing-tun'));
+    await _copyDirectoryWritable(moduleDir, patchedDir);
+
+    final patchedFile = File(join(patchedDir.path, 'tun_windows.go'));
+    final original = await patchedFile.readAsString();
     const disabled = 'inetIf.ForwardingEnabled = false';
     final patched = original.replaceAll(
       'inetIf.ForwardingEnabled = true',
@@ -252,15 +278,31 @@ class Build {
       );
     }
     print('Windows TUN forwarding disabled for sing-tun ${module['Version']}');
-    final patchedFile = File(join(tempDir.path, 'tun_windows.go'));
     await patchedFile.writeAsString(patched);
-    final overlay = File(join(tempDir.path, 'overlay.json'));
-    await overlay.writeAsString(
-      jsonEncode({
-        'Replace': {source.path: patchedFile.path},
-      }),
+
+    final coreGoModLines = await File(join(_coreDir, 'go.mod')).readAsLines();
+    final goLine = coreGoModLines.firstWhere(
+      (line) => line.startsWith('go '),
+      orElse: () => 'go 1.24',
     );
-    return overlay.path;
+    final godebugLines = coreGoModLines
+        .where((line) => line.startsWith('godebug '))
+        .toList();
+
+    String quotePath(String path) => jsonEncode(path.replaceAll('\\', '/'));
+    final workFile = File(join(tempDir.path, 'go.work'));
+    await workFile.writeAsString(
+      [
+        goLine,
+        ...godebugLines,
+        '',
+        'use ${quotePath(_coreDir)}',
+        '',
+        'replace github.com/metacubex/sing-tun => ${quotePath(patchedDir.path)}',
+        '',
+      ].join('\n'),
+    );
+    return workFile.path;
   }
 
   static Future<List<String>> buildCore({
@@ -339,18 +381,21 @@ class Build {
           '-extldflags "-Wl,-z,max-page-size=16384"',
       ].join(' ');
 
-      final overlayDir = item.target == Target.windows
+      final tunWorkDir = item.target == Target.windows
           ? await Directory.systemTemp.createTemp('bettbox-smart-tun-')
           : null;
       try {
-        final overlay = overlayDir == null
+        final goWork = tunWorkDir == null
             ? null
-            : await _windowsTunOverlay(overlayDir, env);
+            : await _windowsTunWorkspace(tunWorkDir, env);
+        final buildEnv = {
+          ...env,
+          'GOWORK': ?goWork,
+        };
         final execLines = [
           'go',
           'build',
           '-trimpath',
-          if (overlay != null) '-overlay=$overlay',
           '-ldflags=$ldflags',
           '-tags=$buildTags',
           if (isLib) '-buildmode=c-shared',
@@ -360,11 +405,11 @@ class Build {
         await exec(
           execLines,
           name: 'build core',
-          environment: env,
+          environment: buildEnv,
           workingDirectory: _coreDir,
         );
       } finally {
-        await overlayDir?.delete(recursive: true);
+        await tunWorkDir?.delete(recursive: true);
       }
       final marker = File(tagsMarkerPath(item));
       marker.parent.createSync(recursive: true);
