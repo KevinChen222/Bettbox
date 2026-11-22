@@ -155,7 +155,8 @@ func TestSpeedTesterRunsAllPhases(t *testing.T) {
 	if state.Error != "" || state.Phase != speedTestPhaseDone {
 		t.Fatalf("unexpected state %+v", state)
 	}
-	if state.Download <= 0 || state.Upload <= 0 || state.Latency <= 0 {
+	// Loopback latency probes can complete within one Windows timer tick.
+	if state.Download <= 0 || state.Upload <= 0 || state.Latency < 0 {
 		t.Fatalf("missing metrics %+v", state)
 	}
 	if !state.Direct || state.Outbound == nil || state.Outbound.Chains[0] != "DIRECT" {
