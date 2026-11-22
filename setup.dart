@@ -289,7 +289,9 @@ class Build {
         .where((line) => line.startsWith('godebug '))
         .toList();
 
-    String quotePath(String path) => jsonEncode(path.replaceAll('\\', '/'));
+    // Keep native path separators: Go's LoadWorkFile does not Clean absolute
+    // use paths, while HasFilePathPrefix requires filepath.Separator.
+    String quotePath(String path) => jsonEncode(normalize(path));
     final workFile = File(join(tempDir.path, 'go.work'));
     await workFile.writeAsString(
       [
