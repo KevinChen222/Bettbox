@@ -251,6 +251,62 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
                 updateExcludeFromRecents(call.argument<Boolean>("value"))
                 result.success(true)
             }
+            "updateAppDisguise" -> {
+                val context = BettboxApplication.getAppContext()
+                val name = call.argument<String>("name")
+                val iconPath = call.argument<String>("iconPath")
+                com.appshub.bettbox.AppDisguiseStore.saveBranding(context, name, iconPath)
+                activityRef?.get()?.let {
+                    com.appshub.bettbox.AppDisguiseStore.applyTaskDescription(it)
+                }
+                com.appshub.bettbox.services.BettboxTileService.refreshActive()
+                com.appshub.bettbox.widget.DisguiseIconWidgetProvider.refreshAll(context)
+                result.success(true)
+            }
+            "setLauncherPreset" -> {
+                val context = BettboxApplication.getAppContext()
+                val preset = call.argument<String>("preset") ?: "default"
+                val ok = com.appshub.bettbox.AppDisguiseStore.applyLauncherPreset(
+                    context,
+                    preset,
+                )
+                if (ok) {
+                    com.appshub.bettbox.widget.DisguiseIconWidgetProvider.refreshAll(context)
+                }
+                result.success(ok)
+            }
+            "isPinShortcutSupported" -> {
+                result.success(
+                    com.appshub.bettbox.AppDisguiseStore.isPinShortcutSupported(
+                        BettboxApplication.getAppContext(),
+                    )
+                )
+            }
+            "pinCustomShortcut" -> {
+                val name = call.argument<String>("name")
+                val iconPath = call.argument<String>("iconPath")
+                val ok = com.appshub.bettbox.AppDisguiseStore.requestPinCustomShortcut(
+                    BettboxApplication.getAppContext(),
+                    name,
+                    iconPath,
+                )
+                result.success(ok)
+            }
+            "isPinWidgetSupported" -> {
+                result.success(
+                    com.appshub.bettbox.widget.DisguiseIconWidgetProvider.isPinSupported(
+                        BettboxApplication.getAppContext(),
+                    )
+                )
+            }
+            "pinCustomWidget" -> {
+                val context = BettboxApplication.getAppContext()
+                val name = call.argument<String>("name")
+                val iconPath = call.argument<String>("iconPath")
+                com.appshub.bettbox.AppDisguiseStore.saveBranding(context, name, iconPath)
+                val ok = com.appshub.bettbox.widget.DisguiseIconWidgetProvider.requestPin(context)
+                result.success(ok)
+            }
             "initShortcuts" -> {
                 val labels = call.arguments as? Map<String, String> ?: emptyMap()
                 initShortcuts(labels)

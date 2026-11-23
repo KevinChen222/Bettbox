@@ -59,11 +59,6 @@
                 android:resource="@style/NormalTheme" />
 
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
             </intent-filter>
             <intent-filter>
@@ -78,6 +73,67 @@
                 <data android:scheme="bettbox" android:host="install-config" />
             </intent-filter>
         </activity>
+
+        <!-- Default launcher alias (MainActivity stays enabled so pinned shortcuts & aliases never break) -->
+        <activity-alias
+            android:name="com.appshub.bettbox.MainActivityDefault"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_light"
+            android:roundIcon="@mipmap/ic_launcher_round_light"
+            android:label="Bettbox Smart"
+            android:targetActivity="com.appshub.bettbox.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name="com.appshub.bettbox.MainActivityDisguiseNotes"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_disguise_notes"
+            android:roundIcon="@drawable/ic_disguise_notes"
+            android:label="笔记"
+            android:targetActivity="com.appshub.bettbox.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name="com.appshub.bettbox.MainActivityDisguiseCalculator"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_disguise_calculator"
+            android:roundIcon="@drawable/ic_disguise_calculator"
+            android:label="计算器"
+            android:targetActivity="com.appshub.bettbox.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name="com.appshub.bettbox.MainActivityDisguiseToolbox"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_disguise_toolbox"
+            android:roundIcon="@drawable/ic_disguise_toolbox"
+            android:label="实用工具"
+            android:targetActivity="com.appshub.bettbox.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- Light icon alias (kept for legacy user compatibility) -->
         <activity-alias
@@ -185,6 +241,18 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/home_widget_square_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.DisguiseIconWidgetProvider"
+            android:exported="false"
+            android:label="桌面图标 (1×1)">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/disguise_icon_widget_info" />
         </receiver>
 
         <service

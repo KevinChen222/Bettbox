@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:bett_box/common/common.dart';
@@ -330,11 +331,17 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
       dashboardStateProvider.select((state) => state.dashboardWidgets),
     );
     final isMobileView = ref.watch(isMobileViewProvider);
-    final (customTitle, showStartSwitch) = ref.watch(
-      appSettingProvider.select(
-        (state) => (state.dashboardTitle, state.showStartSwitch),
-      ),
-    );
+    final (customTitle, customAppName, customAppIconPath, showStartSwitch) = ref
+        .watch(
+          appSettingProvider.select(
+            (state) => (
+              state.dashboardTitle,
+              state.customAppName,
+              state.customAppIconPath,
+              state.showStartSwitch,
+            ),
+          ),
+        );
     final themeMode = ref.watch(
       themeSettingProvider.select((state) => state.themeMode),
     );
@@ -357,10 +364,16 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
           (widget: item, size: resolveDashboardSize(item, sizes)),
     ];
 
-    final title = customTitle ?? appLocalizations.dashboard;
+    final title =
+        customTitle ??
+        (customAppName?.trim().isNotEmpty == true
+            ? customAppName!.trim()
+            : appLocalizations.dashboard);
+    final customIconFile = resolveCustomAppIconFile(customAppIconPath);
     return LayoutBuilder(
       builder: (context, page) => _buildScaffold(
         title: title,
+        customIconFile: customIconFile,
         inset: math.max(0, (page.maxWidth - dashboardMaxGridWidth) / 2),
         isMobileView: isMobileView,
         showStartSwitch: showStartSwitch,
@@ -374,6 +387,7 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
 
   Widget _buildScaffold({
     required String title,
+    required File? customIconFile,
     required double inset,
     required bool isMobileView,
     required bool showStartSwitch,
@@ -388,8 +402,21 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
         padding: EdgeInsets.only(left: inset),
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            if (customIconFile != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.file(
+                  customIconFile,
+                  key: ValueKey(customIconFile.path),
+                  width: 24,
+                  height: 24,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
             Flexible(
               child: EmojiText(
                 title,

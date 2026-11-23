@@ -109,7 +109,7 @@
 
 ## Smart 内核版本
 
-`feat/smart-core` 分支跟随 Bettbox 上游主线，当前聚焦维护 vernesong/mihomo 的 **Smart 策略组**、**连接关闭高 CPU / 内存与资源泄漏稳定性维护**（见 [修复记录](readme/Smart-CPU-Fix.md)），以及覆盖个人仓库测试版与正式版的应用内更新检查，支持 Windows x64、Android arm64-v8a 和 Ubuntu 24.04 Linux x64。节点库、落地代理（链式代理）与订阅合并已由 Bettbox 上游原生提供。配置方法、内核来源和构建产物见 [Smart 使用说明](readme/Smart.md)。
+`feat/smart-core` 分支跟随 Bettbox 上游主线，当前聚焦维护 vernesong/mihomo 的 **Smart 策略组**、**连接关闭高 CPU / 内存与资源泄漏稳定性维护**（见 [修复记录](readme/Smart-CPU-Fix.md)）、**Android 端自定义应用名称与展示图标**，以及覆盖个人仓库测试版与正式版的应用内更新检查，支持 Windows x64、Android arm64-v8a 和 Ubuntu 24.04 Linux x64。节点库、落地代理（链式代理）与订阅合并已由 Bettbox 上游原生提供。配置方法、内核来源和构建产物见 [Smart 使用说明](readme/Smart.md)。
 
 更新与发布流程见 [维护说明](readme/AI_UPDATE_GUIDE.md)，本次版本变化见 [更新日志](readme/Smart-Release-Notes.md)。
 

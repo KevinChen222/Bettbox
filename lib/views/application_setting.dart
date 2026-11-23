@@ -2,6 +2,7 @@ import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/providers/config.dart';
 import 'package:bett_box/state.dart';
+import 'package:bett_box/views/app_disguise.dart';
 import 'package:bett_box/widgets/widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -619,6 +620,35 @@ class AutoDownloadUpdateItem extends ConsumerWidget {
   }
 }
 
+class AppDisguiseItem extends ConsumerWidget {
+  const AppDisguiseItem({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (customName, customIconPath, presetId) = ref.watch(
+      appSettingProvider.select(
+        (state) => (
+          state.customAppName,
+          state.customAppIconPath,
+          state.androidLauncherPreset,
+        ),
+      ),
+    );
+    final hasCustom =
+        (customName != null && customName.trim().isNotEmpty) ||
+        resolveCustomAppIconFile(customIconPath) != null ||
+        presetId != AppDisguisePreset.defaultPreset.id;
+    return ListItem.next(
+      title: const Text('自定义应用名称与图标'),
+      subtitle: hasCustom ? Text(effectiveAppName(customName)) : null,
+      delegate: NextDelegate(
+        title: '自定义应用名称与图标',
+        builder: (_) => const AppDisguiseView(),
+      ),
+    );
+  }
+}
+
 class ApplicationSettingView extends ConsumerWidget {
   const ApplicationSettingView({super.key});
 
@@ -631,7 +661,7 @@ class ApplicationSettingView extends ConsumerWidget {
       AutoLaunchItem(),
       if (system.isDesktop) ...[SilentLaunchItem()],
       AutoRunItem(),
-      if (system.isAndroid) ...[HiddenItem()],
+      if (system.isAndroid) ...[HiddenItem(), const AppDisguiseItem()],
       if (system.isDesktop) ...[
         if (system.isWindows || system.isLinux) const AlwaysShowTitleBarItem(),
       ],

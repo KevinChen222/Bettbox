@@ -54,7 +54,10 @@ suspend fun Service.createBettboxNotificationBuilder(
         }
 
         val largeIconBitmap = if (isSuspended) {
-            runCatching {
+            com.appshub.bettbox.AppDisguiseStore.loadCustomIconBitmap(
+                this@createBettboxNotificationBuilder,
+                192,
+            ) ?: runCatching {
                 ContextCompat.getDrawable(this@createBettboxNotificationBuilder, R.mipmap.ic_launcher)?.toBitmap()
             }.getOrNull()
         } else {
@@ -73,7 +76,12 @@ suspend fun Service.createBettboxNotificationBuilder(
             if (largeIconBitmap != null) {
                 setLargeIcon(largeIconBitmap)
             }
-            setContentTitle("Bettbox")
+            setContentTitle(
+                com.appshub.bettbox.AppDisguiseStore.effectiveLabel(
+                    this@createBettboxNotificationBuilder,
+                    "Bettbox",
+                )
+            )
             setContentIntent(pendingIntent)
             setCategory(NotificationCompat.CATEGORY_SERVICE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

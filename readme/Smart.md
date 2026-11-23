@@ -1,6 +1,6 @@
 # Bettbox Smart 内核分支
 
-本分支在跟随 Bettbox 上游主线的基础上，聚焦维护 **vernesong/mihomo 的 Smart 策略组**、**连接关闭高 CPU / 内存与资源泄漏稳定性修复**，以及个人 fork 的多平台打包与全渠道更新检查（Windows、Android 和 Ubuntu 24.04 Linux x64）。节点库、落地代理（链式代理）与订阅合并已由 Bettbox 上游原生提供，直接沿用上游实现。实际集成提交、初始基线及模型来源以 [`core/smart-source.json`](../core/smart-source.json) 为准。Smart 差异保存在 `core/smart.patch`，构建时生成 `core/.smart-mihomo` 并保留 Bettbox 平台补丁。原始 `core/Clash.Meta` 随 Bettbox 上游维护。
+本分支在跟随 Bettbox 上游主线的基础上，聚焦维护 **vernesong/mihomo 的 Smart 策略组**、**连接关闭高 CPU / 内存与资源泄漏稳定性修复**、**Android 端自定义应用名称与展示图标**，以及个人 fork 的多平台打包与全渠道更新检查（Windows、Android 和 Ubuntu 24.04 Linux x64）。节点库、落地代理（链式代理）与订阅合并已由 Bettbox 上游原生提供，直接沿用上游实现。实际集成提交、初始基线及模型来源以 [`core/smart-source.json`](../core/smart-source.json) 为准。Smart 差异保存在 `core/smart.patch`，构建时生成 `core/.smart-mihomo` 并保留 Bettbox 平台补丁。原始 `core/Clash.Meta` 随 Bettbox 上游维护。
 
 ## 使用
 

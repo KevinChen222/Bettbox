@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/disguise_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="2dp">
+
+    <ImageView
+        android:id="@+id/disguise_widget_icon"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@mipmap/ic_launcher_light" />
+
+    <TextView
+        android:id="@+id/disguise_widget_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:maxLines="1"
+        android:shadowColor="#B3000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="3"
+        android:text="@string/bett_box"
+        android:textColor="#FFFFFF"
+        android:textSize="11sp" />
+
+</LinearLayout>

@@ -39,7 +39,13 @@ class FilesProvider : DocumentsProvider() {
             add(Root.COLUMN_ROOT_ID, DEFAULT_ROOT_ID)
             add(Root.COLUMN_FLAGS, Root.FLAG_LOCAL_ONLY)
             add(Root.COLUMN_ICON, R.mipmap.ic_launcher)
-            add(Root.COLUMN_TITLE, context!!.getString(R.string.bett_box))
+            add(
+                Root.COLUMN_TITLE,
+                AppDisguiseStore.effectiveLabel(
+                    context!!,
+                    context!!.getString(R.string.bett_box),
+                ),
+            )
             add(Root.COLUMN_SUMMARY, "Data")
             add(Root.COLUMN_DOCUMENT_ID, "/")
         }

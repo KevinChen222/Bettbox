@@ -23,7 +23,7 @@
 ## 必须遵守
 
 - 唯一可写远端：`KevinChen222/Bettbox`，分支 `feat/smart-core`。只读上游为 `appshubcc/Bettbox:main` 和 `vernesong/mihomo:Alpha`；不能用 `main`/`Meta` 替代 Smart，也不向上游推送或发消息。
-- 本 fork 当前聚焦维护：**Smart 策略组内核与客户端适配（含 LightGBM 模型同步）**、**连接关闭高 CPU / 内存与资源泄漏稳定性维护**，以及**个人构建与支持测试版/正式版的仓库更新检查**；节点库、落地节点（链式代理）与订阅合并已由 Bettbox 上游原生提供，维护时直接沿用上游实现。
+- 本 fork 当前聚焦维护：**Smart 策略组内核与客户端适配（含 LightGBM 模型同步）**、**连接关闭高 CPU / 内存与资源泄漏稳定性维护**、**Android 端自定义应用名称与展示图标（含 1×1 无角标小组件、固定快捷方式与应用抽屉伪装预设）**，以及**个人构建与支持测试版/正式版的仓库更新检查**；节点库、落地节点（链式代理）与订阅合并已由 Bettbox 上游原生提供，维护时直接沿用上游实现。自定义应用名称与展示图标仅限 Android 端，Windows 与 Linux 端不展示也不维护该功能。
 - 保留用户改动，不强推、不改写历史、不删除或移动旧标签。保留个人自用声明、开源许可和 NOTICE；密钥及密码不进入 Git、日志或产物。
 - `core/Clash.Meta/` 保留 Bettbox 原内核；Smart 改动保存在 `core/smart.patch`，生成目录 `core/.smart-mihomo/` 和 `.test/` 不提交。冲突修复保存补丁前不能重新生成或构建，以免覆盖修复。
 - 发布 Windows x64 便携包、Android **仅 arm64-v8a** APK 和适合本机 **Ubuntu 24.04 x86_64** 的 Linux x64 DEB。安卓沿用持久签名并核实 16 KB 页对齐；Linux 使用普通 AMD64 v3 内核（本机 Ryzen 5 5600H 支持），不额外维护 arm64、旧系统兼容版、RPM 或 AppImage。Windows/Android 使用本次提交成功的 Actions 产物，Linux 使用同一提交在本机构建并检查的 DEB；资产含三个安装包、SHA256SUMS 和 build-info。验证范围如实说明。

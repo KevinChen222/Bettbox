@@ -145,6 +145,53 @@ class App {
     });
   }
 
+  Future<bool> updateAppDisguise({String? name, String? iconPath}) async {
+    if (!system.isAndroid) return false;
+    return await methodChannel.invokeMethod<bool>('updateAppDisguise', {
+          'name': name,
+          'iconPath': iconPath,
+        }) ??
+        false;
+  }
+
+  Future<bool> setLauncherPreset(String preset) async {
+    if (!system.isAndroid) return false;
+    return await methodChannel.invokeMethod<bool>('setLauncherPreset', {
+          'preset': preset,
+        }) ??
+        false;
+  }
+
+  Future<bool> isPinShortcutSupported() async {
+    if (!system.isAndroid) return false;
+    return await methodChannel.invokeMethod<bool>('isPinShortcutSupported') ??
+        false;
+  }
+
+  Future<bool> pinCustomShortcut({String? name, String? iconPath}) async {
+    if (!system.isAndroid) return false;
+    return await methodChannel.invokeMethod<bool>('pinCustomShortcut', {
+          'name': name,
+          'iconPath': iconPath,
+        }) ??
+        false;
+  }
+
+  Future<bool> isPinWidgetSupported() async {
+    if (!system.isAndroid) return false;
+    return await methodChannel.invokeMethod<bool>('isPinWidgetSupported') ??
+        false;
+  }
+
+  Future<bool> pinCustomWidget({String? name, String? iconPath}) async {
+    if (!system.isAndroid) return false;
+    return await methodChannel.invokeMethod<bool>('pinCustomWidget', {
+          'name': name,
+          'iconPath': iconPath,
+        }) ??
+        false;
+  }
+
   Future<int> getSelfLastUpdateTime() async {
     final result = await methodChannel.invokeMethod<int>(
       'getSelfLastUpdateTime',

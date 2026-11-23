@@ -37,7 +37,10 @@ class BettboxTileService : TileService() {
             if (GlobalState.isSpeedNotificationEnabled && GlobalState.currentProfileName.isNotEmpty()) {
                 label = GlobalState.currentProfileName
             } else {
-                label = getString(R.string.bett_box)
+                label = com.appshub.bettbox.AppDisguiseStore.effectiveLabel(
+                    this@BettboxTileService,
+                    getString(R.string.bett_box),
+                )
             }
             updateTile()
         }

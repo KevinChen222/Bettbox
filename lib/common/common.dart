@@ -1,4 +1,5 @@
 export 'android.dart';
+export 'app_disguise.dart';
 export 'app_icons.dart';
 export 'app_localizations.dart';
 export 'color.dart';

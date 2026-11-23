@@ -1,5 +1,6 @@
 package com.appshub.bettbox
 
+import android.app.ActivityManager
 import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.PackageManager
@@ -48,7 +49,22 @@ class MainActivity : FlutterActivity() {
         }
         super.onCreate(savedInstanceState)
         enableHighRefreshRate()
+        AppDisguiseStore.applyTaskDescription(this)
         HomeWidgets.handleIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        AppDisguiseStore.applyTaskDescription(this)
+    }
+
+    override fun setTaskDescription(taskDescription: ActivityManager.TaskDescription?) {
+        val overridden = if (AppDisguiseStore.hasCustomBranding(this)) {
+            AppDisguiseStore.buildTaskDescription(this, taskDescription)
+        } else {
+            taskDescription
+        }
+        super.setTaskDescription(overridden)
     }
 
     private fun enableHighRefreshRate() {

@@ -252,6 +252,13 @@ class ApplicationState extends ConsumerState<Application>
     globalState.appController.initLink();
     if (system.isAndroid) {
       unawaited(app.initShortcuts());
+      final appSetting = ref.read(appSettingProvider);
+      unawaited(
+        syncNativeAppDisguise(
+          name: appSetting.customAppName,
+          iconPath: appSetting.customAppIconPath,
+        ),
+      );
     }
   }
 
@@ -373,6 +380,9 @@ class ApplicationState extends ConsumerState<Application>
             final locale = ref.watch(
               appSettingProvider.select((state) => state.locale),
             );
+            final customAppName = ref.watch(
+              appSettingProvider.select((state) => state.customAppName),
+            );
             final themeProps = ref.watch(themeSettingProvider);
             final fontFamily = themeProps.useHarmonyFont
                 ? 'HarmonyOS_Sans'
@@ -413,7 +423,7 @@ class ApplicationState extends ConsumerState<Application>
                   );
                 },
                 scrollBehavior: BaseScrollBehavior(),
-                title: appName,
+                title: effectiveAppName(customAppName),
                 locale:
                     utils.getLocaleForString(locale) ?? utils.getSystemLocale(),
                 supportedLocales: AppLocalizations.delegate.supportedLocales,

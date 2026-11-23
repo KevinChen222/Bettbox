@@ -227,6 +227,9 @@ abstract class AppSettingProps with _$AppSettingProps {
     @JsonKey(fromJson: sidebarFlyoutEntriesSafeFromJson)
     List<SidebarFlyoutEntry> sidebarFlyoutEntries,
     String? dashboardTitle,
+    String? customAppName,
+    String? customAppIconPath,
+    @Default('default') String androidLauncherPreset,
     @Default(false) bool dashboardWatermark,
     @Default(<String>[]) List<String> toolboxTiles,
     @JsonKey(unknownEnumValue: MrsTapAction.viewRules)

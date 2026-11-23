@@ -84,6 +84,9 @@ _AppSettingProps _$AppSettingPropsFromJson(
       ? defaultSidebarFlyoutEntries
       : sidebarFlyoutEntriesSafeFromJson(json['sidebarFlyoutEntries'] as List?),
   dashboardTitle: json['dashboardTitle'] as String?,
+  customAppName: json['customAppName'] as String?,
+  customAppIconPath: json['customAppIconPath'] as String?,
+  androidLauncherPreset: json['androidLauncherPreset'] as String? ?? 'default',
   dashboardWatermark: json['dashboardWatermark'] as bool? ?? false,
   toolboxTiles:
       (json['toolboxTiles'] as List<dynamic>?)
@@ -175,6 +178,9 @@ Map<String, dynamic> _$AppSettingPropsToJson(_AppSettingProps instance) =>
           .map((e) => _$SidebarFlyoutEntryEnumMap[e]!)
           .toList(),
       'dashboardTitle': instance.dashboardTitle,
+      'customAppName': instance.customAppName,
+      'customAppIconPath': instance.customAppIconPath,
+      'androidLauncherPreset': instance.androidLauncherPreset,
       'dashboardWatermark': instance.dashboardWatermark,
       'toolboxTiles': instance.toolboxTiles,
       'mrsTapAction': _$MrsTapActionEnumMap[instance.mrsTapAction]!,

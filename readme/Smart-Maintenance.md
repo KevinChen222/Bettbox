@@ -37,6 +37,7 @@
 
 - **Smart 策略组内核与客户端适配**：`core/smart.patch`、`core/smart-source.json`、`lib/enum/enum.dart`、Smart 组测速与固定节点交互，以及 LightGBM 模型同步。
 - **连接关闭高 CPU / 内存与资源泄漏维护**：保留 `core/smart.patch` 中 `tcpTracker` CAS 关闭权保护（见 [连接关闭高 CPU 修复记录](Smart-CPU-Fix.md)）、`core/common.go` 对 Smart GeoIP/ASN 数据的保留，以及持续关注 Smart 后台任务与连接生命周期清理。
+- **Android 端自定义应用名称与展示图标（应用伪装）**：仅在 Android 端提供（Windows / Linux 不开放入口）。通过 `lib/common/app_disguise.dart`、`lib/views/app_disguise.dart`、`AppDisguiseStore.kt`、`DisguiseIconWidgetProvider.kt` 及 `AndroidManifest.xml` 的 `MainActivityDefault` / 中立伪装 `<activity-alias>` 实现；支持自定义名称、相册上传裁切图标、1×1 无角标桌面小组件、固定快捷方式、应用抽屉预设切换，以及最近任务/通知栏/快捷磁贴名称同步。`MainActivity` 始终保持启用，确保切换抽屉别名时已添加的小组件与快捷方式不失效。
 - **个人构建与更新渠道**：独立 Android 包名/持久签名、Ubuntu 24.04 Linux x64 DEB 打包，以及覆盖本 fork 测试版与正式版的应用内更新检查。
 
 以下上游原生能力在合并时需关注兼容性与回归，直接沿用上游实现，不另起炉灶：

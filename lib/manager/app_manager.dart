@@ -540,9 +540,12 @@ class AppSidebarContainer extends ConsumerWidget {
         ? 148.0
         : math.max(156.0, (requiredWidth + 8.0).ceilToDouble());
     if (system.isMacOS) return itemsWidth;
+    final brandName = effectiveAppName(
+      globalState.config.appSetting.customAppName,
+    );
     final brandPainter = TextPainter(
       text: TextSpan(
-        text: AppIdentity.productName,
+        text: brandName,
         style: _brandTextStyle(context),
       ),
       textDirection: direction,
@@ -656,11 +659,22 @@ class AppSidebarContainer extends ConsumerWidget {
                       ? const SizedBox.shrink()
                       : Padding(
                           padding: const EdgeInsets.only(right: 8),
-                          child: Text(
-                            AppIdentity.productName,
-                            maxLines: 1,
-                            softWrap: false,
-                            style: _brandTextStyle(context),
+                          child: Consumer(
+                            builder: (_, ref, _) {
+                              final customAppName = ref.watch(
+                                appSettingProvider.select(
+                                  (state) => state.customAppName,
+                                ),
+                              );
+                              return Text(
+                                customAppName?.trim().isNotEmpty == true
+                                    ? customAppName!.trim()
+                                    : AppIdentity.productName,
+                                maxLines: 1,
+                                softWrap: false,
+                                style: _brandTextStyle(context),
+                              );
+                            },
                           ),
                         ),
                 ),

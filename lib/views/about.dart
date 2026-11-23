@@ -198,6 +198,14 @@ class AboutView extends StatelessWidget {
           children: [
             Consumer(
               builder: (_, ref, _) {
+                final (customAppName, customAppIconPath) = ref.watch(
+                  appSettingProvider.select(
+                    (state) => (state.customAppName, state.customAppIconPath),
+                  ),
+                );
+                final customIconFile = resolveCustomAppIconFile(
+                  customAppIconPath,
+                );
                 return _DeveloperModeDetector(
                   child: Wrap(
                     spacing: 16,
@@ -205,20 +213,31 @@ class AboutView extends StatelessWidget {
                     children: [
                       Padding(
                         padding: const EdgeInsets.all(12),
-                        child: Image.asset(
-                          'assets/images/icon.png',
-                          width: 48,
-                          height: 48,
-                          cacheWidth: 48,
-                          cacheHeight: 48,
-                          useLogicalCacheSize: true,
-                        ),
+                        child: customIconFile != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.file(
+                                  customIconFile,
+                                  key: ValueKey(customIconFile.path),
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : Image.asset(
+                                'assets/images/icon.png',
+                                width: 48,
+                                height: 48,
+                                cacheWidth: 48,
+                                cacheHeight: 48,
+                                useLogicalCacheSize: true,
+                              ),
                       ),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            appName,
+                            effectiveAppName(customAppName),
                             style: Theme.of(context).textTheme.headlineSmall,
                           ),
                           Text(
