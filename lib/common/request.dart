@@ -55,7 +55,6 @@ class Request {
       createHttpClient: () {
         final client = HttpClient();
         client.autoUncompress = false;
-        client.badCertificateCallback = (_, _, _) => true;
         client.findProxy = (Uri uri) {
           client.userAgent = globalState.ua;
           return BettboxHttpOverrides.handleFindProxy(uri);
@@ -255,8 +254,11 @@ class Request {
 
   Future<({String path, Headers? headers, bool remote})> fetchProfileSource(
     String url,
-    String downloadPath,
-  ) async {
+    String downloadPath, {
+    bool direct = false,
+    bool skipCertVerify = false,
+    String? userAgent,
+  }) async {
     if (url.isFileUrl) {
       final local = await _localFileForUrl(url);
       await local.file.copy(downloadPath);
@@ -267,36 +269,22 @@ class Request {
       );
     }
     final (requestUrl, headers) = _authorizedRequest(url);
-    try {
-      final response = await _withPlainEncodingRetry(
-        headers,
-        (requestHeaders) => _clashDio.download(
-          requestUrl,
-          downloadPath,
-          options: Options(headers: requestHeaders),
-        ),
-      );
-      return (path: downloadPath, headers: response.headers, remote: true);
-    } on DioException catch (e) {
-      if (e.error is! HandshakeException) rethrow;
-      commonPrint.log('TLS verification failed, retrying through core: $e');
-      final proxy = BettboxHttpOverrides.handleFindProxy(Uri.parse(requestUrl));
-      final responseHeaders = await clashCore.downloadProfile(
-        url: requestUrl,
-        output: downloadPath,
-        headers: {
-          for (final MapEntry(:key, :value) in headers.entries)
-            key: value.toString(),
-          HttpHeaders.userAgentHeader: globalState.ua,
-        },
-        proxy: proxy.startsWith('PROXY ') ? proxy.substring(6) : null,
-      );
-      return (
-        path: downloadPath,
-        headers: Headers.fromMap(responseHeaders),
-        remote: true,
-      );
-    }
+    final responseHeaders = await clashCore.downloadProfile(
+      url: requestUrl,
+      output: downloadPath,
+      headers: {
+        for (final MapEntry(:key, :value) in headers.entries)
+          key: value.toString(),
+        HttpHeaders.userAgentHeader: userAgent ?? globalState.ua,
+      },
+      direct: direct || globalState.appState.runTime == null,
+      skipCertVerify: skipCertVerify,
+    );
+    return (
+      path: downloadPath,
+      headers: Headers.fromMap(responseHeaders),
+      remote: true,
+    );
   }
 
   Future<Response<dynamic>> _getResponseForUrl(
@@ -376,38 +364,61 @@ class Request {
   }
 
   Future<Map<String, dynamic>?> checkForUpdate() async {
+    final t = DateTime.now().millisecondsSinceEpoch;
+    final tags = await _fetchReleaseTags(t);
+    if (tags.isEmpty) return null;
+    final packageInfo = globalState.packageInfo;
+    final remoteVersion = appUpdater.selectLatestReleaseTag(
+      tags,
+      packageInfo.version,
+      packageInfo.buildNumber,
+    );
+    if (remoteVersion == null) return null;
+    return {
+      'tag_name': remoteVersion,
+      'html_url': appUpdater.releaseTagUrl(remoteVersion),
+    };
+  }
+
+  Future<List<String>> _fetchReleaseTags(int timestamp) async {
     try {
-      final t = DateTime.now().millisecondsSinceEpoch;
-      final response = await _dio.get(
-        '${appUpdater.releaseUrl}?t=$t',
-        options: Options(
-          followRedirects: false,
-          validateStatus: (status) =>
-              status != null && status >= 300 && status < 400,
-        ),
+      final response = await _dio.get<String>(
+        '${appUpdater.releaseFeedUrl}?t=$timestamp',
+        options: Options(responseType: ResponseType.plain),
       );
-      final location = response.headers['location']?.firstOrNull;
-      if (location != null && location.contains('/releases/tag/')) {
-        final remoteVersion = location.split('/').last.trim();
-        if (remoteVersion.isNotEmpty) {
-          final packageInfo = globalState.packageInfo;
-          if (!appUpdater.hasReleaseUpdate(
-            remoteVersion,
-            packageInfo.version,
-            packageInfo.buildNumber,
-          )) {
-            return null;
-          }
-          return {
-            'tag_name': remoteVersion,
-            'html_url': appUpdater.releaseTagUrl(remoteVersion),
-          };
-        }
+      final body = response.data;
+      if (body != null && body.isNotEmpty) {
+        final tags = appUpdater.parseReleaseFeedTags(body);
+        if (tags.isNotEmpty) return tags;
       }
     } catch (e) {
-      commonPrint.warn('Check update failed: ${e.formatErrorLog}');
+      commonPrint.warn(
+        'Feed check failed: ${e.formatErrorLog}',
+        module: 'Update',
+      );
     }
-    return null;
+
+    try {
+      final response = await _dio.get<dynamic>(
+        '${appUpdater.releaseApiUrl}&t=$timestamp',
+        options: Options(
+          headers: {
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+          responseType: ResponseType.json,
+        ),
+      );
+      final tags = appUpdater.parseReleaseApiTags(response.data);
+      if (tags.isNotEmpty) return tags;
+    } catch (e) {
+      commonPrint.warn(
+        'API check failed: ${e.formatErrorLog}',
+        module: 'Update',
+      );
+    }
+
+    return const [];
   }
 
   List<String> _getPrimaryIpSources() {

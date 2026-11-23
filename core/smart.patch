@@ -396,7 +396,7 @@ index c0b48d5fbbbe4197f88b2eaa80f651690c4167bc..68b167af17677367b07a91fd5ba974f6
 +	gb.failedTestMux.Unlock()
  }
 diff --git a/adapter/outboundgroup/parser.go b/adapter/outboundgroup/parser.go
-index 74995a5acca140ac29c72c149a51b145c324a313..c3c8281f6668cea688f7921b895bba5a1e5a06f1 100644
+index 353f4a52fb70f24a1acf8f06b1ce432240ba4082..65735161e490cc9ba1dfb1060db585f396098763 100644
 --- a/adapter/outboundgroup/parser.go
 +++ b/adapter/outboundgroup/parser.go
 @@ -199,6 +199,13 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide

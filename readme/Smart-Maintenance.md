@@ -23,7 +23,7 @@
 - `tool/update_smart_core.dart`：获取 Smart Alpha，比较已记录提交和最新提交，把增量三方合入生成内核，更新补丁和来源记录。
 - `core/smart-source.json`：实际集成的 Smart 提交、最近合入的 Bettbox 提交及模型来源。初始官方基线是历史记录，不能误当最新版本。
 - Smart 组由 `lib/enum/enum.dart` 及两份生成 JSON 枚举识别。固定节点/恢复自动选择复用原交互。
-- App 更新检查指向个人 fork 最新正式版，`compareVersions` 识别 `smart-v<App版本>-<日期>.<序号>`，`hasReleaseUpdate` 在 App 版本相同时比较日期与序号对应的构建号。每次构建前将 `pubspec.yaml` 的构建号设为 `<YYYYMMDD><两位序号>`，与将发布的 Smart 标签一致；序号范围为 1–99。新测试版仍从 Releases 手动下载。
+- App 更新检查指向个人 fork 的公开 Releases（包含正式版与测试版，排除草稿），优先读取 `releases.atom` 并在失败时回退 GitHub Releases API；`compareVersions` 识别 `smart-v<App版本>-<日期>.<序号>`，`hasReleaseUpdate` 与 `selectLatestReleaseTag` 在 App 版本相同时比较日期与序号对应的构建号。每次构建前将 `pubspec.yaml` 的构建号设为 `<YYYYMMDD><两位序号>`，与将发布的 Smart 标签一致；序号范围为 1–99。
 - Android 包名固定为 `com.kevinchen222.bettbox.smart`，Dart `AppIdentity.packageId` 与 Gradle `applicationId` 必须一致。保留原 Kotlin namespace 和类名，包名隔离不需要整体重命名原生类。安装名称为 Bettbox Smart，首次声明包含本 fork 仅供开发者自用的说明。
 - 资源页面提供 LightGBM 同步按钮。桥接复用 `updateGeoData` 的 `LightGBM` 类型，调用原生模型更新器，校验后写 `HomeDir/Model.bin` 并重新加载。默认来源如上；配置的 `lgbm-url` 可覆盖。
 - `core/common.go` 保留 Smart 使用的 GeoIP/ASN 数据，不能让原内存清理卸载它们。
@@ -31,11 +31,17 @@
 - `.github/workflows/smart.yaml`：分支推送后在 GitHub 构建 Windows x64 便携包与 Android arm64-v8a 单架构 APK。Ubuntu 24.04 Linux x64 DEB 由本机 `tool/build-linux-local.sh` 构建并检查；Rust target 为 x86_64-unknown-linux-gnu，内核为 AMD64 v3，只使用 flutter_distributor 的 deb 目标。工作流显示名 `Build Smart`。完整历史用于三方合并。Android 只编译和发布 arm64-v8a，不生成通用包、armeabi-v7a 或 x86_64 包。内核使用 `dart setup.dart android --arch arm64 --out core --standard`，APK 使用 `--split-per-abi --target-platform android-arm64`；Rust 只安装 Android 的 `aarch64-linux-android` target。`android/core` 的 `ndk.abiFilters` 也只保留 arm64-v8a，避免 Gradle 额外编译其他 ABI。1.19.5 已移除 `flutter_qjs`，脚本引擎由 `code_forge` 的 Rust 模块提供。不能先编译全部架构再改名或删除已签名 APK 中的文件。
 - `.test/` 与生成目录都不能提交；密钥与密码不能进入 Git、文档、日志、构建 Artifact 或 Release。
 
-### 节点库、落地代理与聚合订阅
+### 本 fork 维护范围与上游原生功能边界
 
-当前合并目标 `upstream/main` 为 `1f5318f7`（Bettbox 1.19.9）。节点库和落地功能来自 `7f4293ce`，订阅合并及托管脚本来自 `389cd5fd`。使用和旧版迁移见 [使用与升级](Fork-Features.md)。Avalon 的来源和许可作为历史贡献保存在根目录 `NOTICE`。
+当前合并基线 `upstream/main` 为 `fdf5cd34`（Bettbox 1.19.10）。随着 Bettbox 上游原生加入了节点库、落地代理（链式代理创建）与订阅合并（`7f4293ce`、`389cd5fd` 及 1.19.10 的多节点导入），本 fork 不再单独维护自定义链路系统，核心维护聚焦于：
 
-- 节点页与配置绑定见 `lib/views/profiles/nodes.dart`、`edit_node.dart`、`lib/models/node.dart`。`core/nodes.go` 在运行配置中处理节点、`dialer-proxy` 和组成员，检查前置失效及循环时的行为。合并时核对实际出站路径和普通／托管配置的绑定。
+- **Smart 策略组内核与客户端适配**：`core/smart.patch`、`core/smart-source.json`、`lib/enum/enum.dart`、Smart 组测速与固定节点交互，以及 LightGBM 模型同步。
+- **连接关闭高 CPU / 内存与资源泄漏维护**：保留 `core/smart.patch` 中 `tcpTracker` CAS 关闭权保护（见 [连接关闭高 CPU 修复记录](Smart-CPU-Fix.md)）、`core/common.go` 对 Smart GeoIP/ASN 数据的保留，以及持续关注 Smart 后台任务与连接生命周期清理。
+- **个人构建与更新渠道**：独立 Android 包名/持久签名、Ubuntu 24.04 Linux x64 DEB 打包，以及覆盖本 fork 测试版与正式版的应用内更新检查。
+
+以下上游原生能力在合并时需关注兼容性与回归，直接沿用上游实现，不另起炉灶：
+
+- 节点页与配置绑定见 `lib/views/profiles/nodes.dart`、`edit_node.dart`、`lib/models/node.dart`（支持一次导入多个节点并优先排在选择策略组前部）。`core/nodes.go` 在运行配置中处理节点、`dialer-proxy` 和组成员，检查前置失效及循环时的行为。Avalon 的来源和许可作为历史贡献保存在根目录 `NOTICE`，旧版迁移见 [使用与升级](Fork-Features.md)。
 - 聚合入口在 `lib/views/profiles/merge_profile.dart`。客户端先应用托管脚本，内核通过 `core/provider_expand.go` 和 `core/profile_merge.go` 处理 Provider 与合并结果。检查成员更新、Provider 缓存、规则、节点去重及名称重写。兼容备份恢复实现位于 `lib/common/profile_recovery.dart`，覆盖同 URL 配置的 ID 保留和合并。
 - 上游 Android 应用和核心声明 `minSdk = 24`。发布前另查 Smart APK 的实际最低版本、arm64-v8a 原生库和 Android 7.x 启动及 VPN 表现，再确认可用范围。
 
@@ -135,7 +141,7 @@ flutter run -d linux --dart-define=APP_DEV=true
 
 维护者本机为 Ubuntu 24.04.5 LTS（noble）、x86_64、AMD Ryzen 5 5600H。固定维护适用于 Ubuntu 24.04 的 **Linux x64 DEB**，内核使用默认 `GOAMD64=v3`（本机支持 AVX2/FMA/BMI 等要求）；不额外构建 Linux arm64、Compatible、RPM 或 AppImage。换机或升级系统后重新核实环境，不沿用本机记录作为新机器的兼容性证明。
 
-沿用项目的 `flutter_distributor` DEB 打包器和 `linux/packaging/deb/make_config.yaml`。包名为 `bettbox-smart`，桌面显示 Bettbox Smart，运行时依赖采用 Ubuntu 24.04 的库包，不要求用户安装开发头文件。JNI 使用 `/usr/lib/jvm/java-17-openjdk-amd64/lib/server`，DEB 依赖 `openjdk-17-jre-headless`；CI 也使用 Ubuntu 的 OpenJDK 17，避免把 runner 私有的 Temurin 路径写进产物。可执行文件和安装目录仍沿用上游 `/usr/share/Bettbox/`，因此声明与上游 `bettbox` 包冲突，不承诺与原版共存；不要更改当前应用数据目录或在更新/卸载时删除配置。DEB 中 `BettboxCore` 保持 root 所有权、0755 执行权限，不预置 setuid；安装脚本通过 `libcap2-bin` 设置 `cap_net_admin,cap_net_bind_service,cap_net_raw=+ep`。包内 `90-bettbox.rules` 仅允许本地活动会话执行所需的四项 systemd-resolved DNS 操作，运行时支持 Linux 系统 DNS 设置及恢复。核实包内权限和安装脚本；安装后的 capabilities/TUN 授权需实机确认。App 更新链接保持进入 fork 正式版 Release 页面，不设置上游格式的 `APP_ASSET_SUFFIX`，以免指向错误文件名。
+沿用项目的 `flutter_distributor` DEB 打包器和 `linux/packaging/deb/make_config.yaml`。包名为 `bettbox-smart`，桌面显示 Bettbox Smart，运行时依赖采用 Ubuntu 24.04 的库包，不要求用户安装开发头文件。JNI 使用 `/usr/lib/jvm/java-17-openjdk-amd64/lib/server`，DEB 依赖 `openjdk-17-jre-headless`；CI 也使用 Ubuntu 的 OpenJDK 17，避免把 runner 私有的 Temurin 路径写进产物。可执行文件和安装目录仍沿用上游 `/usr/share/Bettbox/`，因此声明与上游 `bettbox` 包冲突，不承诺与原版共存；不要更改当前应用数据目录或在更新/卸载时删除配置。DEB 中 `BettboxCore` 保持 root 所有权、0755 执行权限，不预置 setuid；安装脚本通过 `libcap2-bin` 设置 `cap_net_admin,cap_net_bind_service,cap_net_raw=+ep`。包内 `90-bettbox.rules` 仅允许本地活动会话执行所需的四项 systemd-resolved DNS 操作，运行时支持 Linux 系统 DNS 设置及恢复。核实包内权限和安装脚本；安装后的 capabilities/TUN 授权需实机确认。App 更新链接保持进入 fork Release 页面（不设置上游格式的 `APP_ASSET_SUFFIX`，以免指向错误文件名）。
 
 加载工具链并生成代码后，构建 Linux 内核并打包 DEB。
 
@@ -191,7 +197,7 @@ go test -tags=with_gvisor ./common/callback ./adapter/outboundgroup ./component/
 
 ## 4. 提交、构建与失败处理
 
-先更新 `readme/Smart-Release-Notes.md`，仅说明本次主要更新内容，包括实际功能、修复、模型、工具链或打包变化。不列测试通过、测试清单或验证过程，也不把内核基线沿用、发布轮换过程写入更新日志；这些记录放 Actions、构建来源 JSON 或维护文档，来源 SHA 保存在来源 JSON 和构建来源 JSON。无新代码时不要造空提交或新 Release；若仅模型更新，它由 App 按钮/自动更新获取，通常无需重新发布 App。
+提交前先完成文档同步检查：核对 `README.md`、`readme/Smart.md`、`readme/Fork-Features.md`、`readme/AI_UPDATE_GUIDE.md`、`readme/Smart-Maintenance.md` 是否与本次上游变更及 fork 功能边界一致，再更新 `readme/Smart-Release-Notes.md`。更新日志仅说明本次主要更新内容，包括实际功能、修复、模型、工具链或打包变化。不列测试通过、测试清单或验证过程，也不把内核基线沿用、发布轮换过程写入更新日志；这些记录放 Actions、构建来源 JSON 或维护文档，来源 SHA 保存在来源 JSON 和构建来源 JSON。无新代码时不要造空提交或新 Release；若仅模型更新，它由 App 按钮/自动更新获取，通常无需重新发布 App。
 
 ```sh
 git diff --check
@@ -255,10 +261,10 @@ gh release view <上一版标签> --repo KevinChen222/Bettbox --json tagName,isD
 
 bug 修复时跳过上面的转正命令。完成所需元数据操作后，使用 `gh release delete <被替换或更早的Smart标签> --repo KevinChen222/Bettbox --yes` 清理多余 Release，**不要添加 `--cleanup-tag`**。清理前再次确认保留的新测试版及正式版均公开且资产齐全；最后核对 Release 列表恰有这两个版本。
 
-转正只改 GitHub Release 的预发布标记、标题和 Latest 元数据，不重新构建、不替换资产、不移动/重命名标签、不修改安装包内的 APP_ENV、签名或版本号。App 默认的正式版更新渠道仍按 GitHub 最新正式版处理；新 test 从 Releases 页面手动下载，不把它冒充正式版自动推送。
+转正只改 GitHub Release 的预发布标记、标题和 Latest 元数据，不重新构建、不替换资产、不移动/重命名标签、不修改安装包内的 APP_ENV、签名或版本号。App 更新检查会检测本 fork 公开的正式版与测试版，并打开对应标签的 Release 页面供下载。
 
 只发布到个人 fork。若失败就保留草稿，修复资产或说明后继续；不制造重复发布。发布后再次核实新版本为 test、正式版已按指定模式保留或转正、列表只有这两个 Release。`build-info.json` 记录发布时为 test、发布模式、上一测试版与所保留的正式版标签，作为历史记录；不能因日后转正而重写旧资产。最终回复提供 test Release、正式版保留或转正结果、Actions 与维护说明，准确说明上游更新范围及真机验证限制。
 
 ## 成功标准
 
-两个上游都已核查（单独发布客户端修复时如实说明沿用原内核基线，不冒称已更新上游）；代码与来源 JSON 一致；Bettbox 原内核目录未混入 Smart；个人自用声明保留；工作区无临时试验；本次提交的 Windows/Android Actions 构建与本机 Linux DEB 构建检查都成功；新 Release 为 test，含正确二进制、校验和及来源信息；正式版按用户指定模式保留或转正；Release 仅保留这两个版本。账号失效或构建确实受阻时明确说明已完成内容和阻塞原因，保留可继续的状态，不能假称发布成功。
+两个上游都已核查（单独发布客户端修复时如实说明沿用原内核基线，不冒称已更新上游）；代码与来源 JSON 一致；Bettbox 原内核目录未混入 Smart；个人自用声明保留；相关功能与维护文档（含 `readme/AI_UPDATE_GUIDE.md`）已按本次变更同步检查更新；工作区无临时试验；本次提交的 Windows/Android Actions 构建与本机 Linux DEB 构建检查都成功；新 Release 为 test，含正确二进制、校验和及来源信息；正式版按用户指定模式保留或转正；Release 仅保留这两个版本。账号失效或构建确实受阻时明确说明已完成内容和阻塞原因，保留可继续的状态，不能假称发布成功。

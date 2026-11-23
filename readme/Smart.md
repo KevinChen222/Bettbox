@@ -1,6 +1,6 @@
 # Bettbox Smart 内核分支
 
-本分支为 Windows、Android 和 Linux 集成 vernesong/mihomo 的 Smart 策略组。实际集成提交、初始基线及模型来源以 [`core/smart-source.json`](../core/smart-source.json) 为准。Smart 差异保存在 `core/smart.patch`，构建时生成 `core/.smart-mihomo` 并保留 Bettbox 平台补丁。原始 `core/Clash.Meta` 随 Bettbox 上游维护。
+本分支在跟随 Bettbox 上游主线的基础上，聚焦维护 **vernesong/mihomo 的 Smart 策略组**、**连接关闭高 CPU / 内存与资源泄漏稳定性修复**，以及个人 fork 的多平台打包与全渠道更新检查（Windows、Android 和 Ubuntu 24.04 Linux x64）。节点库、落地代理（链式代理）与订阅合并已由 Bettbox 上游原生提供，直接沿用上游实现。实际集成提交、初始基线及模型来源以 [`core/smart-source.json`](../core/smart-source.json) 为准。Smart 差异保存在 `core/smart.patch`，构建时生成 `core/.smart-mihomo` 并保留 Bettbox 平台补丁。原始 `core/Clash.Meta` 随 Bettbox 上游维护。
 
 ## 使用
 
@@ -38,9 +38,9 @@ LightGBM 使用纯 Go 推理，不需要额外的原生 DLL/SO。启用 `useligh
 
 `Build Smart` 工作流在 `feat/smart-core` 推送时构建 Windows x64 便携包（包含界面、内核和 HelperService）和 Android arm64-v8a 单架构 APK，产物保存在该次运行的 Artifacts 中。Ubuntu 24.04 x86_64 的 Linux DEB（`Bettbox-smart-linux-x64.deb`）由维护者本机构建，使用 AMD64 v3 内核。Windows 内核使用 AMD64 v1 指令集。Android 沿用持久签名并检查 16 KB 页对齐。发布需核对同一提交的三种产物。[Linux 构建步骤](Smart-Maintenance.md#本机-linux-版本维护与-deb-构建)
 
-Fork 构建不使用上游 SignPath 证书。安卓通过 fork Secrets 中的持久自用 keystore 签名；缺少 Secrets 时退回构建环境 debug 签名。Android 包名为 `com.kevinchen222.bettbox.smart`，可与原版 Bettbox 共存；从旧包名迁移时通过备份导入数据。更新检查只读取 `KevinChen222/Bettbox` 最新正式版，同时比较应用版本与构建日期/序号。
+Fork 构建不使用上游 SignPath 证书。安卓通过 fork Secrets 中的持久自用 keystore 签名；缺少 Secrets 时退回构建环境 debug 签名。Android 包名为 `com.kevinchen222.bettbox.smart`，可与原版 Bettbox 共存；从旧包名迁移时通过备份导入数据。更新检查会读取 `KevinChen222/Bettbox` 的全部公开 Release（包含测试版与正式版，优先读取 `releases.atom` 并在失败时回退 GitHub Releases API），同时比较应用版本与构建日期/序号，发现新版本后直接跳转到对应标签的 Release 页面。
 
-Release 只保留一个 **test / Pre-release** 和一个正式版。每次由用户指定发布模式：功能更新在新测试版公开后把上一测试版转正；bug 修复替换测试版且保留现有正式版。转正只修改 Release 元数据，标签和安装包不变；删除被替换的旧 Release 时保留 Git 标签。测试版从 Releases 页面手动下载。
+Release 只保留一个 **test / Pre-release** 和一个正式版。每次由用户指定发布模式：功能更新在新测试版公开后把上一测试版转正；bug 修复替换测试版且保留现有正式版。转正只修改 Release 元数据，标签和安装包不变；删除被替换的旧 Release 时保留 Git 标签。应用内更新检查同时覆盖测试版与正式版，也可从 Releases 页面手动下载。
 
 本机构建工具链见 [维护参考](Smart-Maintenance.md#3-依赖生成代码和本地验证)。
 
@@ -49,14 +49,14 @@ Release 只保留一个 **test / Pre-release** 和一个正式版。每次由用
 ```sh
 flutter pub get
 dart run build_runner build -d
-flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart
+flutter test test/smart_group_test.dart test/common/smart_update_test.dart test/clash/interface_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart
 dart tool/prepare_smart_core.dart
 # cd core 后可运行 go test -tags=with_gvisor ./...
 # Windows，包含 HelperService
-dart setup.dart windows --arch amd64 --out core --compatible
+dart setup.dart windows --arch amd64 --out core --compatible --standard
 # 将生成的内核/HelperService随 flutter build windows 产物一起打包
 # Android，只生成 arm64-v8a 内核和 APK
-dart setup.dart android --arch arm64 --out core
+dart setup.dart android --arch arm64 --out core --standard
 flutter build apk --release --split-per-abi --target-platform android-arm64
 ```
 
@@ -74,7 +74,7 @@ git merge upstream/main
 flutter pub get
 dart run build_runner build -d
 dart tool/prepare_smart_core.dart
-flutter test test/smart_group_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart test/controller_loading_test.dart
+flutter test test/smart_group_test.dart test/common/smart_update_test.dart test/clash/interface_test.dart test/views/proxies/smart_delay_test.dart test/views/proxies/delay_test_coordinator_test.dart
 # 在 core 目录运行 go test -tags=with_gvisor ./...
 git push origin feat/smart-core
 ```

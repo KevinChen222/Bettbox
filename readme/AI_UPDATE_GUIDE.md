@@ -23,10 +23,12 @@
 ## 必须遵守
 
 - 唯一可写远端：`KevinChen222/Bettbox`，分支 `feat/smart-core`。只读上游为 `appshubcc/Bettbox:main` 和 `vernesong/mihomo:Alpha`；不能用 `main`/`Meta` 替代 Smart，也不向上游推送或发消息。
+- 本 fork 当前聚焦维护：**Smart 策略组内核与客户端适配（含 LightGBM 模型同步）**、**连接关闭高 CPU / 内存与资源泄漏稳定性维护**，以及**个人构建与支持测试版/正式版的仓库更新检查**；节点库、落地节点（链式代理）与订阅合并已由 Bettbox 上游原生提供，维护时直接沿用上游实现。
 - 保留用户改动，不强推、不改写历史、不删除或移动旧标签。保留个人自用声明、开源许可和 NOTICE；密钥及密码不进入 Git、日志或产物。
 - `core/Clash.Meta/` 保留 Bettbox 原内核；Smart 改动保存在 `core/smart.patch`，生成目录 `core/.smart-mihomo/` 和 `.test/` 不提交。冲突修复保存补丁前不能重新生成或构建，以免覆盖修复。
 - 发布 Windows x64 便携包、Android **仅 arm64-v8a** APK 和适合本机 **Ubuntu 24.04 x86_64** 的 Linux x64 DEB。安卓沿用持久签名并核实 16 KB 页对齐；Linux 使用普通 AMD64 v3 内核（本机 Ryzen 5 5600H 支持），不额外维护 arm64、旧系统兼容版、RPM 或 AppImage。Windows/Android 使用本次提交成功的 Actions 产物，Linux 使用同一提交在本机构建并检查的 DEB；资产含三个安装包、SHA256SUMS 和 build-info。验证范围如实说明。
 - 新版先发 test。**功能更新**：新 test 公开后转正上一 test；**bug 修复**：替换上一 test，保留正式版。最终各留一个测试版和正式版（首次只发 test），清理 Release 时保留标签；转正只改元数据。模式不明时先完成修复与构建，再询问。
+- **每次更新必须同步检查并更新文档**：同步上游或调整 fork 行为后，核对并更新对应的功能与维护文档（`README.md`、`readme/Smart.md`、`readme/Fork-Features.md`、`readme/Smart-Maintenance.md`、`readme/Smart-Release-Notes.md` 及本文件 `readme/AI_UPDATE_GUIDE.md`），避免残留已由上游接管或与现状不符的说明。
 
 ## AI 按需读取
 
@@ -36,8 +38,9 @@
 
 | 阶段 | 必读参考 |
 | --- | --- |
-| 上游合并与内核适配 | [维护参考](Smart-Maintenance.md)的“仓库与维护范围”“已实现的结构”及第 1–2 节。涉及落地节点、订阅合并或旧版数据时，参阅 [使用与升级](Fork-Features.md) |
+| 上游合并与内核适配 | [维护参考](Smart-Maintenance.md)的“仓库与维护范围”“已实现的结构”及第 1–2 节。涉及上游节点库、订阅合并或旧版数据迁移时，参阅 [使用与升级](Fork-Features.md) |
 | 构建与验证 | 维护参考第 3 节及相关 workflow/构建配置；工具版本以当前项目要求为准 |
+| 文档检查与同步 | 核对 `README.md`、[Smart 使用说明](Smart.md)、[使用与升级](Fork-Features.md)、[维护参考](Smart-Maintenance.md)、[更新日志](Smart-Release-Notes.md)与本文件是否与最新上游及 fork 功能一致 |
 | 提交与发布 | 维护参考第 4–5 节及成功标准；发布前查询实际 Release，不复用旧聊天中的标签或状态 |
 
 功能细节仅涉及时读 [Smart.md](Smart.md)、[Fork-Features.md](Fork-Features.md) 或相关源码。只有新代码或必要打包变化才发布；仅模型更新通常无需发布 App。更新日志只写本次功能、修复和必要工具链/打包变化，不写测试过程。

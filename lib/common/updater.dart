@@ -9,6 +9,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:path/path.dart' hide windows;
+import 'package:xml/xml.dart';
 
 class AppUpdater {
   static const _assetSuffix = String.fromEnvironment('APP_ASSET_SUFFIX');
@@ -57,20 +58,112 @@ open "\$3"
 
   bool get isSupported => _assetSuffix.isNotEmpty && !appPath.isPortable;
 
-  String get releaseUrl => 'https://github.com/$repository/releases/latest';
+  String get releaseUrl => 'https://github.com/$repository/releases';
+
+  String get releaseFeedUrl => 'https://github.com/$repository/releases.atom';
+
+  String get releaseApiUrl =>
+      'https://api.github.com/repos/$repository/releases?per_page=10';
 
   String releaseTagUrl(String tagName) =>
       'https://github.com/$repository/releases/tag/$tagName';
 
-  bool hasReleaseUpdate(String tag, String version, String buildNumber) {
-    final match = _smartTag.firstMatch(tag);
-    if (match == null) return false;
+  ({String version, int build})? _parseSmartTag(String tag) {
+    final match = _smartTag.firstMatch(tag.trim());
+    if (match == null) return null;
     final sequence = int.parse(match[3]!);
-    if (sequence == 0) return false;
-    final comparison = utils.compareVersions(match[1]!, version);
+    if (sequence == 0) return null;
+    return (version: match[1]!, build: int.parse(match[2]!) * 100 + sequence);
+  }
+
+  bool hasReleaseUpdate(String tag, String version, String buildNumber) {
+    final parsed = _parseSmartTag(tag);
+    if (parsed == null) return false;
+    final comparison = utils.compareVersions(parsed.version, version);
     if (comparison != 0) return comparison > 0;
-    final releaseBuild = int.parse(match[2]!) * 100 + sequence;
-    return releaseBuild > (int.tryParse(buildNumber) ?? 0);
+    return parsed.build > (int.tryParse(buildNumber) ?? 0);
+  }
+
+  int compareReleaseTags(String tagA, String tagB) {
+    final parsedA = _parseSmartTag(tagA);
+    final parsedB = _parseSmartTag(tagB);
+    if (parsedA == null && parsedB == null) return 0;
+    if (parsedA == null) return -1;
+    if (parsedB == null) return 1;
+    final comparison = utils.compareVersions(parsedA.version, parsedB.version);
+    if (comparison != 0) return comparison;
+    return parsedA.build.compareTo(parsedB.build);
+  }
+
+  String? selectLatestReleaseTag(
+    Iterable<String> tags,
+    String version,
+    String buildNumber,
+  ) {
+    String? latest;
+    for (final rawTag in tags) {
+      final tag = rawTag.trim();
+      if (!hasReleaseUpdate(tag, version, buildNumber)) continue;
+      if (latest == null || compareReleaseTags(tag, latest) > 0) {
+        latest = tag;
+      }
+    }
+    return latest;
+  }
+
+  List<String> parseReleaseFeedTags(String atomXml) {
+    final XmlDocument document;
+    try {
+      document = XmlDocument.parse(atomXml);
+    } on XmlException {
+      return const [];
+    }
+    final tags = <String>[];
+    for (final entry in document.findAllElements('entry')) {
+      String? tag;
+      for (final link in entry.findElements('link')) {
+        final href = link.getAttribute('href');
+        if (href == null) continue;
+        final markerIndex = href.indexOf('/releases/tag/');
+        if (markerIndex == -1) continue;
+        final tail = href
+            .substring(markerIndex + '/releases/tag/'.length)
+            .split(RegExp(r'[?#]'))
+            .first
+            .trim();
+        if (tail.isNotEmpty) {
+          tag = Uri.decodeComponent(tail);
+          break;
+        }
+      }
+      if (tag == null) {
+        final id = entry.getElement('id')?.innerText.trim();
+        if (id != null && id.contains('/')) {
+          final candidate = id.split('/').last.trim();
+          if (candidate.isNotEmpty) {
+            tag = candidate;
+          }
+        }
+      }
+      if (tag != null && tag.isNotEmpty) {
+        tags.add(tag);
+      }
+    }
+    return tags;
+  }
+
+  List<String> parseReleaseApiTags(Object? data) {
+    if (data is! List) return const [];
+    final tags = <String>[];
+    for (final item in data) {
+      if (item is! Map) continue;
+      if (item['draft'] == true) continue;
+      final tag = item['tag_name'];
+      if (tag is String && tag.trim().isNotEmpty) {
+        tags.add(tag.trim());
+      }
+    }
+    return tags;
   }
 
   String assetName(String tagName) {
