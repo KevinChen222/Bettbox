@@ -1,2 +1,2 @@
 
--keep class com.appshub.bettbox.models.**{ *; }
+-keep class com.vela.models.**{ *; }

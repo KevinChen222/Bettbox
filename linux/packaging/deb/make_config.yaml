@@ -1,4 +1,4 @@
-display_name: Bettbox Smart
+display_name: Vela
 package_name: bettbox-smart
 maintainer:
   name: KevinChen222
@@ -36,13 +36,13 @@ keywords:
   - Mihomo
   - Proxy
 
-generic_name: Bettbox Smart
+generic_name: Vela
 
 categories:
   - Network
 
 startup_notify: true
-startup_wm_class: com.kevinchen222.bettbox.smart
+startup_wm_class: com.vela
 
 extra_files:
   linux/packaging/polkit/90-bettbox.rules: usr/share/polkit-1/rules.d/90-bettbox.rules

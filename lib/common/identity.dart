@@ -7,12 +7,10 @@ class AppIdentity {
 
   static const productName = 'Bettbox';
   static const devSuffix = 'Dev';
-  static const packageId = 'com.kevinchen222.bettbox.smart';
+  static const packageId = 'com.vela';
 
   static const compactName = isDev ? '$productName$devSuffix' : productName;
-  static const displayName = isDev
-      ? '$productName Smart Dev'
-      : '$productName Smart';
+  static const displayName = isDev ? 'Vela Dev' : 'Vela';
   static const mainExecutableName = productName;
   static const coreExecutableName = '${compactName}Core';
   static const dataDirName = compactName;

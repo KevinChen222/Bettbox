@@ -16,7 +16,7 @@ val mKeyPassword: String? = localProperties.getProperty("keyPassword")
 val isRelease = mStoreFile.exists() && mStorePassword != null && mKeyAlias != null && mKeyPassword != null
 
 android {
-    namespace = "com.appshub.bettbox"
+    namespace = "com.vela"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
 
@@ -26,7 +26,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.kevinchen222.bettbox.smart"
+        applicationId = "com.vela"
         minSdk = 24
         targetSdk = 36
         versionCode = flutter.versionCode

@@ -1,8 +1,6 @@
 name: Build Smart
 
 on:
-  push:
-    branches: [feat/smart-core]
   workflow_dispatch:
 
 permissions:

@@ -1,0 +1,803 @@
+package com.vela.plugins
+
+import android.Manifest
+import android.app.Activity
+import android.app.ActivityManager
+import android.app.PendingIntent
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageInstaller
+import android.content.pm.ApplicationInfo
+import android.content.pm.ComponentInfo
+import android.content.pm.PackageManager
+import android.net.VpnService
+import android.os.Build
+import android.provider.Settings
+import android.util.Base64
+import android.widget.Toast
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
+import com.vela.receivers.InstallResultReceiver
+import com.vela.VelaApplication
+import com.vela.GlobalState
+import com.vela.R
+import com.vela.extensions.awaitResult
+import com.vela.extensions.getActionIntent
+import com.vela.models.Package
+import com.vela.widget.HomeWidgets
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.MethodChannel.Result
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.lang.ref.WeakReference
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
+import java.util.concurrent.ConcurrentHashMap
+import android.content.res.Configuration
+import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
+
+class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
+
+    private var activityRef: WeakReference<Activity>? = null
+    private var cachedTaskId: Int? = null
+    private lateinit var channel: MethodChannel
+    private lateinit var scope: CoroutineScope
+    private var vpnCallBack: (() -> Unit)? = null
+    @Volatile
+    private var packages: List<Package> = emptyList()
+    private val packagesMutex = Mutex()
+    private val chinaPackageCache = ConcurrentHashMap<String, Boolean>()
+
+    private val iconCacheDir by lazy {
+        File(VelaApplication.getAppContext().noBackupFilesDir, "app_icons").apply {
+            if (!exists()) mkdirs()
+        }
+    }
+
+    companion object {
+        private const val ICON_SIZE_DP = 48
+        private const val VPN_PERMISSION_REQUEST_CODE = 1001
+        private const val NOTIFICATION_PERMISSION_REQUEST_CODE = 1002
+        private const val LOCAL_NETWORK_PERMISSION_REQUEST_CODE = 1003
+        private const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
+        private const val CACHE_MAX_FILES = 500
+        private const val PNG_MAGIC_SIZE = 8
+
+        private val SKIP_PREFIX_LIST = listOf(
+            "com.google", "com.android.chrome", "com.android.vending", "com.facebook",
+            "com.instagram", "com.whatsapp", "com.twitter", "com.linkedin", "com.snapchat",
+            "com.amazon", "com.microsoft", "com.apple", "com.dropbox", "com.mozilla",
+            "com.brave", "com.duckduckgo", "com.vivaldi", "com.kiwibrowser",
+            "org.torproject.torbrowser", "com.opera.browser", "com.lemon.browser",
+            "net.waterfox", "ch.protonmail", "org.thoughtcrime.securesms", "org.telegram",
+            "com.surfshark", "com.netflix", "com.spotify", "tv.twitch", "com.hulu",
+            "com.disney", "com.hbo", "com.primevideo", "com.zhiliaoapp.musically",
+            "com.nytimes", "bbc.mobile", "com.wsj", "com.bloomberg", "com.medium",
+            "com.quora", "com.github", "io.github", "com.slack", "com.notion", "us.zoom",
+            "com.discord", "com.reddit", "com.pinterest", "com.tumblr", "jp.naver.line",
+            "com.skype", "com.box", "org.wikipedia", "com.gitlab", "com.openai",
+            "com.valvesoftware", "com.roblox", "com.ea.gp", "com.ubisoft",
+            "com.sogou.activity.src", "com.qihoo.browser", "com.qihoo.haosou",
+            "com.liebao", "com.mx.browser", "com.browser2345", "com.ijinshan.browser",
+            "com.quark.browser", "com.ylmf.androidclient", "mark.via", "com.xbrowser.play",
+            "com.mycompany.app.soulbrowser", "com.hshentong.alook", "info.bmmk.mbrowser",
+            "com.rainsee.browser", "com.liuzh.browser", "com.yuzhe.browser",
+            "org.easyweb.browser", "any.browser", "us.spotco.fennec_dos",
+            "app.grapheneos.vanadium", "org.ironfoxoss", "com.samsung.android.app.sbrowser",
+            "com.mi.global.browser", "com.android.browser", "com.huawei.browser",
+            "com.hihonor.browser", "com.heytap.browser", "com.coloros.browser",
+            "com.oppo.browser", "com.vivo.browser", "com.bbk.browser", "com.meizu.browser",
+            "com.meizu.mbrowser", "com.lenovo.browser", "com.zte.browser", "com.gionee.browser"
+        )
+
+        private val CHINA_APP_PREFIX_LIST = listOf(
+            "com.tencent", "com.alibaba", "com.ali", "com.alipay", "com.taobao", "com.baidu",
+            "com.iqiyi", "com.bytedance", "com.ss.android", "com.kuaishou", "com.smile.gifmaker",
+            "com.xunmeng", "com.pinduoduo", "com.sankuai", "com.meituan", "com.jingdong",
+            "com.jd", "tv.danmaku", "com.sina", "com.weibo", "com.sohu", "com.netease",
+            "com.zhihu", "com.xingin", "com.huawei", "com.xiaomi", "com.miui", "com.oppo",
+            "com.coloros", "com.oplus", "andes.oplus", "com.vivo", "com.bbk", "com.iqoo",
+            "com.meizu", "com.flyme", "com.gionee", "cn.nubia", "com.zte", "com.lenovo",
+            "com.oneplus", "com.qihoo", "com.360", "com.ijiami", "com.bangcle", "com.secneo",
+            "com.kiwisec", "com.stub", "com.wrapper", "cn.securitystack", "com.mogosec",
+            "com.secoen", "com.secshell", "com.umeng", "com.igexin", "cn.jpush", "cn.jiguang",
+            "com.bugly", "com.mob", "cn.wps", "com.kingsoft", "com.xunlei", "com.unionpay",
+            "com.cainiao", "com.sf", "com.sdu", "com.xiaojukeji", "com.autonavi", "com.amap",
+            "com.chinamobile", "com.chinaunicom", "com.chinatelecom", "com.icbc", "com.ccb",
+            "com.cmbchina", "com.mx", "com.qq", "app.eleven.com.fastfiletransfer",
+            "org.localsend.localsend_app"
+        )
+
+        private val CHINA_APP_REGEX by lazy {
+            ("(" + CHINA_APP_PREFIX_LIST.joinToString("|").replace(".", "\\.") + ").*").toRegex()
+        }
+    }
+
+    private var isBlockNotification = false
+    private var isBlockLocalNetwork = false
+    private var isActivityAttached = false
+
+    override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        channel = MethodChannel(flutterPluginBinding.binaryMessenger, "app")
+        channel.setMethodCallHandler(this)
+        scope.launch(Dispatchers.IO) { cleanIconCache() }
+    }
+
+    private fun createBitmapIcon(context: Context, resId: Int): IconCompat {
+        val drawable = androidx.core.content.ContextCompat.getDrawable(context, resId)
+            ?: return IconCompat.createWithResource(context, resId)
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            if (drawable.intrinsicWidth <= 0) 108 else drawable.intrinsicWidth,
+            if (drawable.intrinsicHeight <= 0) 108 else drawable.intrinsicHeight,
+            android.graphics.Bitmap.Config.ARGB_8888
+        )
+        val canvas = android.graphics.Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return IconCompat.createWithBitmap(bitmap)
+    }
+
+    private fun initShortcuts(labels: Map<*, *>) {
+        val toggleShortcut = ShortcutInfoCompat.Builder(VelaApplication.getAppContext(), "toggle")
+            .setShortLabel(labels["toggle"]?.toString() ?: "Toggle")
+            .setIcon(createBitmapIcon(VelaApplication.getAppContext(), R.drawable.ic_shortcut_toggle))
+            .setIntent(VelaApplication.getAppContext().getActionIntent("CHANGE"))
+            .build()
+
+        val startShortcut = ShortcutInfoCompat.Builder(VelaApplication.getAppContext(), "start")
+            .setShortLabel(labels["start"]?.toString() ?: "Start")
+            .setIcon(createBitmapIcon(VelaApplication.getAppContext(), R.drawable.ic_shortcut_start))
+            .setIntent(VelaApplication.getAppContext().getActionIntent("START"))
+            .build()
+
+        val stopShortcut = ShortcutInfoCompat.Builder(VelaApplication.getAppContext(), "stop")
+            .setShortLabel(labels["stop"]?.toString() ?: "Stop")
+            .setIcon(createBitmapIcon(VelaApplication.getAppContext(), R.drawable.ic_shortcut_stop))
+            .setIntent(VelaApplication.getAppContext().getActionIntent("STOP"))
+            .build()
+
+        ShortcutManagerCompat.setDynamicShortcuts(
+            VelaApplication.getAppContext(), 
+            listOf(startShortcut, stopShortcut, toggleShortcut)
+        )
+    }
+
+    private fun isSystemInDarkMode(): Boolean {
+        val nightModeFlags = VelaApplication.getAppContext().resources.configuration.uiMode and
+            Configuration.UI_MODE_NIGHT_MASK
+        return nightModeFlags == Configuration.UI_MODE_NIGHT_YES
+    }
+
+    private fun isAndroidTV(): Boolean {
+        val uiMode = VelaApplication.getAppContext().resources.configuration.uiMode
+        return (uiMode and Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION
+    }
+
+    override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        channel.setMethodCallHandler(null)
+        scope.cancel()
+    }
+
+    private fun tip(message: String?) {
+        if (GlobalState.flutterEngine == null) {
+            Toast.makeText(VelaApplication.getAppContext(), message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun notifyInstallFailed() {
+        if (!::channel.isInitialized) return
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            runCatching { channel.invokeMethod("installFailed", null) }
+        }
+    }
+
+    fun invokeHomeWidget(method: String, argument: Any): Boolean {
+        if (!::channel.isInitialized) return false
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            runCatching { channel.invokeMethod(method, argument) }
+        }
+        return true
+    }
+
+    override fun onMethodCall(call: MethodCall, result: Result) {
+        when (call.method) {
+            "updateHomeWidget" -> {
+                val data = call.arguments as? String
+                if (data != null) HomeWidgets.save(VelaApplication.getAppContext(), data)
+                result.success(null)
+            }
+
+            "hasHomeWidgets" -> {
+                result.success(HomeWidgets.hasWidgets(VelaApplication.getAppContext()))
+            }
+
+            "consumeHomeWidgetAction" -> {
+                result.success(HomeWidgets.consumePendingAction())
+            }
+
+            "moveTaskToBack" -> {
+                activityRef?.get()?.moveTaskToBack(true)
+                result.success(true)
+            }
+            "notifyLowMemory" -> {
+                GlobalState.notifyLowMemory()
+                result.success(true)
+            }
+            "updateExcludeFromRecents" -> {
+                updateExcludeFromRecents(call.argument<Boolean>("value"))
+                result.success(true)
+            }
+            "updateAppDisguise" -> {
+                val context = VelaApplication.getAppContext()
+                val name = call.argument<String>("name")
+                val iconPath = call.argument<String>("iconPath")
+                com.vela.AppDisguiseStore.saveBranding(context, name, iconPath)
+                activityRef?.get()?.let {
+                    com.vela.AppDisguiseStore.applyTaskDescription(it)
+                }
+                com.vela.services.VelaTileService.refreshActive()
+                com.vela.widget.DisguiseIconWidgetProvider.refreshAll(context)
+                result.success(true)
+            }
+            "setLauncherPreset" -> {
+                val context = VelaApplication.getAppContext()
+                val preset = call.argument<String>("preset") ?: "default"
+                val ok = com.vela.AppDisguiseStore.applyLauncherPreset(
+                    context,
+                    preset,
+                )
+                if (ok) {
+                    com.vela.widget.DisguiseIconWidgetProvider.refreshAll(context)
+                }
+                result.success(ok)
+            }
+            "isPinShortcutSupported" -> {
+                result.success(
+                    com.vela.AppDisguiseStore.isPinShortcutSupported(
+                        VelaApplication.getAppContext(),
+                    )
+                )
+            }
+            "pinCustomShortcut" -> {
+                val name = call.argument<String>("name")
+                val iconPath = call.argument<String>("iconPath")
+                val ok = com.vela.AppDisguiseStore.requestPinCustomShortcut(
+                    VelaApplication.getAppContext(),
+                    name,
+                    iconPath,
+                )
+                result.success(ok)
+            }
+            "isPinWidgetSupported" -> {
+                result.success(
+                    com.vela.widget.DisguiseIconWidgetProvider.isPinSupported(
+                        VelaApplication.getAppContext(),
+                    )
+                )
+            }
+            "pinCustomWidget" -> {
+                val context = VelaApplication.getAppContext()
+                val name = call.argument<String>("name")
+                val iconPath = call.argument<String>("iconPath")
+                com.vela.AppDisguiseStore.saveBranding(context, name, iconPath)
+                val ok = com.vela.widget.DisguiseIconWidgetProvider.requestPin(context)
+                result.success(ok)
+            }
+            "initShortcuts" -> {
+                val labels = call.arguments as? Map<String, String> ?: emptyMap()
+                initShortcuts(labels)
+                result.success(true)
+            }
+            "getPackages" -> scope.launch {
+                val forceRefresh = call.argument<Boolean>("forceRefresh") ?: false
+                runCatching { result.success(getPackagesToList(forceRefresh)) }
+                    .onFailure { result.error("GET_PACKAGES_FAILED", it.message, null) }
+            }
+            "getChinaPackageNames" -> scope.launch {
+                runCatching { result.success(getChinaPackageNamesList()) }
+                    .onFailure { result.error("GET_CHINA_PACKAGES_FAILED", it.message, null) }
+            }
+            "getPackageIcon" -> scope.launch {
+                val packageName = call.argument<String>("packageName")
+                val forceRefresh = call.argument<Boolean>("forceRefresh") ?: false
+                val icon = runCatching {
+                    packageName?.let { 
+                        getPackageIconBytes(it, forceRefresh) 
+                    } ?: getDefaultIconBytes()
+                }.getOrNull() ?: getDefaultIconBytes()
+                result.success(icon)
+            }
+            "getPackageIconPath" -> scope.launch {
+                val packageName = call.argument<String>("packageName")
+                val forceRefresh = call.argument<Boolean>("forceRefresh") ?: false
+                val path = runCatching {
+                    packageName?.let {
+                        getPackageIconPath(it, forceRefresh)
+                    }
+                }.getOrNull()
+                result.success(path)
+            }
+            "tip" -> {
+                tip(call.argument<String>("message"))
+                result.success(true)
+            }
+            "getSelfLastUpdateTime" -> {
+                result.success(getSelfLastUpdateTime())
+            }
+            "isIgnoringBatteryOptimizations" -> {
+                result.success(isIgnoringBatteryOptimizations())
+            }
+            "requestIgnoreBatteryOptimizations" -> {
+                requestIgnoreBatteryOptimizations()
+                result.success(true)
+            }
+            "hasPackageListPermission" -> {
+                result.success(hasPackageListPermission())
+            }
+            "requestPackageListPermission" -> {
+                requestPackageListPermission()
+                result.success(true)
+            }
+            "hasCameraPermission" -> {
+                result.success(hasCameraPermission())
+            }
+            "openAppSettings" -> {
+                openAppSettings()
+                result.success(true)
+            }
+            "openAppDetails" -> {
+                val packageName = call.arguments as? String
+                result.success(!packageName.isNullOrEmpty() && openAppDetails(packageName))
+            }
+            "installApk" -> scope.launch {
+                val path = call.arguments as? String
+                val installed = withContext(Dispatchers.IO) {
+                    runCatching { path?.let(::installApk) ?: false }.getOrDefault(false)
+                }
+                result.success(installed)
+            }
+            "isAndroidTV" -> {
+                result.success(isAndroidTV())
+            }
+            "openFcmDiagnostics" -> {
+                result.success(openFcmDiagnostics())
+            }
+            else -> result.notImplemented()
+        }
+    }
+
+    private fun installApk(path: String): Boolean {
+        val file = File(path)
+        if (!file.isFile) return false
+        val context = VelaApplication.getAppContext()
+        val installer = context.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        params.setAppPackageName(context.packageName)
+        val sessionId = installer.createSession(params)
+        installer.openSession(sessionId).use { session ->
+            session.openWrite("base.apk", 0, file.length()).use { output ->
+                file.inputStream().use { it.copyTo(output) }
+                session.fsync(output)
+            }
+            val intent = Intent(context, InstallResultReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                sessionId,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+            session.commit(pendingIntent.intentSender)
+        }
+        return true
+    }
+
+    private fun openFcmDiagnostics(): Boolean {
+        val context = VelaApplication.getAppContext()
+        val intent = Intent().apply {
+            component = ComponentName("com.google.android.gms", "com.google.android.gms.gcm.GcmDiagnostics")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching {
+            context.startActivity(intent)
+            true
+        }.getOrElse { false }
+    }
+
+    private fun updateExcludeFromRecents(value: Boolean?) {
+        val am = VelaApplication.getAppContext().getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val task = am?.appTasks?.firstOrNull { task ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                task.taskInfo.taskId == activityRef?.get()?.taskId
+            } else {
+                @Suppress("DEPRECATION")
+                task.taskInfo.id == activityRef?.get()?.taskId
+            }
+        }
+
+        when (value) {
+            true -> task?.setExcludeFromRecents(value)
+            false -> task?.setExcludeFromRecents(value)
+            null -> task?.setExcludeFromRecents(false)
+        }
+    }
+
+    private fun getIconSizePx(): Int {
+        val density = VelaApplication.getAppContext().resources.displayMetrics.density
+        return (ICON_SIZE_DP * density).toInt().coerceAtLeast(1)
+    }
+
+    private fun drawableToPngBytes(drawable: Drawable, sizePx: Int): ByteArray {
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, sizePx, sizePx)
+        drawable.draw(canvas)
+        return java.io.ByteArrayOutputStream().use { outputStream ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 80, outputStream)
+            bitmap.recycle()
+            outputStream.toByteArray()
+        }
+    }
+
+    private fun getDefaultIconBytes(): ByteArray? = runCatching {
+        drawableToPngBytes(VelaApplication.getAppContext().packageManager.defaultActivityIcon, getIconSizePx())
+    }.getOrNull()
+
+    private fun isPngBytes(bytes: ByteArray): Boolean {
+        if (bytes.size < PNG_MAGIC_SIZE) return false
+        val magic = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+        return bytes.take(PNG_MAGIC_SIZE).toByteArray().contentEquals(magic)
+    }
+
+    private suspend fun ensurePackageIconFile(packageName: String, forceRefresh: Boolean = false): File? =
+        withContext(Dispatchers.IO) {
+            val pm = VelaApplication.getAppContext().packageManager ?: return@withContext null
+            runCatching {
+                val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+                } else {
+                    pm.getPackageInfo(packageName, 0)
+                }
+                val lastUpdateTime = packageInfo?.lastUpdateTime ?: 0L
+                val cacheKey = "${packageName}_${lastUpdateTime}"
+                val cacheFile = File(iconCacheDir, cacheKey)
+
+                if (forceRefresh && cacheFile.exists() && (System.currentTimeMillis() - lastUpdateTime) < 24 * 60 * 60 * 1000) {
+                    cacheFile.delete()
+                }
+
+                if (cacheFile.exists() && cacheFile.length() > 0) {
+                    if (isPngBytes(cacheFile.readBytes())) return@withContext cacheFile
+                    cacheFile.delete()
+                }
+
+                iconCacheDir.listFiles()?.forEach { if (it.name.startsWith("${packageName}_") && it.name != cacheKey) it.delete() }
+
+                pm.getApplicationIcon(packageName)?.let { drawable ->
+                    val bytes = drawableToPngBytes(drawable, getIconSizePx())
+                    val tempFile = File(iconCacheDir, ".tmp_${cacheKey}_${System.nanoTime()}")
+                    if (runCatching { tempFile.writeBytes(bytes) }.isFailure) {
+                        tempFile.delete()
+                        return@withContext null
+                    }
+                    if (!tempFile.renameTo(cacheFile)) {
+                        tempFile.delete()
+                        return@withContext cacheFile.takeIf { it.exists() && it.length() > 0 }
+                    }
+                    return@withContext cacheFile
+                }
+            }
+            null
+        }
+
+    private suspend fun getPackageIconPath(packageName: String, forceRefresh: Boolean = false): String? =
+        ensurePackageIconFile(packageName, forceRefresh)?.absolutePath
+
+    private suspend fun getPackageIconBytes(packageName: String, forceRefresh: Boolean = false): ByteArray? =
+        ensurePackageIconFile(packageName, forceRefresh)?.let { file ->
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val bytes = file.readBytes()
+                    if (isPngBytes(bytes)) bytes else null
+                }.getOrNull()
+            }
+        }
+
+    private suspend fun getPackages(forceRefresh: Boolean = false): List<Package> = packagesMutex.withLock {
+        if (!forceRefresh && packages.isNotEmpty()) return@withLock packages
+        packages = withContext(Dispatchers.IO) { loadPackages() }
+        packages
+    }
+
+    private suspend fun loadPackages(): List<Package> = coroutineScope {
+        val pm = VelaApplication.getAppContext().packageManager ?: return@coroutineScope emptyList()
+        val selfPackageName = VelaApplication.getAppContext().packageName
+        val packageInfos = pm.getInstalledPackages(0)
+        val chunkSize = packageInfos.size / Runtime.getRuntime().availableProcessors() + 1
+
+        packageInfos.chunked(chunkSize).map { chunk ->
+            async {
+                chunk.mapNotNull { packageInfo ->
+                    val packageName = packageInfo.packageName ?: return@mapNotNull null
+                    if (packageName == selfPackageName) return@mapNotNull null
+                    val appInfo = packageInfo.applicationInfo ?: return@mapNotNull null
+
+                    val label = runCatching { appInfo.loadLabel(pm).toString() }.getOrDefault(packageName)
+                    val system = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    val internet = runCatching {
+                        pm.checkPermission(Manifest.permission.INTERNET, packageName) == PackageManager.PERMISSION_GRANTED
+                    }.getOrDefault(false)
+                    val firstInstallTime = packageInfo.firstInstallTime
+                    val lastUpdateTime = packageInfo.lastUpdateTime.takeIf { it > 0 } ?: firstInstallTime
+
+                    Package(packageName, label, system, internet, firstInstallTime, lastUpdateTime)
+                }
+            }
+        }.awaitAll().flatten()
+    }
+
+    private suspend fun getPackagesToList(forceRefresh: Boolean = false): List<Map<String, Any>> =
+        getPackages(forceRefresh).map {
+            mapOf(
+                "packageName" to it.packageName,
+                "label" to it.label,
+                "system" to it.system,
+                "internet" to it.internet,
+                "firstInstallTime" to it.firstInstallTime,
+                "lastUpdateTime" to it.lastUpdateTime
+            )
+        }
+
+    private suspend fun getChinaPackageNamesList(): List<String> =
+        getPackages().map { it.packageName }.filter { isChinaPackage(it) }
+
+    private fun cleanIconCache() {
+        runCatching {
+            iconCacheDir.listFiles()?.takeIf { it.size > CACHE_MAX_FILES }?.let { files ->
+                files.sortedBy { it.lastModified() }.take(files.size - CACHE_MAX_FILES).forEach { it.delete() }
+            }
+        }
+    }
+
+    fun requestVpnPermission(callBack: () -> Unit) {
+        vpnCallBack = callBack
+        val intent = runCatching { VpnService.prepare(VelaApplication.getAppContext()) }.getOrNull()
+        if (intent != null) {
+            val activity = activityRef?.get()
+            if (activity != null) {
+                runCatching {
+                    activity.startActivityForResult(intent, VPN_PERMISSION_REQUEST_CODE)
+                }.onFailure { e ->
+                    android.util.Log.e("AppPlugin", "startActivityForResult for VPN permission failed: ${e.message}")
+                    vpnCallBack?.invoke()
+                }
+                return
+            }
+        }
+        vpnCallBack?.invoke()
+    }
+
+    fun requestNotificationsPermission() {
+        val activity = activityRef?.get() ?: return
+        val needsNotification = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !isBlockNotification &&
+            ContextCompat.checkSelfPermission(VelaApplication.getAppContext(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (needsNotification) {
+            ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST_CODE)
+            return
+        }
+        requestLocalNetworkPermission()
+    }
+
+    private fun requestLocalNetworkPermission() {
+        if (Build.VERSION.SDK_INT < 37 || isBlockLocalNetwork) return
+        val activity = activityRef?.get() ?: return
+        if (ContextCompat.checkSelfPermission(activity, LOCAL_NETWORK_PERMISSION) == PackageManager.PERMISSION_GRANTED) return
+        ActivityCompat.requestPermissions(activity, arrayOf(LOCAL_NETWORK_PERMISSION), LOCAL_NETWORK_PERMISSION_REQUEST_CODE)
+    }
+
+    suspend fun getText(text: String): String? = withContext(Dispatchers.Default) {
+        channel.awaitResult<String>("getText", text)
+    }
+
+    private fun isChinaPackage(packageName: String): Boolean =
+        chinaPackageCache.getOrPut(packageName) { isChinaPackageInternal(packageName) }
+
+    private fun isChinaPackageInternal(packageName: String): Boolean {
+        val context = VelaApplication.getAppContext()
+        val pm = context.packageManager ?: return false
+        if (SKIP_PREFIX_LIST.any { packageName == it || packageName.startsWith("$it.") }) return false
+        if (packageName.matches(CHINA_APP_REGEX)) return true
+        if (isChinaCertificate(packageName, pm)) return true
+
+        val flags = PackageManager.GET_ACTIVITIES or PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS or PackageManager.GET_PROVIDERS
+        runCatching {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(flags.toLong()))
+            } else {
+                pm.getPackageInfo(packageName, flags)
+            }
+            val components = mutableListOf<ComponentInfo>().apply {
+                packageInfo.services?.let { addAll(it) }
+                packageInfo.activities?.let { addAll(it) }
+                packageInfo.receivers?.let { addAll(it) }
+                packageInfo.providers?.let { addAll(it) }
+            }
+            if (components.any { it.name.matches(CHINA_APP_REGEX) }) return true
+        }
+        return false
+    }
+
+    private fun isChinaCertificate(packageName: String, pm: PackageManager): Boolean = runCatching {
+        val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+        }
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.signingInfo?.apkContentsSigners
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.signatures
+        }
+        signatures?.any { signature ->
+            val cert = CertificateFactory.getInstance("X.509")
+                .generateCertificate(java.io.ByteArrayInputStream(signature.toByteArray()))
+            cert is X509Certificate && (cert.subjectDN.name.contains("C=CN", ignoreCase = true) ||
+                cert.subjectDN.name.contains("C=86", ignoreCase = true))
+        } == true
+    }.getOrDefault(false)
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activityRef = WeakReference(binding.activity)
+        if (!isActivityAttached) {
+            isActivityAttached = true
+            binding.addActivityResultListener(::onActivityResult)
+            binding.addRequestPermissionsResultListener(::onRequestPermissionsResultListener)
+        }
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+        activityRef = null
+    }
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        activityRef = WeakReference(binding.activity)
+    }
+    override fun onDetachedFromActivity() {
+        channel.invokeMethod("exit", null)
+        activityRef = null
+        cachedTaskId = null
+        isActivityAttached = false
+    }
+
+    private fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        if (!isActivityAttached) return false
+        if (requestCode == VPN_PERMISSION_REQUEST_CODE && resultCode == FlutterActivity.RESULT_OK) {
+            GlobalState.initServiceEngine()
+            vpnCallBack?.invoke()
+        } else if (requestCode == VPN_PERMISSION_REQUEST_CODE) {
+            ServicePlugin.notifyVpnStartFailed()
+        }
+        return true
+    }
+
+    private fun onRequestPermissionsResultListener(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
+        if (!isActivityAttached) return false
+        when (requestCode) {
+            NOTIFICATION_PERMISSION_REQUEST_CODE -> {
+                isBlockNotification = true
+                requestLocalNetworkPermission()
+            }
+            LOCAL_NETWORK_PERMISSION_REQUEST_CODE -> isBlockLocalNetwork = true
+        }
+        return true
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = VelaApplication.getAppContext().getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+            powerManager?.isIgnoringBatteryOptimizations(VelaApplication.getAppContext().packageName) ?: false
+        } else true
+
+    private fun requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:${VelaApplication.getAppContext().packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { VelaApplication.getAppContext().startActivity(intent) }
+            .onFailure {
+                runCatching {
+                    VelaApplication.getAppContext().startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                }
+            }
+    }
+
+    private fun hasPackageListPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return true
+        val context = VelaApplication.getAppContext()
+        val pm = context.packageManager
+        return arrayOf("com.android.settings", "com.android.systemui").any { pkg ->
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
+                } else {
+                    pm.getPackageInfo(pkg, 0)
+                }
+                true
+            }.getOrDefault(false)
+        }
+    }
+
+    private fun requestPackageListPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) openAppSettings()
+    }
+
+    private fun hasCameraPermission(): Boolean =
+        ContextCompat.checkSelfPermission(VelaApplication.getAppContext(), Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    private fun openAppSettings() {
+        openAppDetails(VelaApplication.getAppContext().packageName)
+    }
+
+    private fun openAppDetails(packageName: String): Boolean {
+        val context = VelaApplication.getAppContext()
+        val pm = context.packageManager
+        val installed = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                pm.getPackageInfo(packageName, 0)
+            }
+            true
+        }.getOrDefault(false)
+        if (!installed && hasPackageListPermission()) return false
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.parse("package:$packageName")
+        }
+        return runCatching {
+            activityRef?.get()?.startActivity(intent) ?: run {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
+        }.isSuccess
+    }
+
+    private fun getSelfLastUpdateTime(): Long {
+        val context = VelaApplication.getAppContext()
+        val pm = context.packageManager
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm?.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                pm?.getPackageInfo(context.packageName, 0)
+            }?.lastUpdateTime
+        }.getOrDefault(0L) ?: 0L
+    }
+}

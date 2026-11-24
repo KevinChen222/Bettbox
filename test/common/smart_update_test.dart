@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('the Smart identity keeps the existing data and binary names', () {
-    expect(AppIdentity.packageId, 'com.kevinchen222.bettbox.smart');
-    expect(AppIdentity.displayName, 'Bettbox Smart');
+    expect(AppIdentity.packageId, 'com.vela');
+    expect(AppIdentity.displayName, 'Vela');
     expect(AppIdentity.dataDirName, 'Bettbox');
     expect(AppIdentity.mainExecutableName, 'Bettbox');
     expect(AppIdentity.coreExecutableName, 'BettboxCore');

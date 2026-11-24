@@ -25,7 +25,7 @@ class AppDisguisePreset {
 
   static const defaultPreset = AppDisguisePreset(
     id: 'default',
-    title: '默认（Bettbox Smart）',
+    title: '默认（Vela）',
     subtitle: '原始应用图标与名称',
     icon: Icons.bolt_rounded,
     backgroundColor: Color(0xFF00897B),

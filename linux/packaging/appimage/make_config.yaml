@@ -14,7 +14,7 @@ categories:
   - Network
 
 startup_notify: true
-startup_wm_class: com.kevinchen222.bettbox.smart
+startup_wm_class: com.vela
 
 include: []
 extra_files:

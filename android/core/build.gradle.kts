@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "com.appshub.bettbox.core"
+    namespace = "com.vela.core"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
 

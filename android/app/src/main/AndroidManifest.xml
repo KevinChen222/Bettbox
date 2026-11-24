@@ -31,16 +31,16 @@
         tools:ignore="ProtectedPermissions" />
 
     <application
-        android:name=".BettboxApplication"
+        android:name=".VelaApplication"
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher_light"
         android:roundIcon="@mipmap/ic_launcher_round_light"
-        android:label="Bettbox Smart"
+        android:label="Vela"
         android:banner="@drawable/tv_banner"
         android:networkSecurityConfig="@xml/network_security_config"
         android:enableOnBackInvokedCallback="false">
         <activity
-            android:name="com.appshub.bettbox.MainActivity"
+            android:name="com.vela.MainActivity"
             android:icon="@mipmap/ic_launcher_light"
             android:roundIcon="@mipmap/ic_launcher_round_light"
             android:alwaysRetainTaskState="true"
@@ -70,19 +70,19 @@
                 <data android:scheme="clash" android:host="install-config" />
                 <data android:scheme="clashmeta" android:host="install-config" />
                 <data android:scheme="flclash" android:host="install-config" />
-                <data android:scheme="bettbox" android:host="install-config" />
+                <data android:scheme="vela" android:host="install-config" />
             </intent-filter>
         </activity>
 
         <!-- Default launcher alias (MainActivity stays enabled so pinned shortcuts & aliases never break) -->
         <activity-alias
-            android:name="com.appshub.bettbox.MainActivityDefault"
+            android:name="com.vela.MainActivityDefault"
             android:enabled="true"
             android:exported="true"
             android:icon="@mipmap/ic_launcher_light"
             android:roundIcon="@mipmap/ic_launcher_round_light"
-            android:label="Bettbox Smart"
-            android:targetActivity="com.appshub.bettbox.MainActivity">
+            android:label="Vela"
+            android:targetActivity="com.vela.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -91,13 +91,13 @@
         </activity-alias>
 
         <activity-alias
-            android:name="com.appshub.bettbox.MainActivityDisguiseNotes"
+            android:name="com.vela.MainActivityDisguiseNotes"
             android:enabled="false"
             android:exported="true"
             android:icon="@drawable/ic_disguise_notes"
             android:roundIcon="@drawable/ic_disguise_notes"
             android:label="笔记"
-            android:targetActivity="com.appshub.bettbox.MainActivity">
+            android:targetActivity="com.vela.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -106,13 +106,13 @@
         </activity-alias>
 
         <activity-alias
-            android:name="com.appshub.bettbox.MainActivityDisguiseCalculator"
+            android:name="com.vela.MainActivityDisguiseCalculator"
             android:enabled="false"
             android:exported="true"
             android:icon="@drawable/ic_disguise_calculator"
             android:roundIcon="@drawable/ic_disguise_calculator"
             android:label="计算器"
-            android:targetActivity="com.appshub.bettbox.MainActivity">
+            android:targetActivity="com.vela.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -121,13 +121,13 @@
         </activity-alias>
 
         <activity-alias
-            android:name="com.appshub.bettbox.MainActivityDisguiseToolbox"
+            android:name="com.vela.MainActivityDisguiseToolbox"
             android:enabled="false"
             android:exported="true"
             android:icon="@drawable/ic_disguise_toolbox"
             android:roundIcon="@drawable/ic_disguise_toolbox"
             android:label="实用工具"
-            android:targetActivity="com.appshub.bettbox.MainActivity">
+            android:targetActivity="com.vela.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -137,12 +137,12 @@
 
         <!-- Light icon alias (kept for legacy user compatibility) -->
         <activity-alias
-            android:name="com.appshub.bettbox.MainActivityLight"
+            android:name="com.vela.MainActivityLight"
             android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_launcher_light"
             android:roundIcon="@mipmap/ic_launcher_round_light"
-            android:targetActivity="com.appshub.bettbox.MainActivity">
+            android:targetActivity="com.vela.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -160,18 +160,18 @@
                 <data android:scheme="clash" android:host="install-config" />
                 <data android:scheme="clashmeta" android:host="install-config" />
                 <data android:scheme="flclash" android:host="install-config" />
-                <data android:scheme="bettbox" android:host="install-config" />
+                <data android:scheme="vela" android:host="install-config" />
             </intent-filter>
         </activity-alias>
 
         <!-- Dark icon alias (kept for legacy user compatibility) -->
         <activity-alias
-            android:name="com.appshub.bettbox.MainActivityDark"
+            android:name="com.vela.MainActivityDark"
             android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_launcher_light"
             android:roundIcon="@mipmap/ic_launcher_round_light"
-            android:targetActivity="com.appshub.bettbox.MainActivity">
+            android:targetActivity="com.vela.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -191,7 +191,7 @@
                 <data android:scheme="clash" android:host="install-config" />
                 <data android:scheme="clashmeta" android:host="install-config" />
                 <data android:scheme="flclash" android:host="install-config" />
-                <data android:scheme="bettbox" android:host="install-config" />
+                <data android:scheme="vela" android:host="install-config" />
             </intent-filter>
         </activity-alias>
 
@@ -256,10 +256,10 @@
         </receiver>
 
         <service
-            android:name=".services.BettboxTileService"
+            android:name=".services.VelaTileService"
             android:exported="true"
             android:icon="@drawable/ic_tile"
-            android:label="Bettbox Smart"
+            android:label="Vela"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             tools:targetApi="n">
             <intent-filter>
@@ -282,7 +282,7 @@
         </provider>
 
         <service
-            android:name=".services.BettboxVpnService"
+            android:name=".services.VelaVpnService"
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:permission="android.permission.BIND_VPN_SERVICE">
@@ -294,7 +294,7 @@
         </service>
 
         <service
-            android:name=".services.BettboxService"
+            android:name=".services.VelaService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Proxy" />

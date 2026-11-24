@@ -19,7 +19,7 @@ endif()
 
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.kevinchen222.bettbox.smart")
+set(APPLICATION_ID "com.vela")
 if(_app_dev_found GREATER -1)
   set(APPLICATION_ID "${APPLICATION_ID}.dev")
 endif()

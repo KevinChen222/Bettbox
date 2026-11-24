@@ -669,7 +669,7 @@ class AppSidebarContainer extends ConsumerWidget {
                               return Text(
                                 customAppName?.trim().isNotEmpty == true
                                     ? customAppName!.trim()
-                                    : AppIdentity.productName,
+                                    : AppIdentity.displayName,
                                 maxLines: 1,
                                 softWrap: false,
                                 style: _brandTextStyle(context),

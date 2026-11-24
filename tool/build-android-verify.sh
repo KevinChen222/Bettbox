@@ -5,7 +5,7 @@ set -euo pipefail
 apk=${1:?APK path required}
 build_tools="${ANDROID_SDK_ROOT:?Android SDK required}/build-tools/36.0.0"
 "$build_tools/apksigner" verify "$apk"
-[[ "$("$build_tools/aapt2" dump packagename "$apk")" == com.kevinchen222.bettbox.smart ]]
+[[ "$("$build_tools/aapt2" dump packagename "$apk")" == com.vela ]]
 python3 - "$apk" <<'PY'
 from pathlib import Path
 from sys import argv
